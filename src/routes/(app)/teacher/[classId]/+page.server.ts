@@ -1,24 +1,61 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 
-export const load: PageServerLoad = async ({ params, locals }) => {
-	const { classId } = params;
+function toNumberMaybe(raw: string): number | null {
+	const v = String(raw ?? '').trim();
+	if (!v) return null;
+	const n = Number(v.replace(',', '.'));
+	return Number.isNaN(n) ? null : n;
+}
 
-	const { data: classData } = await locals.supabase
+function countDecimals(raw: string): number {
+	const v = String(raw ?? '').trim().replace(',', '.');
+	const idx = v.indexOf('.');
+	return idx === -1 ? 0 : v.length - idx - 1;
+}
+
+export const load: PageServerLoad = async ({ params, locals }) => {
+	const classId = params.classId;
+
+	const { data: classData, error: classErr } = await locals.supabase
 		.from('classes')
-		.select('id, name')
+		.select('id, name, score_min, score_max, score_decimals')
 		.eq('id', classId)
 		.single();
 
+	if (classErr) {
+		return { class: null, students: [], skills: [], scores: [] };
+	}
+
 	const { data: students } = await locals.supabase
 		.from('students')
-		.select('id, name')
+		.select('id, name, created_at')
 		.eq('class_id', classId)
-		.order('created_at', { ascending: false });
+		.order('created_at', { ascending: true });
+
+	const { data: skills } = await locals.supabase
+		.from('skills')
+		.select('id, name, created_at, score_min, score_max, score_decimals')
+		.eq('class_id', classId)
+		.order('created_at', { ascending: true });
+
+	const studentIds = (students ?? []).map((s) => s.id);
+
+	let scores: { student_id: string; skill_id: string; score: number }[] = [];
+	if (studentIds.length > 0) {
+		const { data: sc } = await locals.supabase
+			.from('student_skill_scores')
+			.select('student_id, skill_id, score')
+			.in('student_id', studentIds);
+
+		scores = sc ?? [];
+	}
 
 	return {
 		class: classData,
-		students: students ?? []
+		students: students ?? [],
+		skills: skills ?? [],
+		scores
 	};
 };
 
@@ -26,20 +63,140 @@ export const actions: Actions = {
 	createStudent: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
-
-		if (!name) {
-			return fail(400, { message: 'Nome do aluno é obrigatório.' });
-		}
+		if (!name) return fail(400, { message: 'Nome do aluno é obrigatório.' });
 
 		const { error } = await locals.supabase.from('students').insert({
 			name,
 			class_id: params.classId
 		});
 
-		if (error) {
-			return fail(400, { message: error.message });
+		if (error) return fail(400, { message: error.message });
+		return { success: true };
+	},
+
+	createSkill: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const name = String(form.get('name') ?? '').trim();
+		if (!name) return fail(400, { message: 'Nome da skill é obrigatório.' });
+
+		const { error } = await locals.supabase.from('skills').insert({
+			name,
+			class_id: params.classId
+		});
+
+		if (error) return fail(400, { message: error.message });
+		return { success: true };
+	},
+
+	deleteSkill: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const skillId = String(form.get('skillId') ?? '').trim();
+		if (!skillId) return fail(400, { message: 'Skill inválida.' });
+
+		// CASCADE nos scores via FK skill_id -> skills
+		const { error } = await locals.supabase
+			.from('skills')
+			.delete()
+			.eq('id', skillId)
+			.eq('class_id', params.classId);
+
+		if (error) return fail(400, { message: error.message });
+		return { success: true };
+	},
+
+	updateSkillScale: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const skillId = String(form.get('skillId') ?? '').trim();
+
+		const mode = String(form.get('mode') ?? 'inherit'); // 'inherit' | 'custom'
+		if (!skillId) return fail(400, { message: 'Skill inválida.' });
+
+		if (mode === 'inherit') {
+			const { error } = await locals.supabase
+				.from('skills')
+				.update({ score_min: null, score_max: null, score_decimals: null })
+				.eq('id', skillId)
+				.eq('class_id', params.classId);
+
+			if (error) return fail(400, { message: error.message });
+			return { success: true };
 		}
 
+		const scoreMin = toNumberMaybe(String(form.get('score_min') ?? ''));
+		const scoreMax = toNumberMaybe(String(form.get('score_max') ?? ''));
+		const decimals = Number(String(form.get('score_decimals') ?? '0'));
+
+		if (scoreMin === null || scoreMax === null) return fail(400, { message: 'Min/Max inválidos.' });
+		if (!(scoreMax > scoreMin)) return fail(400, { message: 'Max precisa ser maior que Min.' });
+		if (!Number.isFinite(decimals) || decimals < 0) return fail(400, { message: 'Decimais inválidos.' });
+
+		const { error } = await locals.supabase
+			.from('skills')
+			.update({ score_min: scoreMin, score_max: scoreMax, score_decimals: decimals })
+			.eq('id', skillId)
+			.eq('class_id', params.classId);
+
+		if (error) return fail(400, { message: error.message });
+		return { success: true };
+	},
+
+	upsertScore: async ({ request, params, locals }) => {
+		const form = await request.formData();
+		const studentId = String(form.get('studentId') ?? '').trim();
+		const skillId = String(form.get('skillId') ?? '').trim();
+		const rawScore = String(form.get('score') ?? '').trim();
+
+		if (!studentId || !skillId) return fail(400, { message: 'Aluno/skill inválidos.' });
+
+		// buscar escala efetiva: skill override > class default
+		const { data: sk, error: skErr } = await locals.supabase
+			.from('skills')
+			.select('id, class_id, score_min, score_max, score_decimals')
+			.eq('id', skillId)
+			.eq('class_id', params.classId)
+			.single();
+
+		if (skErr || !sk) return fail(400, { message: skErr?.message ?? 'Skill não encontrada.' });
+
+		const { data: cls, error: clsErr } = await locals.supabase
+			.from('classes')
+			.select('score_min, score_max, score_decimals')
+			.eq('id', params.classId)
+			.single();
+
+		if (clsErr || !cls) return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
+
+		const min = sk.score_min ?? cls.score_min;
+		const max = sk.score_max ?? cls.score_max;
+		const decimals = sk.score_decimals ?? cls.score_decimals;
+
+		// vazio = apagar score
+		if (!rawScore) {
+			const { error } = await locals.supabase
+				.from('student_skill_scores')
+				.delete()
+				.eq('student_id', studentId)
+				.eq('skill_id', skillId);
+
+			if (error) return fail(400, { message: error.message });
+			return { success: true };
+		}
+
+		const n = toNumberMaybe(rawScore);
+		if (n === null) return fail(400, { message: 'Nota inválida.' });
+		if (n < min || n > max) return fail(400, { message: `Fora do range (${min}–${max}).` });
+
+		if (countDecimals(rawScore) > Number(decimals ?? 0)) {
+			return fail(400, { message: `Muitas casas decimais (máx ${decimals}).` });
+		}
+
+		const { error } = await locals.supabase
+			.from('student_skill_scores')
+			.upsert([{ student_id: studentId, skill_id: skillId, score: n }], {
+				onConflict: 'student_id,skill_id'
+			});
+
+		if (error) return fail(400, { message: error.message });
 		return { success: true };
 	}
 };
