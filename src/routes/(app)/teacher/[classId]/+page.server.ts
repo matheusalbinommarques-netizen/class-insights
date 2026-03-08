@@ -1,6 +1,19 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 
+type BaselineLatestSnapshotRow = {
+	skill_id: string;
+	skill_name: string;
+	baseline_date: string | null;
+	baseline_n: number | null;
+	baseline_avg: number | null;
+	baseline_median: number | null;
+	latest_date: string | null;
+	latest_n: number | null;
+	latest_avg: number | null;
+	latest_median: number | null;
+};
+
 function toNumberMaybe(raw: string): number | null {
 	const v = String(raw ?? '').trim();
 	if (!v) return null;
@@ -14,6 +27,10 @@ function countDecimals(raw: string): number {
 	return idx === -1 ? 0 : v.length - idx - 1;
 }
 
+function todayUTCDateString(): string {
+	return new Date().toISOString().slice(0, 10);
+}
+
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const classId = params.classId;
 
@@ -24,7 +41,15 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		.single();
 
 	if (classErr) {
-		return { class: null, students: [], skills: [], scores: [] };
+		return {
+			class: null,
+			students: [],
+			skills: [],
+			scores: [],
+			insights: null,
+			hasTodaySnapshot: false,
+			today: todayUTCDateString()
+		};
 	}
 
 	const { data: students } = await locals.supabase
@@ -51,11 +76,61 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		scores = sc ?? [];
 	}
 
+	const { data: bl, error: blErr } = await locals.supabase.rpc(
+		'get_baseline_latest_snapshots',
+		{
+			p_class_id: classId
+		}
+	);
+
+	const insightsRows: BaselineLatestSnapshotRow[] =
+		(bl as BaselineLatestSnapshotRow[] | null)?.map((r) => ({
+			skill_id: r.skill_id,
+			skill_name: r.skill_name,
+			baseline_date: r.baseline_date,
+			baseline_n: r.baseline_n ?? null,
+			baseline_avg: r.baseline_avg ?? null,
+			baseline_median: r.baseline_median ?? null,
+			latest_date: r.latest_date,
+			latest_n: r.latest_n ?? null,
+			latest_avg: r.latest_avg ?? null,
+			latest_median: r.latest_median ?? null
+		})) ?? [];
+
+	const today = todayUTCDateString();
+	const hasTodaySnapshot = insightsRows.some((r) => r.latest_date === today);
+
+	const latestAvgs = insightsRows
+		.map((r) => r.latest_avg)
+		.filter((v): v is number => typeof v === 'number');
+
+	const classAvg = latestAvgs.length
+		? latestAvgs.reduce((a, b) => a + b, 0) / latestAvgs.length
+		: null;
+
+	const criticalSkill =
+		insightsRows
+			.filter((r) => typeof r.latest_avg === 'number')
+			.sort((a, b) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))[0] ?? null;
+
+	const strongSkill =
+		insightsRows
+			.filter((r) => typeof r.latest_avg === 'number')
+			.sort((a, b) => (b.latest_avg ?? 0) - (a.latest_avg ?? 0))[0] ?? null;
+
 	return {
 		class: classData,
 		students: students ?? [],
 		skills: skills ?? [],
-		scores
+		scores,
+		insights: blErr
+			? null
+			: {
+					rows: insightsRows,
+					kpis: { classAvg, criticalSkill, strongSkill }
+				},
+		hasTodaySnapshot,
+		today
 	};
 };
 
@@ -63,6 +138,7 @@ export const actions: Actions = {
 	createStudent: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
+
 		if (!name) return fail(400, { message: 'Nome do aluno é obrigatório.' });
 
 		const { error } = await locals.supabase.from('students').insert({
@@ -77,6 +153,7 @@ export const actions: Actions = {
 	createSkill: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
+
 		if (!name) return fail(400, { message: 'Nome da skill é obrigatório.' });
 
 		const { error } = await locals.supabase.from('skills').insert({
@@ -91,9 +168,9 @@ export const actions: Actions = {
 	deleteSkill: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const skillId = String(form.get('skillId') ?? '').trim();
+
 		if (!skillId) return fail(400, { message: 'Skill inválida.' });
 
-		// CASCADE nos scores via FK skill_id -> skills
 		const { error } = await locals.supabase
 			.from('skills')
 			.delete()
@@ -107,8 +184,8 @@ export const actions: Actions = {
 	updateSkillScale: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const skillId = String(form.get('skillId') ?? '').trim();
+		const mode = String(form.get('mode') ?? 'inherit');
 
-		const mode = String(form.get('mode') ?? 'inherit'); // 'inherit' | 'custom'
 		if (!skillId) return fail(400, { message: 'Skill inválida.' });
 
 		if (mode === 'inherit') {
@@ -126,9 +203,17 @@ export const actions: Actions = {
 		const scoreMax = toNumberMaybe(String(form.get('score_max') ?? ''));
 		const decimals = Number(String(form.get('score_decimals') ?? '0'));
 
-		if (scoreMin === null || scoreMax === null) return fail(400, { message: 'Min/Max inválidos.' });
-		if (!(scoreMax > scoreMin)) return fail(400, { message: 'Max precisa ser maior que Min.' });
-		if (!Number.isFinite(decimals) || decimals < 0) return fail(400, { message: 'Decimais inválidos.' });
+		if (scoreMin === null || scoreMax === null) {
+			return fail(400, { message: 'Min/Max inválidos.' });
+		}
+
+		if (!(scoreMax > scoreMin)) {
+			return fail(400, { message: 'Max precisa ser maior que Min.' });
+		}
+
+		if (!Number.isFinite(decimals) || decimals < 0 || decimals > 6) {
+			return fail(400, { message: 'Decimais inválidos.' });
+		}
 
 		const { error } = await locals.supabase
 			.from('skills')
@@ -146,9 +231,10 @@ export const actions: Actions = {
 		const skillId = String(form.get('skillId') ?? '').trim();
 		const rawScore = String(form.get('score') ?? '').trim();
 
-		if (!studentId || !skillId) return fail(400, { message: 'Aluno/skill inválidos.' });
+		if (!studentId || !skillId) {
+			return fail(400, { message: 'Aluno/skill inválidos.' });
+		}
 
-		// buscar escala efetiva: skill override > class default
 		const { data: sk, error: skErr } = await locals.supabase
 			.from('skills')
 			.select('id, class_id, score_min, score_max, score_decimals')
@@ -156,7 +242,9 @@ export const actions: Actions = {
 			.eq('class_id', params.classId)
 			.single();
 
-		if (skErr || !sk) return fail(400, { message: skErr?.message ?? 'Skill não encontrada.' });
+		if (skErr || !sk) {
+			return fail(400, { message: skErr?.message ?? 'Skill não encontrada.' });
+		}
 
 		const { data: cls, error: clsErr } = await locals.supabase
 			.from('classes')
@@ -164,13 +252,14 @@ export const actions: Actions = {
 			.eq('id', params.classId)
 			.single();
 
-		if (clsErr || !cls) return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
+		if (clsErr || !cls) {
+			return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
+		}
 
 		const min = sk.score_min ?? cls.score_min;
 		const max = sk.score_max ?? cls.score_max;
 		const decimals = sk.score_decimals ?? cls.score_decimals;
 
-		// vazio = apagar score
 		if (!rawScore) {
 			const { error } = await locals.supabase
 				.from('student_skill_scores')
@@ -198,5 +287,17 @@ export const actions: Actions = {
 
 		if (error) return fail(400, { message: error.message });
 		return { success: true };
+	},
+
+	generateSnapshot: async ({ params, locals }) => {
+		const classId = params.classId;
+
+		const { data, error } = await locals.supabase.rpc('generate_mastery_snapshot', {
+			p_class_id: classId
+		});
+
+		if (error) return fail(400, { message: error.message });
+
+		return { success: true, snapshot: data };
 	}
 };

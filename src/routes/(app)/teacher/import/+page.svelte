@@ -11,6 +11,7 @@
 	$: headers = (formState?.headers ?? []) as string[];
 	$: preview = (formState?.preview ?? []) as string[][];
 	$: studentGuess = (formState?.studentGuess ?? 0) as number;
+	$: jobId = (formState?.jobId ?? '') as string;
 
 	let selectedClassId = '';
 	let studentColIndex = 0;
@@ -35,12 +36,26 @@
 	};
 </script>
 
-<h1>Importar Planilha</h1>
+<h1>Importar Planilha (Staging)</h1>
 
-<h2>1) Preview</h2>
+<h2>1) Upload + Preview (gera Job)</h2>
 <form method="POST" action="?/preview" enctype="multipart/form-data" style="margin-bottom: 16px;">
-	<input type="file" name="file" accept=".csv" />
-	<button type="submit">Gerar preview</button>
+	<label>
+		Turma:
+		<select name="classId" bind:value={selectedClassId} required>
+			<option value="" disabled selected>Selecione...</option>
+			{#each data.classes as c}
+				<option value={c.id}>
+					{c.name} (escala {c.score_min}–{c.score_max}, dec {c.score_decimals})
+				</option>
+			{/each}
+		</select>
+	</label>
+
+	<div style="margin-top: 8px;">
+		<input type="file" name="file" accept=".csv" required />
+		<button type="submit" style="margin-left: 8px;">Gerar preview</button>
+	</div>
 </form>
 
 {#if formState?.message}
@@ -48,8 +63,9 @@
 {/if}
 
 {#if headers.length > 0}
-	<h3>Preview (primeiras {preview.length} linhas)</h3>
+	<p style="opacity:.8; font-size:12px;">Job criado: <strong>{jobId}</strong></p>
 
+	<h3>Preview (primeiras {preview.length} linhas)</h3>
 	<table border="1" cellpadding="6" style="margin-bottom: 16px;">
 		<thead>
 			<tr>
@@ -71,29 +87,10 @@
 
 	<hr />
 
-	<h2>2) Validar</h2>
+	<h2>2) Mapear + Validar (preflight 100%)</h2>
 
-	<form method="POST" action="?/validate" enctype="multipart/form-data" style="margin-bottom: 16px;">
-		<div style="margin-bottom: 10px;">
-			<label>
-				Turma:
-				<select name="classId" bind:value={selectedClassId} required>
-					<option value="" disabled selected>Selecione...</option>
-					{#each data.classes as c}
-						<option value={c.id}>
-							{c.name} (escala {c.score_min}–{c.score_max}, dec {c.score_decimals})
-						</option>
-					{/each}
-				</select>
-			</label>
-		</div>
-
-		<div style="margin-bottom: 10px;">
-			<label>
-				CSV:
-				<input type="file" name="file" accept=".csv" required />
-			</label>
-		</div>
+	<form method="POST" action="?/validate" style="margin-bottom: 16px;">
+		<input type="hidden" name="jobId" value={jobId} />
 
 		<div style="margin-bottom: 10px;">
 			<label>
@@ -131,64 +128,47 @@
 {#if formState?.statsPreview}
 	<hr />
 	<h2>Resultado da validação</h2>
-	<p>
-		Escala usada: <strong>{formState.scale.min}</strong> a <strong>{formState.scale.max}</strong> (decimais:
-		<strong>{formState.scale.decimals}</strong>)
-	</p>
 
-	<ul>
-		<li>Linhas no CSV: {formState.statsPreview.rowsTotal}</li>
-		<li>Linhas ignoradas (sem aluno): {formState.statsPreview.rowsSkippedNoStudent}</li>
-		<li>Alunos no arquivo: {formState.statsPreview.studentsInFile}</li>
-		<li>Skills no arquivo: {formState.statsPreview.skillsInFile}</li>
-		<li>Notas lidas: {formState.statsPreview.scoresParsed}</li>
-	</ul>
+	{#if formState.scale}
+		<p>
+			Escala usada (turma): <strong>{formState.scale.min}</strong> a <strong>{formState.scale.max}</strong>
+			(decimais: <strong>{formState.scale.decimals}</strong>)
+		</p>
+	{/if}
+
+	<p>Linhas staged: {formState.statsPreview.rowsTotal}</p>
 
 	{#if formState.errors?.length > 0}
 		<h3 style="color:#b00020;">Erros ({formState.errors.length})</h3>
 		<ul>
 			{#each formState.errors as e}
 				<li>
-					Linha {e.row} — {e.column}: {e.message}{#if e.value} (valor: "{e.value}"){/if}
+					{#if e.row_index === 0}
+						Header — col {e.column_index}: {e.message}
+					{:else}
+						Linha {e.row_index} — {e.column_name}: {e.message}{#if e.value} (valor: "{e.value}"){/if}
+					{/if}
 				</li>
 			{/each}
 		</ul>
 	{:else}
-		<p style="color: green;"><strong>Sem erros ✅</strong></p>
+		<p style="color: green;"><strong>Sem erros ✅ (pode aplicar)</strong></p>
 
-		<h2>3) Aplicar</h2>
-		<p style="opacity: 0.8; font-size: 12px;">
-			Selecione o CSV novamente e clique em “Aplicar no banco”.
-		</p>
-
-		<form method="POST" action="?/apply" enctype="multipart/form-data">
-			<input type="hidden" name="classId" value={selectedClassId} />
-			<input type="hidden" name="studentColIndex" value={studentColIndex} />
-			{#each Array.from(selectedSkillCols) as i}
-				<input type="hidden" name="skillColIndex" value={i} />
-			{/each}
-
-			<label>
-				CSV:
-				<input type="file" name="file" accept=".csv" required />
-			</label>
-			<button type="submit" style="margin-left: 8px;">Aplicar no banco</button>
+		<h2>3) Aplicar no banco (atômico)</h2>
+		<form method="POST" action="?/apply">
+			<input type="hidden" name="jobId" value={formState.jobId} />
+			<button type="submit">Aplicar</button>
 		</form>
 	{/if}
 {/if}
 
-{#if formState?.stats}
+{#if formState?.applied}
 	<hr />
-	<h2>Aplicação concluída</h2>
+	<h2>Aplicação concluída ✅</h2>
 	<ul>
-		<li>Linhas no CSV: {formState.stats.rowsTotal}</li>
-		<li>Linhas ignoradas (sem aluno): {formState.stats.rowsSkippedNoStudent}</li>
-		<li>Alunos criados: {formState.stats.studentsCreated}</li>
-		<li>Skills criadas: {formState.stats.skillsCreated}</li>
-		<li>Scores upsertados: {formState.stats.scoresUpserted}</li>
-		<li>Células ignoradas por inválidas: {formState.stats.cellsIgnoredInvalid}</li>
+		<li>Linhas no job: {formState.applied.rowsTotal}</li>
+		<li>Alunos criados: {formState.applied.studentsCreated}</li>
+		<li>Skills criadas: {formState.applied.skillsCreated}</li>
+		<li>Scores upsertados: {formState.applied.scoresUpserted}</li>
 	</ul>
-	<p style="opacity:0.8; font-size: 12px;">
-		Escala usada: {formState.stats.scaleUsed.min} a {formState.stats.scaleUsed.max} (decimais: {formState.stats.scaleUsed.decimals})
-	</p>
 {/if}

@@ -23,9 +23,7 @@ function parseCSV(text: string): ParsedCSV {
 		.map((l) => l.trimEnd())
 		.filter((l) => l.trim().length > 0);
 
-	if (lines.length === 0) {
-		return { headers: [], rows: [], delimiter: ',' };
-	}
+	if (lines.length === 0) return { headers: [], rows: [], delimiter: ',' };
 
 	const delimiter = detectDelimiter(lines[0]);
 
@@ -70,9 +68,14 @@ function parseCSV(text: string): ParsedCSV {
 function toNumberMaybe(raw: string): number | null {
 	const v = String(raw ?? '').trim();
 	if (!v) return null;
-
 	const n = Number(v.replace(',', '.'));
 	return Number.isNaN(n) ? null : n;
+}
+
+function countDecimals(raw: string): number {
+	const v = String(raw ?? '').trim().replace(',', '.');
+	const idx = v.indexOf('.');
+	return idx === -1 ? 0 : v.length - idx - 1;
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -82,18 +85,23 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.order('created_at', { ascending: false });
 
 	if (error) return { classes: [] };
-
 	return { classes: classes ?? [] };
 };
 
 export const actions: Actions = {
-	preview: async ({ request }) => {
+	// 1) Upload + Preview => CRIA JOB + STAGE ROWS (não aplica nada)
+	preview: async ({ request, locals }) => {
 		const form = await request.formData();
-		const file = form.get('file');
 
-		if (!(file instanceof File)) {
-			return fail(400, { message: 'Selecione um arquivo .csv.' });
-		}
+		const file = form.get('file');
+		const classId = String(form.get('classId') ?? '').trim();
+
+		if (!classId) return fail(400, { message: 'Selecione uma turma antes de gerar preview.' });
+		if (!(file instanceof File)) return fail(400, { message: 'Selecione um arquivo .csv.' });
+
+		const { data: auth } = await locals.supabase.auth.getUser();
+		const userId = auth.user?.id;
+		if (!userId) return fail(401, { message: 'Você precisa estar logado.' });
 
 		const text = await file.text();
 		const parsed = parseCSV(text);
@@ -104,25 +112,79 @@ export const actions: Actions = {
 			});
 		}
 
-		const previewRows = parsed.rows.slice(0, 20);
-
 		// sugestão: tenta achar coluna de aluno
 		const guessIndex = parsed.headers.findIndex((h) => /aluno|student|nome/i.test(h));
+		const studentGuess = guessIndex >= 0 ? guessIndex : 0;
+
+		// cria job
+		const { data: job, error: jobErr } = await locals.supabase
+			.from('import_jobs')
+			.insert({
+				class_id: classId,
+				teacher_id: userId,
+				status: 'uploaded',
+				delimiter: parsed.delimiter,
+				headers: parsed.headers,
+				rows_total: parsed.rows.length
+			})
+			.select('id')
+			.single();
+
+		if (jobErr || !job) return fail(400, { message: jobErr?.message ?? 'Erro ao criar job.' });
+
+		// stage rows
+		let skippedNoStudent = 0;
+
+		const staged = parsed.rows.map((r, idx) => {
+			const studentName = String(r[studentGuess] ?? '').trim();
+			if (!studentName) skippedNoStudent++;
+
+			const cells: Record<string, string> = {};
+			for (let i = 0; i < parsed.headers.length; i++) {
+				if (i === studentGuess) continue;
+
+				const header = String(parsed.headers[i] ?? '').trim();
+				if (!header) continue;
+
+				cells[header] = String(r[i] ?? '').trim();
+			}
+
+			return {
+				job_id: job.id,
+				row_index: idx + 1,
+				student_name_raw: studentName,
+				cells
+			};
+		});
+
+		const { error: rowsErr } = await locals.supabase.from('import_rows').insert(staged);
+		if (rowsErr) return fail(400, { message: rowsErr.message });
+
+		// salva skipped (info)
+		const { error: updErr } = await locals.supabase
+			.from('import_jobs')
+			.update({ rows_skipped_no_student: skippedNoStudent })
+			.eq('id', job.id);
+
+		if (updErr) return fail(400, { message: updErr.message });
+
+		const preview = parsed.rows.slice(0, 20);
 
 		return {
 			success: true,
+			jobId: job.id,
 			headers: parsed.headers,
-			preview: previewRows,
-			studentGuess: guessIndex >= 0 ? guessIndex : 0,
+			preview,
+			studentGuess,
 			delimiter: parsed.delimiter
 		};
 	},
 
-	apply: async ({ request, locals }) => {
+	// 2) Validate => grava map + gera erros (preflight 100%)
+	validate: async ({ request, locals }) => {
 		const form = await request.formData();
 
-		const file = form.get('file');
-		const classId = String(form.get('classId') ?? '').trim();
+		const jobId = String(form.get('jobId') ?? '').trim();
 		const studentColIndex = Number(String(form.get('studentColIndex') ?? '0'));
 
 		const skillColIndices = form
@@ -130,152 +192,225 @@ export const actions: Actions = {
 			.map((v) => Number(String(v)))
 			.filter((n) => !Number.isNaN(n));
 
-		if (!(file instanceof File)) return fail(400, { message: 'Selecione o CSV novamente para aplicar.' });
-		if (!classId) return fail(400, { message: 'Selecione uma turma.' });
-		if (Number.isNaN(studentColIndex)) return fail(400, { message: 'Coluna de aluno inválida.' });
-		if (skillColIndices.length === 0)
-			return fail(400, { message: 'Selecione pelo menos 1 coluna de skill.' });
+		if (!jobId) return fail(400, { message: 'jobId ausente. Gere o preview novamente.' });
+		if (Number.isNaN(studentColIndex)) return fail(400, { message: 'Coluna do aluno inválida.' });
+		if (skillColIndices.length === 0) return fail(400, { message: 'Selecione pelo menos 1 coluna de skill.' });
 
-		const text = await file.text();
-		const parsed = parseCSV(text);
+		// pega job + headers + turma
+		const { data: job, error: jobErr } = await locals.supabase
+			.from('import_jobs')
+			.select('id, class_id, headers')
+			.eq('id', jobId)
+			.single();
 
-		if (parsed.headers.length === 0) return fail(400, { message: 'CSV vazio.' });
-		if (studentColIndex < 0 || studentColIndex >= parsed.headers.length) {
+		if (jobErr || !job) return fail(400, { message: jobErr?.message ?? 'Job não encontrado.' });
+
+		const headers = (job.headers ?? []) as string[];
+		if (headers.length === 0) return fail(400, { message: 'Job sem headers.' });
+
+		if (studentColIndex < 0 || studentColIndex >= headers.length) {
 			return fail(400, { message: 'Coluna de aluno fora do range.' });
 		}
 
 		const selectedSkillCols = skillColIndices.filter(
-			(i) => i >= 0 && i < parsed.headers.length && i !== studentColIndex
+			(i) => i >= 0 && i < headers.length && i !== studentColIndex
 		);
 
-		if (selectedSkillCols.length === 0)
-			return fail(400, { message: 'Seleção de skills inválida.' });
+		if (selectedSkillCols.length === 0) return fail(400, { message: 'Seleção de skills inválida.' });
 
-		const skillNames = selectedSkillCols.map((i) => parsed.headers[i].trim()).filter(Boolean);
-		if (skillNames.length === 0) return fail(400, { message: 'Cabeçalhos de skills vazios.' });
+		// grava map
+		const { error: mapErr } = await locals.supabase.from('import_column_map').upsert({
+			job_id: jobId,
+			student_col_index: studentColIndex,
+			skill_col_indices: selectedSkillCols,
+			updated_at: new Date().toISOString()
+		});
 
-		const rows = parsed.rows;
+		if (mapErr) return fail(400, { message: mapErr.message });
 
-		const rawStudents: string[] = [];
-		type ScoreCell = { studentName: string; skillName: string; score: number };
-		const scoreCells: ScoreCell[] = [];
+		// zera erros anteriores
+		const { error: delErr } = await locals.supabase.from('import_cell_errors').delete().eq('job_id', jobId);
+		if (delErr) return fail(400, { message: delErr.message });
 
-		let skippedRows = 0;
+		// escala da turma (MVP: valida pelo default da turma; skill override entra no M3)
+		const { data: cls, error: clsErr } = await locals.supabase
+			.from('classes')
+			.select('score_min, score_max, score_decimals')
+			.eq('id', job.class_id)
+			.single();
 
-		for (const r of rows) {
-			const studentName = String(r[studentColIndex] ?? '').trim();
+		if (clsErr || !cls) return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
+
+		const scale = { min: cls.score_min, max: cls.score_max, decimals: cls.score_decimals };
+
+		// lê rows do staging
+		const { data: rows, error: rowsErr } = await locals.supabase
+			.from('import_rows')
+			.select('row_index, student_name_raw, cells')
+			.eq('job_id', jobId)
+			.order('row_index', { ascending: true });
+
+		if (rowsErr) return fail(400, { message: rowsErr.message });
+
+		// skills selecionadas (nomes)
+		const skillHeaders = selectedSkillCols.map((i) => String(headers[i] ?? '').trim());
+
+		const errors: {
+			job_id: string;
+			row_index: number;
+			column_index: number;
+			column_name: string;
+			message: string;
+			value?: string;
+		}[] = [];
+
+		// header vazio nas skills selecionadas
+		const emptySkillHeaders = skillHeaders
+			.map((h, idx) => ({ h, idx }))
+			.filter((x) => !x.h);
+
+		for (const e of emptySkillHeaders) {
+			errors.push({
+				job_id: jobId,
+				row_index: 0,
+				column_index: selectedSkillCols[e.idx],
+				column_name: '(header)',
+				message: 'Cabeçalho de skill vazio.',
+				value: ''
+			});
+		}
+
+		// duplicadas por nome (case-insensitive)
+		const normalized = skillHeaders.map((h) => h.toLowerCase());
+		const seen = new Map<string, number>();
+		for (let i = 0; i < normalized.length; i++) {
+			const key = normalized[i];
+			if (!key) continue;
+
+			if (seen.has(key)) {
+				errors.push({
+					job_id: jobId,
+					row_index: 0,
+					column_index: selectedSkillCols[i],
+					column_name: skillHeaders[i],
+					message: 'Coluna de skill duplicada (mesmo nome).',
+					value: skillHeaders[i]
+				});
+			} else {
+				seen.set(key, i);
+			}
+		}
+
+		// valida linha a linha
+		for (const r of rows ?? []) {
+			const rowIndex = r.row_index as number;
+			const studentName = String(r.student_name_raw ?? '').trim();
+
 			if (!studentName) {
-				skippedRows++;
+				errors.push({
+					job_id: jobId,
+					row_index: rowIndex,
+					column_index: studentColIndex,
+					column_name: headers[studentColIndex] ?? '(aluno)',
+					message: 'Aluno vazio.',
+					value: ''
+				});
 				continue;
 			}
 
-			rawStudents.push(studentName);
+			const cells = (r.cells ?? {}) as Record<string, string>;
 
-			for (const colIndex of selectedSkillCols) {
-				const skillName = String(parsed.headers[colIndex] ?? '').trim();
+			for (const skillName of skillHeaders) {
 				if (!skillName) continue;
 
-				const scoreRaw = String(r[colIndex] ?? '').trim();
-				const score = toNumberMaybe(scoreRaw);
+				const raw = String(cells[skillName] ?? '').trim();
+				if (!raw) continue; // vazio = ok (não cria score)
 
-				if (score === null) continue; // vazio, pula
-				scoreCells.push({ studentName, skillName, score });
+				const n = toNumberMaybe(raw);
+				if (n === null) {
+					errors.push({
+						job_id: jobId,
+						row_index: rowIndex,
+						column_index: headers.indexOf(skillName),
+						column_name: skillName,
+						message: 'Nota inválida (não numérica).',
+						value: raw
+					});
+					continue;
+				}
+
+				if (n < scale.min || n > scale.max) {
+					errors.push({
+						job_id: jobId,
+						row_index: rowIndex,
+						column_index: headers.indexOf(skillName),
+						column_name: skillName,
+						message: `Fora do range (${scale.min}–${scale.max}).`,
+						value: raw
+					});
+				}
+
+				if (countDecimals(raw) > Number(scale.decimals ?? 0)) {
+					errors.push({
+						job_id: jobId,
+						row_index: rowIndex,
+						column_index: headers.indexOf(skillName),
+						column_name: skillName,
+						message: `Muitas casas decimais (máx ${scale.decimals}).`,
+						value: raw
+					});
+				}
 			}
 		}
 
-		const uniqueStudentNames = Array.from(new Set(rawStudents.map((s) => s.trim()))).filter(Boolean);
-		const uniqueSkillNames = Array.from(new Set(skillNames.map((s) => s.trim()))).filter(Boolean);
+		// se tem erro, grava e bloqueia
+		if (errors.length > 0) {
+			const { error: insErr } = await locals.supabase.from('import_cell_errors').insert(errors);
+			if (insErr) return fail(400, { message: insErr.message });
 
-		// students existentes da turma
-		const { data: existingStudents, error: studentsErr } = await locals.supabase
-			.from('students')
-			.select('id, name')
-			.eq('class_id', classId);
+			// mantém status uploaded (não validated)
+			const { error: stErr } = await locals.supabase
+				.from('import_jobs')
+				.update({ status: 'uploaded' })
+				.eq('id', jobId);
 
-		if (studentsErr) return fail(400, { message: studentsErr.message });
+			if (stErr) return fail(400, { message: stErr.message });
 
-		const studentMap = new Map<string, string>();
-		for (const st of existingStudents ?? []) studentMap.set(st.name, st.id);
-
-		// inserir students faltantes
-		const missingStudents = uniqueStudentNames.filter((name) => !studentMap.has(name));
-		let createdStudents = 0;
-
-		if (missingStudents.length > 0) {
-			const { data: inserted, error } = await locals.supabase
-				.from('students')
-				.insert(missingStudents.map((name) => ({ name, class_id: classId })))
-				.select('id, name');
-
-			if (error) return fail(400, { message: error.message });
-
-			for (const st of inserted ?? []) studentMap.set(st.name, st.id);
-			createdStudents = inserted?.length ?? 0;
+			return {
+				success: false,
+				jobId,
+				scale,
+				statsPreview: { rowsTotal: rows?.length ?? 0, errors: errors.length },
+				errors
+			};
 		}
 
-		// skills existentes da turma
-		const { data: existingSkills, error: skillsErr } = await locals.supabase
-			.from('skills')
-			.select('id, name')
-			.eq('class_id', classId);
+		// sem erros => validated
+		const { error: okErr } = await locals.supabase
+			.from('import_jobs')
+			.update({ status: 'validated' })
+			.eq('id', jobId);
 
-		if (skillsErr) return fail(400, { message: skillsErr.message });
-
-		const skillMap = new Map<string, string>();
-		for (const sk of existingSkills ?? []) skillMap.set(sk.name, sk.id);
-
-		// inserir skills faltantes
-		const missingSkills = uniqueSkillNames.filter((name) => !skillMap.has(name));
-		let createdSkills = 0;
-
-		if (missingSkills.length > 0) {
-			const { data: inserted, error } = await locals.supabase
-				.from('skills')
-				.insert(missingSkills.map((name) => ({ name, class_id: classId })))
-				.select('id, name');
-
-			if (error) return fail(400, { message: error.message });
-
-			for (const sk of inserted ?? []) skillMap.set(sk.name, sk.id);
-			createdSkills = inserted?.length ?? 0;
-		}
-
-		// payload de upsert
-		const upserts = scoreCells
-			.map((cell) => {
-				const studentId = studentMap.get(cell.studentName);
-				const skillId = skillMap.get(cell.skillName);
-				if (!studentId || !skillId) return null;
-
-				return { student_id: studentId, skill_id: skillId, score: cell.score };
-			})
-			.filter(Boolean) as { student_id: string; skill_id: string; score: number }[];
-
-		// chunk para evitar payload gigante
-		const chunkSize = 500;
-		let upserted = 0;
-
-		for (let i = 0; i < upserts.length; i += chunkSize) {
-			const chunk = upserts.slice(i, i + chunkSize);
-
-			const { error } = await locals.supabase
-				.from('student_skill_scores')
-				.upsert(chunk, { onConflict: 'student_id,skill_id' });
-
-			if (error) return fail(400, { message: error.message });
-
-			upserted += chunk.length;
-		}
+		if (okErr) return fail(400, { message: okErr.message });
 
 		return {
 			success: true,
-			stats: {
-				rowsTotal: rows.length,
-				rowsSkippedNoStudent: skippedRows,
-				studentsCreated: createdStudents,
-				skillsCreated: createdSkills,
-				scoresUpserted: upserted
-			}
+			jobId,
+			scale,
+			statsPreview: { rowsTotal: rows?.length ?? 0, errors: 0 },
+			errors: []
 		};
+	},
+
+	// 3) Apply => chama RPC (atômico)
+	apply: async ({ request, locals }) => {
+		const form = await request.formData();
+		const jobId = String(form.get('jobId') ?? '').trim();
+		if (!jobId) return fail(400, { message: 'jobId ausente.' });
+
+		const { data, error } = await locals.supabase.rpc('apply_import_job', { p_job_id: jobId });
+		if (error) return fail(400, { message: error.message });
+
+		return { success: true, applied: data };
 	}
 };
