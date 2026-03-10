@@ -1,5 +1,6 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
+import { resolveEffectiveScale, validateScoreInput } from '$lib/server/scoring';
 
 type BaselineLatestSnapshotRow = {
 	skill_id: string;
@@ -14,33 +15,55 @@ type BaselineLatestSnapshotRow = {
 	latest_median: number | null;
 };
 
-function toNumberMaybe(raw: string): number | null {
-	const v = String(raw ?? '').trim();
-	if (!v) return null;
-	const n = Number(v.replace(',', '.'));
-	return Number.isNaN(n) ? null : n;
+type OwnedClass = {
+	id: string;
+	name: string;
+	score_min: number;
+	score_max: number;
+	score_decimals: number;
+};
+
+function getAuthenticatedUserId(locals: App.Locals): string | null {
+	return locals.session?.user?.id ?? null;
 }
 
-function countDecimals(raw: string): number {
-	const v = String(raw ?? '').trim().replace(',', '.');
-	const idx = v.indexOf('.');
-	return idx === -1 ? 0 : v.length - idx - 1;
+async function getOwnedClass(
+	locals: App.Locals,
+	classId: string,
+	userId: string
+): Promise<OwnedClass | null> {
+	const { data, error } = await locals.supabase
+		.from('classes')
+		.select('id, name, score_min, score_max, score_decimals')
+		.eq('id', classId)
+		.eq('teacher_id', userId)
+		.maybeSingle();
+
+	if (error || !data) return null;
+
+	return {
+		id: data.id,
+		name: data.name,
+		score_min: data.score_min,
+		score_max: data.score_max,
+		score_decimals: data.score_decimals
+	};
 }
 
 function todayUTCDateString(): string {
 	return new Date().toISOString().slice(0, 10);
 }
 
+function generateInviteCode(): string {
+	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
+}
+
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const classId = params.classId;
+	const today = todayUTCDateString();
 
-	const { data: classData, error: classErr } = await locals.supabase
-		.from('classes')
-		.select('id, name, score_min, score_max, score_decimals')
-		.eq('id', classId)
-		.single();
-
-	if (classErr) {
+	const userId = getAuthenticatedUserId(locals);
+	if (!userId) {
 		return {
 			class: null,
 			students: [],
@@ -48,13 +71,27 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			scores: [],
 			insights: null,
 			hasTodaySnapshot: false,
-			today: todayUTCDateString()
+			today
+		};
+	}
+
+	const classData = await getOwnedClass(locals, classId, userId);
+
+	if (!classData) {
+		return {
+			class: null,
+			students: [],
+			skills: [],
+			scores: [],
+			insights: null,
+			hasTodaySnapshot: false,
+			today
 		};
 	}
 
 	const { data: students } = await locals.supabase
 		.from('students')
-		.select('id, name, created_at')
+		.select('id, name, invite_code, created_at')
 		.eq('class_id', classId)
 		.order('created_at', { ascending: true });
 
@@ -97,7 +134,6 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			latest_median: r.latest_median ?? null
 		})) ?? [];
 
-	const today = todayUTCDateString();
 	const hasTodaySnapshot = insightsRows.some((r) => r.latest_date === today);
 
 	const latestAvgs = insightsRows
@@ -139,14 +175,32 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
 
-		if (!name) return fail(400, { message: 'Nome do aluno é obrigatório.' });
+		if (!name) {
+			return fail(400, { message: 'Nome do aluno é obrigatório.' });
+		}
+
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
+
+		const inviteCode = generateInviteCode();
 
 		const { error } = await locals.supabase.from('students').insert({
 			name,
-			class_id: params.classId
+			class_id: ownedClass.id,
+			invite_code: inviteCode
 		});
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
+
 		return { success: true };
 	},
 
@@ -154,14 +208,29 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
 
-		if (!name) return fail(400, { message: 'Nome da skill é obrigatório.' });
+		if (!name) {
+			return fail(400, { message: 'Nome da skill é obrigatório.' });
+		}
+
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		const { error } = await locals.supabase.from('skills').insert({
 			name,
-			class_id: params.classId
+			class_id: ownedClass.id
 		});
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
+
 		return { success: true };
 	},
 
@@ -169,15 +238,30 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const skillId = String(form.get('skillId') ?? '').trim();
 
-		if (!skillId) return fail(400, { message: 'Skill inválida.' });
+		if (!skillId) {
+			return fail(400, { message: 'Skill inválida.' });
+		}
+
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		const { error } = await locals.supabase
 			.from('skills')
 			.delete()
 			.eq('id', skillId)
-			.eq('class_id', params.classId);
+			.eq('class_id', ownedClass.id);
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
+
 		return { success: true };
 	},
 
@@ -186,24 +270,39 @@ export const actions: Actions = {
 		const skillId = String(form.get('skillId') ?? '').trim();
 		const mode = String(form.get('mode') ?? 'inherit');
 
-		if (!skillId) return fail(400, { message: 'Skill inválida.' });
+		if (!skillId) {
+			return fail(400, { message: 'Skill inválida.' });
+		}
+
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		if (mode === 'inherit') {
 			const { error } = await locals.supabase
 				.from('skills')
 				.update({ score_min: null, score_max: null, score_decimals: null })
 				.eq('id', skillId)
-				.eq('class_id', params.classId);
+				.eq('class_id', ownedClass.id);
 
-			if (error) return fail(400, { message: error.message });
+			if (error) {
+				return fail(400, { message: error.message });
+			}
+
 			return { success: true };
 		}
 
-		const scoreMin = toNumberMaybe(String(form.get('score_min') ?? ''));
-		const scoreMax = toNumberMaybe(String(form.get('score_max') ?? ''));
+		const scoreMin = Number(String(form.get('score_min') ?? '').replace(',', '.'));
+		const scoreMax = Number(String(form.get('score_max') ?? '').replace(',', '.'));
 		const decimals = Number(String(form.get('score_decimals') ?? '0'));
 
-		if (scoreMin === null || scoreMax === null) {
+		if (!Number.isFinite(scoreMin) || !Number.isFinite(scoreMax)) {
 			return fail(400, { message: 'Min/Max inválidos.' });
 		}
 
@@ -219,9 +318,12 @@ export const actions: Actions = {
 			.from('skills')
 			.update({ score_min: scoreMin, score_max: scoreMax, score_decimals: decimals })
 			.eq('id', skillId)
-			.eq('class_id', params.classId);
+			.eq('class_id', ownedClass.id);
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
+
 		return { success: true };
 	},
 
@@ -235,30 +337,43 @@ export const actions: Actions = {
 			return fail(400, { message: 'Aluno/skill inválidos.' });
 		}
 
-		const { data: sk, error: skErr } = await locals.supabase
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
+
+		const { data: student, error: studentErr } = await locals.supabase
+			.from('students')
+			.select('id')
+			.eq('id', studentId)
+			.eq('class_id', ownedClass.id)
+			.maybeSingle();
+
+		if (studentErr || !student) {
+			return fail(400, { message: studentErr?.message ?? 'Aluno não encontrado.' });
+		}
+
+		const { data: skill, error: skillErr } = await locals.supabase
 			.from('skills')
 			.select('id, class_id, score_min, score_max, score_decimals')
 			.eq('id', skillId)
-			.eq('class_id', params.classId)
-			.single();
+			.eq('class_id', ownedClass.id)
+			.maybeSingle();
 
-		if (skErr || !sk) {
-			return fail(400, { message: skErr?.message ?? 'Skill não encontrada.' });
+		if (skillErr || !skill) {
+			return fail(400, { message: skillErr?.message ?? 'Skill não encontrada.' });
 		}
 
-		const { data: cls, error: clsErr } = await locals.supabase
-			.from('classes')
-			.select('score_min, score_max, score_decimals')
-			.eq('id', params.classId)
-			.single();
+		const scale = resolveEffectiveScale(ownedClass, skill);
 
-		if (clsErr || !cls) {
-			return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
-		}
-
-		const min = sk.score_min ?? cls.score_min;
-		const max = sk.score_max ?? cls.score_max;
-		const decimals = sk.score_decimals ?? cls.score_decimals;
+		const validation = validateScoreInput(rawScore, scale, {
+			allowBlank: true
+		});
 
 		if (!rawScore) {
 			const { error } = await locals.supabase
@@ -267,36 +382,48 @@ export const actions: Actions = {
 				.eq('student_id', studentId)
 				.eq('skill_id', skillId);
 
-			if (error) return fail(400, { message: error.message });
+			if (error) {
+				return fail(400, { message: error.message });
+			}
+
 			return { success: true };
 		}
 
-		const n = toNumberMaybe(rawScore);
-		if (n === null) return fail(400, { message: 'Nota inválida.' });
-		if (n < min || n > max) return fail(400, { message: `Fora do range (${min}–${max}).` });
-
-		if (countDecimals(rawScore) > Number(decimals ?? 0)) {
-			return fail(400, { message: `Muitas casas decimais (máx ${decimals}).` });
+		if (!validation.ok) {
+			return fail(400, { message: validation.message });
 		}
 
 		const { error } = await locals.supabase
 			.from('student_skill_scores')
-			.upsert([{ student_id: studentId, skill_id: skillId, score: n }], {
+			.upsert([{ student_id: studentId, skill_id: skillId, score: validation.value }], {
 				onConflict: 'student_id,skill_id'
 			});
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
+
 		return { success: true };
 	},
 
 	generateSnapshot: async ({ params, locals }) => {
-		const classId = params.classId;
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		const { data, error } = await locals.supabase.rpc('generate_mastery_snapshot', {
-			p_class_id: classId
+			p_class_id: ownedClass.id
 		});
 
-		if (error) return fail(400, { message: error.message });
+		if (error) {
+			return fail(400, { message: error.message });
+		}
 
 		return { success: true, snapshot: data };
 	}

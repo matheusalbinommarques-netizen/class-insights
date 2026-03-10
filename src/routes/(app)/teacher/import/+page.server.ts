@@ -1,5 +1,11 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
+import {
+	normalizeSkillName,
+	parseNumericInput,
+	resolveEffectiveScale,
+	validateScoreInput
+} from '$lib/server/scoring';
 
 type ParsedCSV = {
 	headers: string[];
@@ -7,23 +13,103 @@ type ParsedCSV = {
 	delimiter: ',' | ';' | '\t';
 };
 
+type OwnedClass = {
+	id: string;
+	name: string;
+	score_min: number;
+	score_max: number;
+	score_decimals: number;
+};
+
+type OwnedImportJob = {
+	id: string;
+	class_id: string;
+	headers: unknown;
+	status: string | null;
+};
+
+type ExistingSkill = {
+	id: string;
+	name: string;
+	score_min: number | null;
+	score_max: number | null;
+	score_decimals: number | null;
+};
+
+async function getAuthenticatedUserId(locals: App.Locals): Promise<string | null> {
+	const {
+		data: { user },
+		error
+	} = await locals.supabase.auth.getUser();
+
+	if (error || !user) return null;
+	return user.id;
+}
+
+async function getOwnedClass(
+	locals: App.Locals,
+	classId: string,
+	userId: string
+): Promise<OwnedClass | null> {
+	const { data, error } = await locals.supabase
+		.from('classes')
+		.select('id, name, score_min, score_max, score_decimals')
+		.eq('id', classId)
+		.eq('teacher_id', userId)
+		.single();
+
+	if (error || !data) return null;
+
+	return {
+		id: data.id,
+		name: data.name,
+		score_min: data.score_min,
+		score_max: data.score_max,
+		score_decimals: data.score_decimals
+	};
+}
+
+async function getOwnedImportJob(
+	locals: App.Locals,
+	jobId: string,
+	userId: string
+): Promise<OwnedImportJob | null> {
+	const { data, error } = await locals.supabase
+		.from('import_jobs')
+		.select('id, class_id, headers, status')
+		.eq('id', jobId)
+		.eq('teacher_id', userId)
+		.single();
+
+	if (error || !data) return null;
+
+	return {
+		id: data.id,
+		class_id: data.class_id,
+		headers: data.headers,
+		status: data.status ?? null
+	};
+}
+
 function detectDelimiter(line: string): ',' | ';' | '\t' {
 	const comma = (line.match(/,/g) ?? []).length;
 	const semi = (line.match(/;/g) ?? []).length;
 	const tab = (line.match(/\t/g) ?? []).length;
+
 	if (semi >= comma && semi >= tab) return ';';
 	if (tab >= comma && tab >= semi) return '\t';
 	return ',';
 }
 
-// CSV parser simples com suporte a aspas ("") e delimitador variável
 function parseCSV(text: string): ParsedCSV {
 	const lines = text
 		.split(/\r?\n/)
 		.map((l) => l.trimEnd())
 		.filter((l) => l.trim().length > 0);
 
-	if (lines.length === 0) return { headers: [], rows: [], delimiter: ',' };
+	if (lines.length === 0) {
+		return { headers: [], rows: [], delimiter: ',' };
+	}
 
 	const delimiter = detectDelimiter(lines[0]);
 
@@ -36,7 +122,6 @@ function parseCSV(text: string): ParsedCSV {
 			const ch = line[i];
 
 			if (ch === '"') {
-				// escape "" dentro de aspas
 				if (inQuotes && line[i + 1] === '"') {
 					cur += '"';
 					i++;
@@ -65,43 +150,81 @@ function parseCSV(text: string): ParsedCSV {
 	return { headers, rows, delimiter };
 }
 
-function toNumberMaybe(raw: string): number | null {
-	const v = String(raw ?? '').trim();
-	if (!v) return null;
-	const n = Number(v.replace(',', '.'));
-	return Number.isNaN(n) ? null : n;
-}
+async function getExistingSkillsByClass(
+	locals: App.Locals,
+	classId: string
+): Promise<Map<string, ExistingSkill>> {
+	const { data, error } = await locals.supabase
+		.from('skills')
+		.select('id, name, score_min, score_max, score_decimals')
+		.eq('class_id', classId);
 
-function countDecimals(raw: string): number {
-	const v = String(raw ?? '').trim().replace(',', '.');
-	const idx = v.indexOf('.');
-	return idx === -1 ? 0 : v.length - idx - 1;
+	if (error || !data) {
+		return new Map();
+	}
+
+	const byNormalizedName = new Map<string, ExistingSkill>();
+
+	for (const skill of data) {
+		const key = normalizeSkillName(skill.name);
+		if (!key || byNormalizedName.has(key)) continue;
+
+		byNormalizedName.set(key, {
+			id: skill.id,
+			name: skill.name,
+			score_min: skill.score_min,
+			score_max: skill.score_max,
+			score_decimals: skill.score_decimals
+		});
+	}
+
+	return byNormalizedName;
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
+	const userId = await getAuthenticatedUserId(locals);
+
+	if (!userId) {
+		return { classes: [] };
+	}
+
 	const { data: classes, error } = await locals.supabase
 		.from('classes')
 		.select('id, name, score_min, score_max, score_decimals')
+		.eq('teacher_id', userId)
 		.order('created_at', { ascending: false });
 
-	if (error) return { classes: [] };
+	if (error) {
+		return { classes: [] };
+	}
+
 	return { classes: classes ?? [] };
 };
 
 export const actions: Actions = {
-	// 1) Upload + Preview => CRIA JOB + STAGE ROWS (não aplica nada)
 	preview: async ({ request, locals }) => {
 		const form = await request.formData();
 
 		const file = form.get('file');
 		const classId = String(form.get('classId') ?? '').trim();
 
-		if (!classId) return fail(400, { message: 'Selecione uma turma antes de gerar preview.' });
-		if (!(file instanceof File)) return fail(400, { message: 'Selecione um arquivo .csv.' });
+		if (!classId) {
+			return fail(400, { message: 'Selecione uma turma antes de gerar preview.' });
+		}
 
-		const { data: auth } = await locals.supabase.auth.getUser();
-		const userId = auth.user?.id;
-		if (!userId) return fail(401, { message: 'Você precisa estar logado.' });
+		if (!(file instanceof File)) {
+			return fail(400, { message: 'Selecione um arquivo .csv.' });
+		}
+
+		const userId = await getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, classId, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		const text = await file.text();
 		const parsed = parseCSV(text);
@@ -112,15 +235,13 @@ export const actions: Actions = {
 			});
 		}
 
-		// sugestão: tenta achar coluna de aluno
 		const guessIndex = parsed.headers.findIndex((h) => /aluno|student|nome/i.test(h));
 		const studentGuess = guessIndex >= 0 ? guessIndex : 0;
 
-		// cria job
 		const { data: job, error: jobErr } = await locals.supabase
 			.from('import_jobs')
 			.insert({
-				class_id: classId,
+				class_id: ownedClass.id,
 				teacher_id: userId,
 				status: 'uploaded',
 				delimiter: parsed.delimiter,
@@ -130,9 +251,10 @@ export const actions: Actions = {
 			.select('id')
 			.single();
 
-		if (jobErr || !job) return fail(400, { message: jobErr?.message ?? 'Erro ao criar job.' });
+		if (jobErr || !job) {
+			return fail(400, { message: jobErr?.message ?? 'Erro ao criar job.' });
+		}
 
-		// stage rows
 		let skippedNoStudent = 0;
 
 		const staged = parsed.rows.map((r, idx) => {
@@ -158,15 +280,19 @@ export const actions: Actions = {
 		});
 
 		const { error: rowsErr } = await locals.supabase.from('import_rows').insert(staged);
-		if (rowsErr) return fail(400, { message: rowsErr.message });
+		if (rowsErr) {
+			return fail(400, { message: rowsErr.message });
+		}
 
-		// salva skipped (info)
 		const { error: updErr } = await locals.supabase
 			.from('import_jobs')
 			.update({ rows_skipped_no_student: skippedNoStudent })
-			.eq('id', job.id);
+			.eq('id', job.id)
+			.eq('teacher_id', userId);
 
-		if (updErr) return fail(400, { message: updErr.message });
+		if (updErr) {
+			return fail(400, { message: updErr.message });
+		}
 
 		const preview = parsed.rows.slice(0, 20);
 
@@ -180,7 +306,6 @@ export const actions: Actions = {
 		};
 	},
 
-	// 2) Validate => grava map + gera erros (preflight 100%)
 	validate: async ({ request, locals }) => {
 		const form = await request.formData();
 
@@ -192,21 +317,37 @@ export const actions: Actions = {
 			.map((v) => Number(String(v)))
 			.filter((n) => !Number.isNaN(n));
 
-		if (!jobId) return fail(400, { message: 'jobId ausente. Gere o preview novamente.' });
-		if (Number.isNaN(studentColIndex)) return fail(400, { message: 'Coluna do aluno inválida.' });
-		if (skillColIndices.length === 0) return fail(400, { message: 'Selecione pelo menos 1 coluna de skill.' });
+		if (!jobId) {
+			return fail(400, { message: 'jobId ausente. Gere o preview novamente.' });
+		}
 
-		// pega job + headers + turma
-		const { data: job, error: jobErr } = await locals.supabase
-			.from('import_jobs')
-			.select('id, class_id, headers')
-			.eq('id', jobId)
-			.single();
+		if (Number.isNaN(studentColIndex)) {
+			return fail(400, { message: 'Coluna do aluno inválida.' });
+		}
 
-		if (jobErr || !job) return fail(400, { message: jobErr?.message ?? 'Job não encontrado.' });
+		if (skillColIndices.length === 0) {
+			return fail(400, { message: 'Selecione pelo menos 1 coluna de skill.' });
+		}
 
-		const headers = (job.headers ?? []) as string[];
-		if (headers.length === 0) return fail(400, { message: 'Job sem headers.' });
+		const userId = await getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const job = await getOwnedImportJob(locals, jobId, userId);
+		if (!job) {
+			return fail(404, { message: 'Job não encontrado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, job.class_id, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
+
+		const headers = Array.isArray(job.headers) ? (job.headers as string[]) : [];
+		if (headers.length === 0) {
+			return fail(400, { message: 'Job sem headers.' });
+		}
 
 		if (studentColIndex < 0 || studentColIndex >= headers.length) {
 			return fail(400, { message: 'Coluna de aluno fora do range.' });
@@ -216,9 +357,10 @@ export const actions: Actions = {
 			(i) => i >= 0 && i < headers.length && i !== studentColIndex
 		);
 
-		if (selectedSkillCols.length === 0) return fail(400, { message: 'Seleção de skills inválida.' });
+		if (selectedSkillCols.length === 0) {
+			return fail(400, { message: 'Seleção de skills inválida.' });
+		}
 
-		// grava map
 		const { error: mapErr } = await locals.supabase.from('import_column_map').upsert({
 			job_id: jobId,
 			student_col_index: studentColIndex,
@@ -226,34 +368,35 @@ export const actions: Actions = {
 			updated_at: new Date().toISOString()
 		});
 
-		if (mapErr) return fail(400, { message: mapErr.message });
+		if (mapErr) {
+			return fail(400, { message: mapErr.message });
+		}
 
-		// zera erros anteriores
-		const { error: delErr } = await locals.supabase.from('import_cell_errors').delete().eq('job_id', jobId);
-		if (delErr) return fail(400, { message: delErr.message });
+		const { error: delErr } = await locals.supabase
+			.from('import_cell_errors')
+			.delete()
+			.eq('job_id', jobId);
 
-		// escala da turma (MVP: valida pelo default da turma; skill override entra no M3)
-		const { data: cls, error: clsErr } = await locals.supabase
-			.from('classes')
-			.select('score_min, score_max, score_decimals')
-			.eq('id', job.class_id)
-			.single();
+		if (delErr) {
+			return fail(400, { message: delErr.message });
+		}
 
-		if (clsErr || !cls) return fail(400, { message: clsErr?.message ?? 'Turma não encontrada.' });
-
-		const scale = { min: cls.score_min, max: cls.score_max, decimals: cls.score_decimals };
-
-		// lê rows do staging
 		const { data: rows, error: rowsErr } = await locals.supabase
 			.from('import_rows')
 			.select('row_index, student_name_raw, cells')
 			.eq('job_id', jobId)
 			.order('row_index', { ascending: true });
 
-		if (rowsErr) return fail(400, { message: rowsErr.message });
+		if (rowsErr) {
+			return fail(400, { message: rowsErr.message });
+		}
 
-		// skills selecionadas (nomes)
-		const skillHeaders = selectedSkillCols.map((i) => String(headers[i] ?? '').trim());
+		const existingSkillsByName = await getExistingSkillsByClass(locals, ownedClass.id);
+
+		const selectedSkills = selectedSkillCols.map((columnIndex) => ({
+			columnIndex,
+			columnName: String(headers[columnIndex] ?? '').trim()
+		}));
 
 		const errors: {
 			job_id: string;
@@ -264,44 +407,38 @@ export const actions: Actions = {
 			value?: string;
 		}[] = [];
 
-		// header vazio nas skills selecionadas
-		const emptySkillHeaders = skillHeaders
-			.map((h, idx) => ({ h, idx }))
-			.filter((x) => !x.h);
+		const emptySkillHeaders = selectedSkills.filter((s) => !s.columnName);
 
-		for (const e of emptySkillHeaders) {
+		for (const skill of emptySkillHeaders) {
 			errors.push({
 				job_id: jobId,
 				row_index: 0,
-				column_index: selectedSkillCols[e.idx],
+				column_index: skill.columnIndex,
 				column_name: '(header)',
 				message: 'Cabeçalho de skill vazio.',
 				value: ''
 			});
 		}
 
-		// duplicadas por nome (case-insensitive)
-		const normalized = skillHeaders.map((h) => h.toLowerCase());
 		const seen = new Map<string, number>();
-		for (let i = 0; i < normalized.length; i++) {
-			const key = normalized[i];
+		for (const skill of selectedSkills) {
+			const key = normalizeSkillName(skill.columnName);
 			if (!key) continue;
 
 			if (seen.has(key)) {
 				errors.push({
 					job_id: jobId,
 					row_index: 0,
-					column_index: selectedSkillCols[i],
-					column_name: skillHeaders[i],
+					column_index: skill.columnIndex,
+					column_name: skill.columnName,
 					message: 'Coluna de skill duplicada (mesmo nome).',
-					value: skillHeaders[i]
+					value: skill.columnName
 				});
 			} else {
-				seen.set(key, i);
+				seen.set(key, skill.columnIndex);
 			}
 		}
 
-		// valida linha a linha
 		for (const r of rows ?? []) {
 			const rowIndex = r.row_index as number;
 			const studentName = String(r.student_name_raw ?? '').trim();
@@ -320,96 +457,121 @@ export const actions: Actions = {
 
 			const cells = (r.cells ?? {}) as Record<string, string>;
 
-			for (const skillName of skillHeaders) {
-				if (!skillName) continue;
+			for (const skill of selectedSkills) {
+				if (!skill.columnName) continue;
 
-				const raw = String(cells[skillName] ?? '').trim();
-				if (!raw) continue; // vazio = ok (não cria score)
+				const raw = String(cells[skill.columnName] ?? '').trim();
+				if (!raw) continue;
 
-				const n = toNumberMaybe(raw);
-				if (n === null) {
+				const normalizedSkillName = normalizeSkillName(skill.columnName);
+				const existingSkill = existingSkillsByName.get(normalizedSkillName) ?? null;
+
+				const scale = resolveEffectiveScale(ownedClass, existingSkill);
+
+				const validation = validateScoreInput(raw, scale, {
+					allowBlank: true
+				});
+
+				if (!validation.ok) {
+					const maybeNumeric = parseNumericInput(raw);
+
 					errors.push({
 						job_id: jobId,
 						row_index: rowIndex,
-						column_index: headers.indexOf(skillName),
-						column_name: skillName,
-						message: 'Nota inválida (não numérica).',
-						value: raw
-					});
-					continue;
-				}
-
-				if (n < scale.min || n > scale.max) {
-					errors.push({
-						job_id: jobId,
-						row_index: rowIndex,
-						column_index: headers.indexOf(skillName),
-						column_name: skillName,
-						message: `Fora do range (${scale.min}–${scale.max}).`,
-						value: raw
-					});
-				}
-
-				if (countDecimals(raw) > Number(scale.decimals ?? 0)) {
-					errors.push({
-						job_id: jobId,
-						row_index: rowIndex,
-						column_index: headers.indexOf(skillName),
-						column_name: skillName,
-						message: `Muitas casas decimais (máx ${scale.decimals}).`,
+						column_index: skill.columnIndex,
+						column_name: skill.columnName,
+						message:
+							maybeNumeric === null ? 'Nota inválida (não numérica).' : validation.message,
 						value: raw
 					});
 				}
 			}
 		}
 
-		// se tem erro, grava e bloqueia
 		if (errors.length > 0) {
 			const { error: insErr } = await locals.supabase.from('import_cell_errors').insert(errors);
-			if (insErr) return fail(400, { message: insErr.message });
+			if (insErr) {
+				return fail(400, { message: insErr.message });
+			}
 
-			// mantém status uploaded (não validated)
 			const { error: stErr } = await locals.supabase
 				.from('import_jobs')
 				.update({ status: 'uploaded' })
-				.eq('id', jobId);
+				.eq('id', jobId)
+				.eq('teacher_id', userId);
 
-			if (stErr) return fail(400, { message: stErr.message });
+			if (stErr) {
+				return fail(400, { message: stErr.message });
+			}
 
 			return {
 				success: false,
 				jobId,
-				scale,
+				scale: {
+					min: ownedClass.score_min,
+					max: ownedClass.score_max,
+					decimals: ownedClass.score_decimals
+				},
 				statsPreview: { rowsTotal: rows?.length ?? 0, errors: errors.length },
 				errors
 			};
 		}
 
-		// sem erros => validated
 		const { error: okErr } = await locals.supabase
 			.from('import_jobs')
 			.update({ status: 'validated' })
-			.eq('id', jobId);
+			.eq('id', jobId)
+			.eq('teacher_id', userId);
 
-		if (okErr) return fail(400, { message: okErr.message });
+		if (okErr) {
+			return fail(400, { message: okErr.message });
+		}
 
 		return {
 			success: true,
 			jobId,
-			scale,
+			scale: {
+				min: ownedClass.score_min,
+				max: ownedClass.score_max,
+				decimals: ownedClass.score_decimals
+			},
 			statsPreview: { rowsTotal: rows?.length ?? 0, errors: 0 },
 			errors: []
 		};
 	},
 
-	// 3) Apply => chama RPC (atômico)
 	apply: async ({ request, locals }) => {
 		const form = await request.formData();
 		const jobId = String(form.get('jobId') ?? '').trim();
-		if (!jobId) return fail(400, { message: 'jobId ausente.' });
+
+		if (!jobId) {
+			return fail(400, { message: 'jobId ausente.' });
+		}
+
+		const userId = await getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { message: 'Você precisa estar logado.' });
+		}
+
+		const job = await getOwnedImportJob(locals, jobId, userId);
+		if (!job) {
+			return fail(404, { message: 'Job não encontrado.' });
+		}
+
+		if (job.status !== 'validated') {
+			return fail(400, { message: 'O job precisa estar validado antes de aplicar.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, job.class_id, userId);
+		if (!ownedClass) {
+			return fail(404, { message: 'Turma não encontrada.' });
+		}
 
 		const { data, error } = await locals.supabase.rpc('apply_import_job', { p_job_id: jobId });
-		if (error) return fail(400, { message: error.message });
+
+		if (error) {
+			return fail(400, { message: error.message });
+		}
 
 		return { success: true, applied: data };
 	}

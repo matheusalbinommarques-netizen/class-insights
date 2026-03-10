@@ -33,8 +33,12 @@ export const load: ServerLoad = async ({ locals, url }) => {
 		throw redirect(302, '/login');
 	}
 
-	if (profile.role !== 'teacher' && profile.role !== 'coord') {
-		throw redirect(302, '/student');
+	if (profile.role !== 'student') {
+		if (profile.role === 'teacher' || profile.role === 'coord') {
+			throw redirect(302, '/teacher');
+		}
+
+		throw redirect(302, '/login');
 	}
 
 	return {
