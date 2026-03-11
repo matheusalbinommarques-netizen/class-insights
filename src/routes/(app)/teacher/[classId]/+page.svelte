@@ -69,7 +69,9 @@
 		strongSkill: null
 	};
 
-	$: pageTitle = data.class ? `${data.class.name} • Class Insights` : 'Turma não encontrada • Class Insights';
+	$: pageTitle = data.class
+		? `${data.class.name} • Class Insights`
+		: 'Turma não encontrada • Class Insights';
 
 	$: insightRows = data.insights?.rows ?? [];
 	$: insightKpis = data.insights?.kpis ?? emptyKpis;
@@ -99,14 +101,42 @@
 	let status: Record<string, 'idle' | 'saving' | 'saved' | 'error'> = {};
 	let errorMsg: Record<string, string> = {};
 
+	const formRefs: Record<string, HTMLFormElement | null> = {};
+	const inputRefs: Record<string, HTMLInputElement | null> = {};
+
 	const getScore = (studentId: string, skillId: string) => scores[keyOf(studentId, skillId)] ?? '';
 
 	const setStatus = (k: string, s: 'idle' | 'saving' | 'saved' | 'error', msg = '') => {
 		status = { ...status, [k]: s };
+
 		if (msg) {
 			errorMsg = { ...errorMsg, [k]: msg };
+		} else if (k in errorMsg) {
+			const next = { ...errorMsg };
+			delete next[k];
+			errorMsg = next;
 		}
 	};
+
+	function registerForm(node: HTMLFormElement, key: string) {
+		formRefs[key] = node;
+
+		return {
+			destroy() {
+				delete formRefs[key];
+			}
+		};
+	}
+
+	function registerInput(node: HTMLInputElement, key: string) {
+		inputRefs[key] = node;
+
+		return {
+			destroy() {
+				delete inputRefs[key];
+			}
+		};
+	}
 
 	const enhanceScore: SubmitFunction = ({ formData }) => {
 		const studentId = String(formData.get('studentId') ?? '');
@@ -145,9 +175,35 @@
 		};
 	};
 
+	const normalizeNumericString = (value: string) => {
+		const raw = String(value ?? '').trim().replace(/\s+/g, '');
+
+		if (!raw) return '';
+
+		const hasComma = raw.includes(',');
+		const hasDot = raw.includes('.');
+
+		if (hasComma && hasDot) {
+			const lastComma = raw.lastIndexOf(',');
+			const lastDot = raw.lastIndexOf('.');
+
+			if (lastComma > lastDot) {
+				return raw.replace(/\./g, '').replace(',', '.');
+			}
+
+			return raw.replace(/,/g, '');
+		}
+
+		if (hasComma) return raw.replace(',', '.');
+		return raw;
+	};
+
 	const toNumber = (v: string) => {
-		const n = Number(v.replace(',', '.'));
-		return Number.isNaN(n) ? null : n;
+		const normalized = normalizeNumericString(v);
+		if (!normalized) return null;
+
+		const n = Number(normalized);
+		return Number.isFinite(n) ? n : null;
 	};
 
 	const ratioFor = (skillId: string, raw: string) => {
@@ -188,6 +244,54 @@
 		if (avg === '-') return 'empty';
 		return cellTone(skillId, avg);
 	};
+
+	const averageByStudent = (studentId: string) => {
+		const values = data.skills
+			.map((skill) => toNumber(getScore(studentId, skill.id)))
+			.filter((v): v is number => v !== null);
+
+		if (values.length === 0) return '-';
+
+		const decimals = data.class?.score_decimals ?? 0;
+		const avg = values.reduce((a, b) => a + b, 0) / values.length;
+		return avg.toFixed(decimals);
+	};
+
+	const averageToneByStudent = (studentId: string) => {
+		const avg = averageByStudent(studentId);
+		if (avg === '-') return 'empty';
+
+		const cls = data.class;
+		if (!cls) return 'empty';
+
+		const normalizedAvg = normalizeNumericString(avg);
+		const numericAvg = Number(normalizedAvg);
+		if (!Number.isFinite(numericAvg)) return 'empty';
+
+		const range = cls.score_max - cls.score_min;
+		if (range <= 0) return 'empty';
+
+		const ratio = Math.max(0, Math.min(1, (numericAvg - cls.score_min) / range));
+		if (ratio < 0.4) return 'risk';
+		if (ratio < 0.7) return 'warn';
+		return 'good';
+	};
+
+	const overallGridAverage = () => {
+		const values = Object.values(scores)
+			.map((value) => toNumber(value))
+			.filter((v): v is number => v !== null);
+
+		if (values.length === 0) return '—';
+
+		const decimals = data.class?.score_decimals ?? 0;
+		const avg = values.reduce((a, b) => a + b, 0) / values.length;
+		return avg.toFixed(decimals);
+	};
+
+	$: totalGridCells = data.students.length * data.skills.length;
+	$: filledGridCells = Object.values(scores).filter((value) => toNumber(value) !== null).length;
+	$: gridCoverage = totalGridCells > 0 ? Math.round((filledGridCells / totalGridCells) * 100) : 0;
 
 	let editingScale: Record<string, boolean> = {};
 
@@ -292,6 +396,121 @@
 			copiedInviteCode = null;
 		}
 	}
+
+	const studentIndexOf = (studentId: string) => data.students.findIndex((s) => s.id === studentId);
+	const skillIndexOf = (skillId: string) => data.skills.findIndex((s) => s.id === skillId);
+
+	const focusCellAt = (studentIndex: number, skillIndex: number) => {
+		if (studentIndex < 0 || skillIndex < 0) return;
+		if (studentIndex >= data.students.length || skillIndex >= data.skills.length) return;
+
+		const student = data.students[studentIndex];
+		const skill = data.skills[skillIndex];
+		if (!student || !skill) return;
+
+		const key = keyOf(student.id, skill.id);
+		const input = inputRefs[key];
+		if (input) {
+			input.focus();
+			input.select();
+		}
+	};
+
+	const submitCell = (studentId: string, skillId: string) => {
+		const key = keyOf(studentId, skillId);
+		const form = formRefs[key];
+		if (form) form.requestSubmit();
+	};
+
+	const handleScoreInput = (studentId: string, skillId: string, value: string) => {
+		const key = keyOf(studentId, skillId);
+		scores = { ...scores, [key]: value };
+	};
+
+	const handleGridKeydown = (event: KeyboardEvent, studentId: string, skillId: string) => {
+		const studentIndex = studentIndexOf(studentId);
+		const skillIndex = skillIndexOf(skillId);
+
+		if (studentIndex === -1 || skillIndex === -1) return;
+
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			submitCell(studentId, skillId);
+
+			const nextStudentIndex = event.shiftKey ? studentIndex - 1 : studentIndex + 1;
+			focusCellAt(nextStudentIndex, skillIndex);
+			return;
+		}
+
+		if (event.key === 'ArrowRight') {
+			event.preventDefault();
+			focusCellAt(studentIndex, skillIndex + 1);
+			return;
+		}
+
+		if (event.key === 'ArrowLeft') {
+			event.preventDefault();
+			focusCellAt(studentIndex, skillIndex - 1);
+			return;
+		}
+
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			focusCellAt(studentIndex + 1, skillIndex);
+			return;
+		}
+
+		if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			focusCellAt(studentIndex - 1, skillIndex);
+		}
+	};
+
+	const handleGridPaste = (event: ClipboardEvent, studentId: string, skillId: string) => {
+		const raw = event.clipboardData?.getData('text') ?? '';
+		if (!raw.includes('\n') && !raw.includes('\t')) return;
+
+		event.preventDefault();
+
+		const startStudentIndex = studentIndexOf(studentId);
+		const startSkillIndex = skillIndexOf(skillId);
+
+		if (startStudentIndex === -1 || startSkillIndex === -1) return;
+
+		const matrix = raw
+			.replace(/\r/g, '')
+			.split('\n')
+			.filter((line) => line.length > 0)
+			.map((line) => line.split('\t'));
+
+		const nextScores = { ...scores };
+		const submitQueue: Array<{ studentId: string; skillId: string }> = [];
+
+		for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+			const targetStudent = data.students[startStudentIndex + rowOffset];
+			if (!targetStudent) break;
+
+			for (let colOffset = 0; colOffset < matrix[rowOffset].length; colOffset++) {
+				const targetSkill = data.skills[startSkillIndex + colOffset];
+				if (!targetSkill) break;
+
+				const pastedValue = String(matrix[rowOffset][colOffset] ?? '').trim();
+				const key = keyOf(targetStudent.id, targetSkill.id);
+
+				nextScores[key] = pastedValue;
+				setStatus(key, 'saving');
+				submitQueue.push({ studentId: targetStudent.id, skillId: targetSkill.id });
+			}
+		}
+
+		scores = nextScores;
+
+		queueMicrotask(() => {
+			for (const item of submitQueue) {
+				submitCell(item.studentId, item.skillId);
+			}
+		});
+	};
 </script>
 
 <svelte:head>
@@ -356,7 +575,7 @@
 
 				<div class="stats-grid">
 					<article class="stat-card">
-						<div class="stat-label">Média da turma</div>
+						<div class="stat-label">Média da turma (snapshot)</div>
 						<div class="stat-value">
 							{#if insightKpis.classAvg !== null}
 								{insightKpis.classAvg.toFixed(2)}
@@ -364,7 +583,7 @@
 								—
 							{/if}
 						</div>
-						<div class="stat-foot">Baseado no snapshot mais recente por skill</div>
+						<div class="stat-foot">Leitura histórica baseada no snapshot mais recente por skill</div>
 					</article>
 
 					<article class="stat-card">
@@ -383,6 +602,12 @@
 							latest avg: {formatMaybe(insightKpis.strongSkill?.latest_avg ?? null)}
 							• N: {insightKpis.strongSkill?.latest_n ?? '—'}
 						</div>
+					</article>
+
+					<article class="stat-card">
+						<div class="stat-label">Cobertura do lançamento</div>
+						<div class="stat-value">{gridCoverage}%</div>
+						<div class="stat-foot">{filledGridCells} de {totalGridCells} células preenchidas</div>
 					</article>
 				</div>
 
@@ -501,6 +726,12 @@
 					</div>
 				</div>
 
+				<div class="grid-helper">
+					<div class="helper-chip">Enter / Shift+Enter navega na coluna</div>
+					<div class="helper-chip">Setas navegam entre células</div>
+					<div class="helper-chip">Cole blocos com tab + quebra de linha</div>
+				</div>
+
 				{#if data.students.length === 0 || data.skills.length === 0}
 					<div class="empty-state">
 						<h3>Grid indisponível</h3>
@@ -521,6 +752,7 @@
 											</div>
 										</th>
 									{/each}
+									<th class="sticky-header avg-col">Média aluno</th>
 								</tr>
 							</thead>
 
@@ -535,6 +767,7 @@
 													method="POST"
 													action="?/upsertScore"
 													use:enhance={enhanceScore}
+													use:registerForm={keyOf(st.id, sk.id)}
 													class="score-form"
 												>
 													<input type="hidden" name="studentId" value={st.id} />
@@ -544,7 +777,16 @@
 														name="score"
 														inputmode="decimal"
 														value={getScore(st.id, sk.id)}
+														use:registerInput={keyOf(st.id, sk.id)}
 														class="score-input"
+														oninput={(e) =>
+															handleScoreInput(
+																st.id,
+																sk.id,
+																(e.target as HTMLInputElement).value
+															)}
+														onkeydown={(e) => handleGridKeydown(e, st.id, sk.id)}
+														onpaste={(e) => handleGridPaste(e, st.id, sk.id)}
 														onblur={(e) => {
 															const form = (e.target as HTMLInputElement).form;
 															if (form) form.requestSubmit();
@@ -570,6 +812,10 @@
 												{/if}
 											</td>
 										{/each}
+
+										<td class={`student-average tone-${averageToneByStudent(st.id)}`}>
+											{averageByStudent(st.id)}
+										</td>
 									</tr>
 								{/each}
 
@@ -580,6 +826,9 @@
 											{averageBySkill(sk.id)}
 										</td>
 									{/each}
+									<td class="average-cell overall-average-cell">
+										{overallGridAverage()}
+									</td>
 								</tr>
 							</tbody>
 						</table>
@@ -941,7 +1190,7 @@
 
 	.stats-grid {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0.9rem;
 		margin-bottom: 1rem;
 	}
@@ -1139,6 +1388,23 @@
 		background: rgba(34, 197, 94, 0.22);
 	}
 
+	.grid-helper {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+		margin-bottom: 1rem;
+	}
+
+	.helper-chip {
+		padding: 0.55rem 0.8rem;
+		border-radius: 999px;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		color: #475569;
+		font-size: 0.82rem;
+		font-weight: 600;
+	}
+
 	.sticky-header {
 		position: sticky;
 		top: 0;
@@ -1165,6 +1431,10 @@
 
 	.skill-col {
 		min-width: 155px;
+	}
+
+	.avg-col {
+		min-width: 140px;
 	}
 
 	.col-head {
@@ -1238,6 +1508,15 @@
 
 	.average-cell {
 		color: #0f172a;
+	}
+
+	.student-average {
+		font-weight: 800;
+		color: #0f172a;
+	}
+
+	.overall-average-cell {
+		font-weight: 800;
 	}
 
 	.tone-risk {
@@ -1519,7 +1798,8 @@
 			width: 100%;
 		}
 
-		.score-cell {
+		.score-cell,
+		.avg-col {
 			min-width: 140px;
 		}
 	}

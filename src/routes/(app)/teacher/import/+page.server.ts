@@ -2,6 +2,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 import {
 	normalizeSkillName,
+	normalizeTextForMatch,
 	parseNumericInput,
 	resolveEffectiveScale,
 	validateScoreInput
@@ -36,6 +37,23 @@ type ExistingSkill = {
 	score_decimals: number | null;
 };
 
+type ImportRowRecord = {
+	row_index: number;
+	student_name_raw: string | null;
+	cells: Record<string, string> | null;
+};
+
+type ImportCellIssue = {
+	job_id: string;
+	row_index: number;
+	column_index: number;
+	column_name: string;
+	message: string;
+	value?: string;
+};
+
+const MAX_PREVIEW_ROWS = 20;
+
 async function getAuthenticatedUserId(locals: App.Locals): Promise<string | null> {
 	const {
 		data: { user },
@@ -56,7 +74,7 @@ async function getOwnedClass(
 		.select('id, name, score_min, score_max, score_decimals')
 		.eq('id', classId)
 		.eq('teacher_id', userId)
-		.single();
+		.maybeSingle();
 
 	if (error || !data) return null;
 
@@ -79,7 +97,7 @@ async function getOwnedImportJob(
 		.select('id, class_id, headers, status')
 		.eq('id', jobId)
 		.eq('teacher_id', userId)
-		.single();
+		.maybeSingle();
 
 	if (error || !data) return null;
 
@@ -99,6 +117,16 @@ function detectDelimiter(line: string): ',' | ';' | '\t' {
 	if (semi >= comma && semi >= tab) return ';';
 	if (tab >= comma && tab >= semi) return '\t';
 	return ',';
+}
+
+function normalizeRowLength(row: string[], targetLength: number): string[] {
+	if (row.length === targetLength) return row;
+
+	if (row.length > targetLength) {
+		return row.slice(0, targetLength);
+	}
+
+	return [...row, ...Array.from({ length: targetLength - row.length }, () => '')];
 }
 
 function parseCSV(text: string): ParsedCSV {
@@ -145,9 +173,20 @@ function parseCSV(text: string): ParsedCSV {
 	};
 
 	const headers = parseLine(lines[0]).map((h) => h.trim());
-	const rows = lines.slice(1).map(parseLine);
+	const rows = lines
+		.slice(1)
+		.map(parseLine)
+		.map((row) => normalizeRowLength(row, headers.length));
 
 	return { headers, rows, delimiter };
+}
+
+function uniqueSortedNumbers(values: number[]): number[] {
+	return Array.from(new Set(values)).sort((a, b) => a - b);
+}
+
+function countNonEmptyHeaders(headers: string[]): number {
+	return headers.filter((h) => String(h ?? '').trim().length > 0).length;
 }
 
 async function getExistingSkillsByClass(
@@ -179,6 +218,21 @@ async function getExistingSkillsByClass(
 	}
 
 	return byNormalizedName;
+}
+
+async function cleanupImportJob(locals: App.Locals, jobId: string, userId: string) {
+	try {
+		await locals.supabase.from('import_jobs').delete().eq('id', jobId).eq('teacher_id', userId);
+	} catch {
+		// best-effort cleanup
+	}
+}
+
+function hasAnySelectedSkillValue(
+	cells: Record<string, string>,
+	selectedSkills: Array<{ columnIndex: number; columnName: string }>
+): boolean {
+	return selectedSkills.some((skill) => String(cells[skill.columnName] ?? '').trim().length > 0);
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -216,6 +270,10 @@ export const actions: Actions = {
 			return fail(400, { message: 'Selecione um arquivo .csv.' });
 		}
 
+		if (file.size === 0) {
+			return fail(400, { message: 'O arquivo enviado está vazio.' });
+		}
+
 		const userId = await getAuthenticatedUserId(locals);
 		if (!userId) {
 			return fail(401, { message: 'Você precisa estar logado.' });
@@ -229,10 +287,14 @@ export const actions: Actions = {
 		const text = await file.text();
 		const parsed = parseCSV(text);
 
-		if (parsed.headers.length < 2) {
+		if (countNonEmptyHeaders(parsed.headers) < 2) {
 			return fail(400, {
-				message: 'CSV inválido. Precisa ter cabeçalho e pelo menos 2 colunas (Aluno + Skill).'
+				message: 'CSV inválido. Precisa ter cabeçalho e pelo menos 2 colunas úteis.'
 			});
+		}
+
+		if (parsed.rows.length === 0) {
+			return fail(400, { message: 'CSV sem linhas de dados.' });
 		}
 
 		const guessIndex = parsed.headers.findIndex((h) => /aluno|student|nome/i.test(h));
@@ -262,6 +324,7 @@ export const actions: Actions = {
 			if (!studentName) skippedNoStudent++;
 
 			const cells: Record<string, string> = {};
+
 			for (let i = 0; i < parsed.headers.length; i++) {
 				if (i === studentGuess) continue;
 
@@ -281,6 +344,7 @@ export const actions: Actions = {
 
 		const { error: rowsErr } = await locals.supabase.from('import_rows').insert(staged);
 		if (rowsErr) {
+			await cleanupImportJob(locals, job.id, userId);
 			return fail(400, { message: rowsErr.message });
 		}
 
@@ -294,7 +358,7 @@ export const actions: Actions = {
 			return fail(400, { message: updErr.message });
 		}
 
-		const preview = parsed.rows.slice(0, 20);
+		const preview = parsed.rows.slice(0, MAX_PREVIEW_ROWS);
 
 		return {
 			success: true,
@@ -312,16 +376,18 @@ export const actions: Actions = {
 		const jobId = String(form.get('jobId') ?? '').trim();
 		const studentColIndex = Number(String(form.get('studentColIndex') ?? '0'));
 
-		const skillColIndices = form
-			.getAll('skillColIndex')
-			.map((v) => Number(String(v)))
-			.filter((n) => !Number.isNaN(n));
+		const skillColIndices = uniqueSortedNumbers(
+			form
+				.getAll('skillColIndex')
+				.map((v) => Number(String(v)))
+				.filter((n) => !Number.isNaN(n))
+		);
 
 		if (!jobId) {
 			return fail(400, { message: 'jobId ausente. Gere o preview novamente.' });
 		}
 
-		if (Number.isNaN(studentColIndex)) {
+		if (!Number.isInteger(studentColIndex)) {
 			return fail(400, { message: 'Coluna do aluno inválida.' });
 		}
 
@@ -398,14 +464,8 @@ export const actions: Actions = {
 			columnName: String(headers[columnIndex] ?? '').trim()
 		}));
 
-		const errors: {
-			job_id: string;
-			row_index: number;
-			column_index: number;
-			column_name: string;
-			message: string;
-			value?: string;
-		}[] = [];
+		const errors: ImportCellIssue[] = [];
+		const warnings: ImportCellIssue[] = [];
 
 		const emptySkillHeaders = selectedSkills.filter((s) => !s.columnName);
 
@@ -420,12 +480,12 @@ export const actions: Actions = {
 			});
 		}
 
-		const seen = new Map<string, number>();
+		const seenHeaders = new Map<string, number>();
 		for (const skill of selectedSkills) {
 			const key = normalizeSkillName(skill.columnName);
 			if (!key) continue;
 
-			if (seen.has(key)) {
+			if (seenHeaders.has(key)) {
 				errors.push({
 					job_id: jobId,
 					row_index: 0,
@@ -435,12 +495,25 @@ export const actions: Actions = {
 					value: skill.columnName
 				});
 			} else {
-				seen.set(key, skill.columnIndex);
+				seenHeaders.set(key, skill.columnIndex);
+			}
+
+			if (!existingSkillsByName.has(key)) {
+				warnings.push({
+					job_id: jobId,
+					row_index: 0,
+					column_index: skill.columnIndex,
+					column_name: skill.columnName,
+					message: 'Skill nova: será criada automaticamente no apply.',
+					value: skill.columnName
+				});
 			}
 		}
 
-		for (const r of rows ?? []) {
-			const rowIndex = r.row_index as number;
+		const seenStudents = new Map<string, number[]>();
+
+		for (const r of (rows ?? []) as ImportRowRecord[]) {
+			const rowIndex = r.row_index;
 			const studentName = String(r.student_name_raw ?? '').trim();
 
 			if (!studentName) {
@@ -455,7 +528,25 @@ export const actions: Actions = {
 				continue;
 			}
 
+			const normalizedStudent = normalizeTextForMatch(studentName);
+			if (normalizedStudent) {
+				const existing = seenStudents.get(normalizedStudent) ?? [];
+				existing.push(rowIndex);
+				seenStudents.set(normalizedStudent, existing);
+			}
+
 			const cells = (r.cells ?? {}) as Record<string, string>;
+
+			if (!hasAnySelectedSkillValue(cells, selectedSkills)) {
+				warnings.push({
+					job_id: jobId,
+					row_index: rowIndex,
+					column_index: studentColIndex,
+					column_name: headers[studentColIndex] ?? '(aluno)',
+					message: 'Linha sem nenhuma nota preenchida nas skills selecionadas.',
+					value: studentName
+				});
+			}
 
 			for (const skill of selectedSkills) {
 				if (!skill.columnName) continue;
@@ -465,7 +556,6 @@ export const actions: Actions = {
 
 				const normalizedSkillName = normalizeSkillName(skill.columnName);
 				const existingSkill = existingSkillsByName.get(normalizedSkillName) ?? null;
-
 				const scale = resolveEffectiveScale(ownedClass, existingSkill);
 
 				const validation = validateScoreInput(raw, scale, {
@@ -483,6 +573,21 @@ export const actions: Actions = {
 						message:
 							maybeNumeric === null ? 'Nota inválida (não numérica).' : validation.message,
 						value: raw
+					});
+				}
+			}
+		}
+
+		for (const [studentNameKey, rowIndexes] of seenStudents.entries()) {
+			if (rowIndexes.length > 1) {
+				for (const rowIndex of rowIndexes) {
+					warnings.push({
+						job_id: jobId,
+						row_index: rowIndex,
+						column_index: studentColIndex,
+						column_name: headers[studentColIndex] ?? '(aluno)',
+						message: 'Aluno repetido no mesmo CSV. Verifique se deve consolidar ou manter linhas separadas.',
+						value: studentNameKey
 					});
 				}
 			}
@@ -512,8 +617,13 @@ export const actions: Actions = {
 					max: ownedClass.score_max,
 					decimals: ownedClass.score_decimals
 				},
-				statsPreview: { rowsTotal: rows?.length ?? 0, errors: errors.length },
-				errors
+				statsPreview: {
+					rowsTotal: rows?.length ?? 0,
+					errors: errors.length,
+					warnings: warnings.length
+				},
+				errors,
+				warnings
 			};
 		}
 
@@ -535,8 +645,13 @@ export const actions: Actions = {
 				max: ownedClass.score_max,
 				decimals: ownedClass.score_decimals
 			},
-			statsPreview: { rowsTotal: rows?.length ?? 0, errors: 0 },
-			errors: []
+			statsPreview: {
+				rowsTotal: rows?.length ?? 0,
+				errors: 0,
+				warnings: warnings.length
+			},
+			errors: [],
+			warnings
 		};
 	},
 
@@ -567,12 +682,17 @@ export const actions: Actions = {
 			return fail(404, { message: 'Turma não encontrada.' });
 		}
 
-		const { data, error } = await locals.supabase.rpc('apply_import_job', { p_job_id: jobId });
+		const { data, error } = await locals.supabase.rpc('apply_import_job', {
+			p_job_id: jobId
+		});
 
 		if (error) {
 			return fail(400, { message: error.message });
 		}
 
-		return { success: true, applied: data };
+		return {
+			success: true,
+			applied: data
+		};
 	}
 };

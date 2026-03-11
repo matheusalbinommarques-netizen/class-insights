@@ -1,42 +1,78 @@
-# sv
+# Class Insights
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Plataforma educacional focada em transformar notas em **insights pedagógicos acionáveis**, com dois portais principais:
 
-## Creating a project
+- **Professor/Coordenação**: gestão de turmas, skills, notas, importação via CSV, snapshots e cockpit de acompanhamento.
+- **Aluno**: visualização de progresso por skill, resumo de evolução e feedback mais claro sobre pontos fortes e pontos de atenção.
 
-If you're seeing this, you've probably already done this step. Congrats!
+---
 
-```sh
-# create a new project
-npx sv create my-app
-```
+## Status do projeto
 
-To recreate this project with the same configuration:
+**Fase atual:** MVP funcional do núcleo professor, base real do portal do aluno e pipeline de importação com staging.
 
-```sh
-# recreate this project
-npx sv@0.12.4 create --template minimal --types ts --add prettier eslint --install npm .
-```
+### Já existe
+- Autenticação com Supabase
+- Separação por persona (`teacher`, `student`, `coord`)
+- Dashboard do professor
+- Gestão de turmas
+- Gestão de alunos e skills
+- Grid operacional de notas
+- Escala padrão por turma com override por skill
+- Importação CSV com preview, staging, validação e apply via RPC
+- Snapshots de evolução
+- Portal do aluno com dados reais de skills e progresso
 
-## Developing
+### Em evolução
+- Heatmap e BI prescritivo do professor
+- Skill tree visual do aluno
+- Dashboard da coordenação
+- Intervenções pedagógicas mínimas
+- Hardening final para piloto
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+---
 
-```sh
-npm run dev
+## Objetivo do produto
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
+Instituições de ensino costumam trabalhar com dados frios: notas mostram o resultado, mas não explicam o caminho. O Class Insights foi desenhado para fechar o ciclo:
 
-## Building
+**Dado → Insight → Intervenção → Resultado**
 
-To create a production version of your app:
+O foco do MVP é reduzir fricção operacional para o professor e aumentar a clareza do progresso para o aluno.
 
-```sh
-npm run build
-```
+---
 
-You can preview the production build with `npm run preview`.
+## Stack
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+- **Front-end / App:** SvelteKit + TypeScript
+- **Build tool:** Vite
+- **Lint / Format:** ESLint + Prettier
+- **Backend / Auth / DB:** Supabase
+- **SSR Auth:** `@supabase/ssr`
+- **Client Auth / DB:** `@supabase/supabase-js`
+
+---
+
+## Estrutura principal
+
+```txt
+src/
+  lib/
+    config/
+    server/
+    services/
+    styles/
+    types/
+  routes/
+    +layout.svelte
+    +page.svelte
+    login/
+    register/
+      student/
+      teacher/
+    (app)/
+      teacher/
+        [classId]/
+        import/
+      student/
+        skills/

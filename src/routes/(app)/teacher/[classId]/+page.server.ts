@@ -23,8 +23,59 @@ type OwnedClass = {
 	score_decimals: number;
 };
 
+type StudentRow = {
+	id: string;
+	name: string;
+	invite_code: string | null;
+	created_at?: string;
+};
+
+type SkillRow = {
+	id: string;
+	name: string;
+	created_at?: string;
+	score_min: number | null;
+	score_max: number | null;
+	score_decimals: number | null;
+};
+
+type ScoreRow = {
+	student_id: string;
+	skill_id: string;
+	score: number;
+};
+
+type OwnedSkill = {
+	id: string;
+	class_id: string;
+	score_min: number | null;
+	score_max: number | null;
+	score_decimals: number | null;
+};
+
 function getAuthenticatedUserId(locals: App.Locals): string | null {
 	return locals.session?.user?.id ?? null;
+}
+
+function todayUTCDateString(): string {
+	return new Date().toISOString().slice(0, 10);
+}
+
+function generateInviteCode(): string {
+	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
+}
+
+function parseDecimalInput(raw: FormDataEntryValue | null): number {
+	const normalized = String(raw ?? '')
+		.trim()
+		.replace(/\s+/g, '')
+		.replace(',', '.');
+
+	return Number(normalized);
+}
+
+function parseIntegerInput(raw: FormDataEntryValue | null): number {
+	return Number(String(raw ?? '').trim());
 }
 
 async function getOwnedClass(
@@ -50,12 +101,44 @@ async function getOwnedClass(
 	};
 }
 
-function todayUTCDateString(): string {
-	return new Date().toISOString().slice(0, 10);
+async function getOwnedStudent(
+	locals: App.Locals,
+	classId: string,
+	studentId: string
+): Promise<{ id: string } | null> {
+	const { data, error } = await locals.supabase
+		.from('students')
+		.select('id')
+		.eq('id', studentId)
+		.eq('class_id', classId)
+		.maybeSingle();
+
+	if (error || !data) return null;
+
+	return { id: data.id };
 }
 
-function generateInviteCode(): string {
-	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
+async function getOwnedSkill(
+	locals: App.Locals,
+	classId: string,
+	skillId: string
+): Promise<OwnedSkill | null> {
+	const { data, error } = await locals.supabase
+		.from('skills')
+		.select('id, class_id, score_min, score_max, score_decimals')
+		.eq('id', skillId)
+		.eq('class_id', classId)
+		.maybeSingle();
+
+	if (error || !data) return null;
+
+	return {
+		id: data.id,
+		class_id: data.class_id,
+		score_min: data.score_min,
+		score_max: data.score_max,
+		score_decimals: data.score_decimals
+	};
 }
 
 export const load: PageServerLoad = async ({ params, locals }) => {
@@ -63,12 +146,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	const today = todayUTCDateString();
 
 	const userId = getAuthenticatedUserId(locals);
+
 	if (!userId) {
 		return {
 			class: null,
-			students: [],
-			skills: [],
-			scores: [],
+			students: [] as StudentRow[],
+			skills: [] as SkillRow[],
+			scores: [] as ScoreRow[],
 			insights: null,
 			hasTodaySnapshot: false,
 			today
@@ -80,90 +164,95 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!classData) {
 		return {
 			class: null,
-			students: [],
-			skills: [],
-			scores: [],
+			students: [] as StudentRow[],
+			skills: [] as SkillRow[],
+			scores: [] as ScoreRow[],
 			insights: null,
 			hasTodaySnapshot: false,
 			today
 		};
 	}
 
-	const { data: students } = await locals.supabase
-		.from('students')
-		.select('id, name, invite_code, created_at')
-		.eq('class_id', classId)
-		.order('created_at', { ascending: true });
+	const [{ data: studentsData }, { data: skillsData }, { data: snapshotData, error: snapshotError }] =
+		await Promise.all([
+			locals.supabase
+				.from('students')
+				.select('id, name, invite_code, created_at')
+				.eq('class_id', classData.id)
+				.order('created_at', { ascending: true }),
+			locals.supabase
+				.from('skills')
+				.select('id, name, created_at, score_min, score_max, score_decimals')
+				.eq('class_id', classData.id)
+				.order('created_at', { ascending: true }),
+			locals.supabase.rpc('get_baseline_latest_snapshots', {
+				p_class_id: classData.id
+			})
+		]);
 
-	const { data: skills } = await locals.supabase
-		.from('skills')
-		.select('id, name, created_at, score_min, score_max, score_decimals')
-		.eq('class_id', classId)
-		.order('created_at', { ascending: true });
+	const students = (studentsData ?? []) as StudentRow[];
+	const skills = (skillsData ?? []) as SkillRow[];
 
-	const studentIds = (students ?? []).map((s) => s.id);
+	const studentIds = students.map((student) => student.id);
 
-	let scores: { student_id: string; skill_id: string; score: number }[] = [];
+	let scores: ScoreRow[] = [];
 	if (studentIds.length > 0) {
-		const { data: sc } = await locals.supabase
+		const { data: scoreData } = await locals.supabase
 			.from('student_skill_scores')
 			.select('student_id, skill_id, score')
 			.in('student_id', studentIds);
 
-		scores = sc ?? [];
+		scores = (scoreData ?? []) as ScoreRow[];
 	}
 
-	const { data: bl, error: blErr } = await locals.supabase.rpc(
-		'get_baseline_latest_snapshots',
-		{
-			p_class_id: classId
-		}
-	);
-
 	const insightsRows: BaselineLatestSnapshotRow[] =
-		(bl as BaselineLatestSnapshotRow[] | null)?.map((r) => ({
-			skill_id: r.skill_id,
-			skill_name: r.skill_name,
-			baseline_date: r.baseline_date,
-			baseline_n: r.baseline_n ?? null,
-			baseline_avg: r.baseline_avg ?? null,
-			baseline_median: r.baseline_median ?? null,
-			latest_date: r.latest_date,
-			latest_n: r.latest_n ?? null,
-			latest_avg: r.latest_avg ?? null,
-			latest_median: r.latest_median ?? null
+		(snapshotData as BaselineLatestSnapshotRow[] | null)?.map((row) => ({
+			skill_id: row.skill_id,
+			skill_name: row.skill_name,
+			baseline_date: row.baseline_date,
+			baseline_n: row.baseline_n ?? null,
+			baseline_avg: row.baseline_avg ?? null,
+			baseline_median: row.baseline_median ?? null,
+			latest_date: row.latest_date,
+			latest_n: row.latest_n ?? null,
+			latest_avg: row.latest_avg ?? null,
+			latest_median: row.latest_median ?? null
 		})) ?? [];
 
-	const hasTodaySnapshot = insightsRows.some((r) => r.latest_date === today);
+	const hasTodaySnapshot = insightsRows.some((row) => row.latest_date === today);
 
 	const latestAvgs = insightsRows
-		.map((r) => r.latest_avg)
-		.filter((v): v is number => typeof v === 'number');
+		.map((row) => row.latest_avg)
+		.filter((value): value is number => typeof value === 'number');
 
 	const classAvg = latestAvgs.length
-		? latestAvgs.reduce((a, b) => a + b, 0) / latestAvgs.length
+		? latestAvgs.reduce((sum, value) => sum + value, 0) / latestAvgs.length
 		: null;
 
 	const criticalSkill =
 		insightsRows
-			.filter((r) => typeof r.latest_avg === 'number')
+			.filter((row) => typeof row.latest_avg === 'number')
 			.sort((a, b) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))[0] ?? null;
 
 	const strongSkill =
 		insightsRows
-			.filter((r) => typeof r.latest_avg === 'number')
+			.filter((row) => typeof row.latest_avg === 'number')
 			.sort((a, b) => (b.latest_avg ?? 0) - (a.latest_avg ?? 0))[0] ?? null;
 
 	return {
 		class: classData,
-		students: students ?? [],
-		skills: skills ?? [],
+		students,
+		skills,
 		scores,
-		insights: blErr
+		insights: snapshotError
 			? null
 			: {
 					rows: insightsRows,
-					kpis: { classAvg, criticalSkill, strongSkill }
+					kpis: {
+						classAvg,
+						criticalSkill,
+						strongSkill
+					}
 				},
 		hasTodaySnapshot,
 		today
@@ -268,10 +357,14 @@ export const actions: Actions = {
 	updateSkillScale: async ({ request, params, locals }) => {
 		const form = await request.formData();
 		const skillId = String(form.get('skillId') ?? '').trim();
-		const mode = String(form.get('mode') ?? 'inherit');
+		const mode = String(form.get('mode') ?? 'inherit').trim();
 
 		if (!skillId) {
 			return fail(400, { message: 'Skill inválida.' });
+		}
+
+		if (mode !== 'inherit' && mode !== 'custom') {
+			return fail(400, { message: 'Modo de escala inválido.' });
 		}
 
 		const userId = getAuthenticatedUserId(locals);
@@ -287,7 +380,11 @@ export const actions: Actions = {
 		if (mode === 'inherit') {
 			const { error } = await locals.supabase
 				.from('skills')
-				.update({ score_min: null, score_max: null, score_decimals: null })
+				.update({
+					score_min: null,
+					score_max: null,
+					score_decimals: null
+				})
 				.eq('id', skillId)
 				.eq('class_id', ownedClass.id);
 
@@ -298,9 +395,9 @@ export const actions: Actions = {
 			return { success: true };
 		}
 
-		const scoreMin = Number(String(form.get('score_min') ?? '').replace(',', '.'));
-		const scoreMax = Number(String(form.get('score_max') ?? '').replace(',', '.'));
-		const decimals = Number(String(form.get('score_decimals') ?? '0'));
+		const scoreMin = parseDecimalInput(form.get('score_min'));
+		const scoreMax = parseDecimalInput(form.get('score_max'));
+		const decimals = parseIntegerInput(form.get('score_decimals'));
 
 		if (!Number.isFinite(scoreMin) || !Number.isFinite(scoreMax)) {
 			return fail(400, { message: 'Min/Max inválidos.' });
@@ -310,13 +407,17 @@ export const actions: Actions = {
 			return fail(400, { message: 'Max precisa ser maior que Min.' });
 		}
 
-		if (!Number.isFinite(decimals) || decimals < 0 || decimals > 6) {
+		if (!Number.isInteger(decimals) || decimals < 0 || decimals > 6) {
 			return fail(400, { message: 'Decimais inválidos.' });
 		}
 
 		const { error } = await locals.supabase
 			.from('skills')
-			.update({ score_min: scoreMin, score_max: scoreMax, score_decimals: decimals })
+			.update({
+				score_min: scoreMin,
+				score_max: scoreMax,
+				score_decimals: decimals
+			})
 			.eq('id', skillId)
 			.eq('class_id', ownedClass.id);
 
@@ -347,33 +448,18 @@ export const actions: Actions = {
 			return fail(404, { message: 'Turma não encontrada.' });
 		}
 
-		const { data: student, error: studentErr } = await locals.supabase
-			.from('students')
-			.select('id')
-			.eq('id', studentId)
-			.eq('class_id', ownedClass.id)
-			.maybeSingle();
+		const [student, skill] = await Promise.all([
+			getOwnedStudent(locals, ownedClass.id, studentId),
+			getOwnedSkill(locals, ownedClass.id, skillId)
+		]);
 
-		if (studentErr || !student) {
-			return fail(400, { message: studentErr?.message ?? 'Aluno não encontrado.' });
+		if (!student) {
+			return fail(400, { message: 'Aluno não encontrado.' });
 		}
 
-		const { data: skill, error: skillErr } = await locals.supabase
-			.from('skills')
-			.select('id, class_id, score_min, score_max, score_decimals')
-			.eq('id', skillId)
-			.eq('class_id', ownedClass.id)
-			.maybeSingle();
-
-		if (skillErr || !skill) {
-			return fail(400, { message: skillErr?.message ?? 'Skill não encontrada.' });
+		if (!skill) {
+			return fail(400, { message: 'Skill não encontrada.' });
 		}
-
-		const scale = resolveEffectiveScale(ownedClass, skill);
-
-		const validation = validateScoreInput(rawScore, scale, {
-			allowBlank: true
-		});
 
 		if (!rawScore) {
 			const { error } = await locals.supabase
@@ -388,6 +474,12 @@ export const actions: Actions = {
 
 			return { success: true };
 		}
+
+		const scale = resolveEffectiveScale(ownedClass, skill);
+
+		const validation = validateScoreInput(rawScore, scale, {
+			allowBlank: true
+		});
 
 		if (!validation.ok) {
 			return fail(400, { message: validation.message });
@@ -425,6 +517,9 @@ export const actions: Actions = {
 			return fail(400, { message: error.message });
 		}
 
-		return { success: true, snapshot: data };
+		return {
+			success: true,
+			snapshot: data
+		};
 	}
 };

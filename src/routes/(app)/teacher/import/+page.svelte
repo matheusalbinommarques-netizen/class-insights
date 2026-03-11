@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
 	type ClassOption = {
 		id: string;
@@ -9,7 +11,7 @@
 		score_decimals: number;
 	};
 
-	type ValidationError = {
+	type ValidationIssue = {
 		job_id: string;
 		row_index: number;
 		column_index: number;
@@ -41,8 +43,10 @@
 		statsPreview?: {
 			rowsTotal: number;
 			errors: number;
+			warnings?: number;
 		};
-		errors?: ValidationError[];
+		errors?: ValidationIssue[];
+		warnings?: ValidationIssue[];
 		applied?: ApplyResult;
 	};
 
@@ -54,9 +58,20 @@
 		delimiter?: ',' | ';' | '\t';
 	};
 
+	type MappingState = {
+		studentColIndex: number;
+		selectedSkillCols: number[];
+	};
+
+	type ColumnRole = 'student' | 'skill' | 'ignored';
+	type ValidationStatus = 'idle' | 'error' | 'warning' | 'success';
+
 	export let data: {
 		classes: ClassOption[];
 	};
+
+	const PREVIEW_STORAGE_KEY = 'classInsights.import.previewState';
+	const MAPPING_STORAGE_PREFIX = 'classInsights.import.mapping';
 
 	$: formState = (($page.form ?? null) as FormState | null);
 
@@ -73,6 +88,7 @@
 	};
 
 	let initializedForJobId = '';
+	let hydratedFromStorage = false;
 
 	$: if (formState?.headers?.length && formState.jobId) {
 		previewState = {
@@ -82,25 +98,78 @@
 			studentGuess: formState.studentGuess ?? 0,
 			delimiter: formState.delimiter
 		};
+		persistPreviewState(previewState);
 	}
 
-	$: if (previewState.jobId && initializedForJobId !== previewState.jobId) {
-		studentColIndex = previewState.studentGuess;
+	onMount(() => {
+		if (!browser) return;
 
-		const next = new Set<number>();
-		for (let i = 0; i < previewState.headers.length; i++) {
-			if (i !== previewState.studentGuess) next.add(i);
+		const storedPreview = readPreviewStateFromStorage();
+		if (storedPreview && !previewState.jobId) {
+			previewState = storedPreview;
 		}
 
-		selectedSkillCols = next;
+		hydratedFromStorage = true;
+	});
+
+	$: if (previewState.jobId && initializedForJobId !== previewState.jobId) {
+		const restoredMapping = readMappingStateFromStorage(previewState.jobId);
+
+		if (restoredMapping) {
+			studentColIndex = restoredMapping.studentColIndex;
+
+			const next = new Set<number>();
+			for (const col of restoredMapping.selectedSkillCols) {
+				if (
+					col >= 0 &&
+					col < previewState.headers.length &&
+					col !== restoredMapping.studentColIndex
+				) {
+					next.add(col);
+				}
+			}
+
+			selectedSkillCols = next;
+		} else {
+			studentColIndex = previewState.studentGuess;
+
+			const next = new Set<number>();
+			for (let i = 0; i < previewState.headers.length; i++) {
+				if (i !== previewState.studentGuess) next.add(i);
+			}
+
+			selectedSkillCols = next;
+		}
+
 		initializedForJobId = previewState.jobId;
 	}
 
+	$: if (browser && hydratedFromStorage && previewState.jobId) {
+		persistMappingState(previewState.jobId, {
+			studentColIndex,
+			selectedSkillCols: Array.from(selectedSkillCols).sort((a, b) => a - b)
+		});
+	}
+
 	const toggleSkill = (i: number) => {
+		if (i === studentColIndex) return;
+
 		const next = new Set(selectedSkillCols);
 		if (next.has(i)) next.delete(i);
 		else next.add(i);
 		selectedSkillCols = next;
+	};
+
+	const selectAllSkills = () => {
+		const next = new Set<number>();
+		for (let i = 0; i < headers.length; i++) {
+			if (i !== studentColIndex) next.add(i);
+		}
+		selectedSkillCols = next;
+	};
+
+	const clearAllSkills = () => {
+		selectedSkillCols = new Set<number>();
 	};
 
 	const delimiterLabel = (delimiter: ',' | ';' | '\t' | undefined) => {
@@ -109,17 +178,142 @@
 		return 'vírgula (,)';
 	};
 
+	const columnRole = (index: number): ColumnRole => {
+		if (index === studentColIndex) return 'student';
+		if (selectedSkillCols.has(index)) return 'skill';
+		return 'ignored';
+	};
+
+	const roleLabel = (role: ColumnRole) => {
+		if (role === 'student') return 'Aluno';
+		if (role === 'skill') return 'Skill';
+		return 'Ignorada';
+	};
+
+	const previewCellClass = (index: number) => {
+		const role = columnRole(index);
+		if (role === 'student') return 'col-student';
+		if (role === 'skill') return 'col-skill';
+		return 'col-ignored';
+	};
+
+	const mappingKeyForJob = (jobId: string) => `${MAPPING_STORAGE_PREFIX}:${jobId}`;
+
+	function persistPreviewState(state: PreviewState) {
+		if (!browser || !state.jobId) return;
+
+		try {
+			sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(state));
+		} catch {}
+	}
+
+	function readPreviewStateFromStorage(): PreviewState | null {
+		if (!browser) return null;
+
+		try {
+			const raw = sessionStorage.getItem(PREVIEW_STORAGE_KEY);
+			if (!raw) return null;
+
+			const parsed = JSON.parse(raw) as PreviewState;
+
+			if (!parsed?.jobId || !Array.isArray(parsed.headers) || !Array.isArray(parsed.preview)) {
+				return null;
+			}
+
+			return parsed;
+		} catch {
+			return null;
+		}
+	}
+
+	function persistMappingState(jobId: string, state: MappingState) {
+		if (!browser || !jobId) return;
+
+		try {
+			sessionStorage.setItem(mappingKeyForJob(jobId), JSON.stringify(state));
+		} catch {}
+	}
+
+	function readMappingStateFromStorage(jobId: string): MappingState | null {
+		if (!browser || !jobId) return null;
+
+		try {
+			const raw = sessionStorage.getItem(mappingKeyForJob(jobId));
+			if (!raw) return null;
+
+			const parsed = JSON.parse(raw) as MappingState;
+
+			if (
+				typeof parsed?.studentColIndex !== 'number' ||
+				!Array.isArray(parsed?.selectedSkillCols)
+			) {
+				return null;
+			}
+
+			return parsed;
+		} catch {
+			return null;
+		}
+	}
+
+	const classLabelById = (classId: string) => {
+		const found = data.classes.find((c) => c.id === classId);
+		if (!found) return 'Turma selecionada';
+		return `${found.name} (${found.score_min}–${found.score_max}, dec ${found.score_decimals})`;
+	};
+
+	const validationStatusLabel = (status: ValidationStatus) => {
+		if (status === 'error') return 'ERR';
+		if (status === 'warning') return 'WARN';
+		if (status === 'success') return 'OK';
+		return '—';
+	};
+
 	$: headers = previewState.headers;
 	$: preview = previewState.preview;
 	$: activeJobId = previewState.jobId;
 
 	$: validationErrors = formState?.errors ?? [];
+	$: validationWarnings = formState?.warnings ?? [];
 	$: validationStats = formState?.statsPreview ?? null;
 	$: applied = formState?.applied ?? null;
 	$: formMessage = formState?.message ?? null;
 	$: defaultScale = formState?.scale ?? null;
 
-	$: totalSelectedSkills = Array.from(selectedSkillCols).length;
+	$: totalSelectedSkills = selectedSkillCols.size;
+	$: ignoredColumnsCount =
+		headers.length > 0 ? headers.length - 1 - totalSelectedSkills : 0;
+
+	$: mappingIsValid =
+		headers.length > 0 &&
+		studentColIndex >= 0 &&
+		studentColIndex < headers.length &&
+		totalSelectedSkills > 0;
+
+	$: headerErrors = validationErrors.filter((e) => e.row_index === 0);
+	$: rowErrors = validationErrors.filter((e) => e.row_index > 0);
+
+	$: headerWarnings = validationWarnings.filter((e) => e.row_index === 0);
+	$: rowWarnings = validationWarnings.filter((e) => e.row_index > 0);
+
+	$: selectedClassSummary =
+		selectedClassId.trim().length > 0 ? classLabelById(selectedClassId) : null;
+
+	$: validationStatus = (
+	validationErrors.length > 0
+		? 'error'
+		: validationStats
+			? validationWarnings.length > 0
+				? 'warning'
+				: 'success'
+			: 'idle'
+) as ValidationStatus;
+
+	$: if (selectedSkillCols.has(studentColIndex)) {
+		const next = new Set(selectedSkillCols);
+		next.delete(studentColIndex);
+		selectedSkillCols = next;
+	}
 </script>
 
 <svelte:head>
@@ -189,6 +383,12 @@
 		</div>
 	</form>
 
+	{#if selectedClassSummary}
+		<div class="selection-summary">
+			<span class="summary-chip">Turma alvo: <strong>{selectedClassSummary}</strong></span>
+		</div>
+	{/if}
+
 	{#if formMessage}
 		<div class="feedback error">{formMessage}</div>
 	{/if}
@@ -200,6 +400,7 @@
 				<span>Delimitador detectado: <strong>{delimiterLabel(previewState.delimiter)}</strong></span>
 			{/if}
 			<span>Colunas detectadas: <strong>{headers.length}</strong></span>
+			<span>Linhas no preview: <strong>{preview.length}</strong></span>
 		</div>
 	{/if}
 </section>
@@ -225,12 +426,32 @@
 			</p>
 		</div>
 
+		<div class="mapping-overview">
+			<div class="mapping-card student">
+				<span class="mapping-card-label">Coluna do aluno</span>
+				<strong>{headers[studentColIndex] ?? '—'}</strong>
+			</div>
+
+			<div class="mapping-card skill">
+				<span class="mapping-card-label">Skills selecionadas</span>
+				<strong>{totalSelectedSkills}</strong>
+			</div>
+
+			<div class="mapping-card ignored">
+				<span class="mapping-card-label">Ignoradas</span>
+				<strong>{ignoredColumnsCount}</strong>
+			</div>
+		</div>
+
 		<div class="preview-shell">
 			<table class="preview-table">
 				<thead>
 					<tr>
 						{#each headers as h, i}
-							<th>{i}: {h}</th>
+							<th class={previewCellClass(i)}>
+								<div class="col-title">{i}: {h}</div>
+								<div class="col-role">{roleLabel(columnRole(i))}</div>
+							</th>
 						{/each}
 					</tr>
 				</thead>
@@ -238,7 +459,7 @@
 					{#each preview as row}
 						<tr>
 							{#each headers as _, i}
-								<td>{row[i] ?? ''}</td>
+								<td class={previewCellClass(i)}>{row[i] ?? ''}</td>
 							{/each}
 						</tr>
 					{/each}
@@ -261,13 +482,23 @@
 
 				<div class="mapping-summary">
 					<span>Skills selecionadas: <strong>{totalSelectedSkills}</strong></span>
+					<span>Ignoradas: <strong>{ignoredColumnsCount}</strong></span>
 				</div>
+			</div>
+
+			<div class="mapping-actions">
+				<button type="button" class="secondary-button slim" onclick={selectAllSkills}>
+					Selecionar todas
+				</button>
+				<button type="button" class="secondary-button slim" onclick={clearAllSkills}>
+					Limpar skills
+				</button>
 			</div>
 
 			<div class="skill-picker">
 				{#each headers as h, i}
 					{#if i !== studentColIndex}
-						<label class="skill-option">
+						<label class="skill-option" class:selected={selectedSkillCols.has(i)}>
 							<input
 								type="checkbox"
 								name="skillColIndex"
@@ -275,14 +506,27 @@
 								checked={selectedSkillCols.has(i)}
 								onchange={() => toggleSkill(i)}
 							/>
-							<span>{i}: {h}</span>
+							<div class="skill-option-copy">
+								<span class="skill-option-title">{i}: {h}</span>
+								<span class="skill-option-meta">
+									{selectedSkillCols.has(i) ? 'Será validada como skill' : 'Será ignorada'}
+								</span>
+							</div>
 						</label>
 					{/if}
 				{/each}
 			</div>
 
+			{#if !mappingIsValid}
+				<div class="feedback warning">
+					Selecione uma coluna válida de aluno e pelo menos 1 coluna de skill antes de validar.
+				</div>
+			{/if}
+
 			<div class="actions">
-				<button type="submit" class="primary-button">Validar</button>
+				<button type="submit" class="primary-button" disabled={!mappingIsValid}>
+					Validar
+				</button>
 			</div>
 		</form>
 	</section>
@@ -298,6 +542,26 @@
 			<p>Confira se o job está apto para aplicação ou se precisa corrigir o CSV/mapeamento.</p>
 		</div>
 
+		<div class="validation-status-row">
+			<div class={`status-badge-large ${validationStatus}`}>
+				<span class="status-badge-label">Status</span>
+				<strong>{validationStatusLabel(validationStatus)}</strong>
+			</div>
+
+			<div class="status-copy">
+				{#if validationStatus === 'error'}
+					<strong>Há erros bloqueantes.</strong>
+					<p>Corrija os problemas antes de aplicar o job.</p>
+				{:else if validationStatus === 'warning'}
+					<strong>Validado com alertas.</strong>
+					<p>O job pode ser aplicado, mas vale revisar os warnings antes.</p>
+				{:else if validationStatus === 'success'}
+					<strong>Validação limpa.</strong>
+					<p>Sem erros bloqueantes nem alertas relevantes.</p>
+				{/if}
+			</div>
+		</div>
+
 		<div class="validation-stats">
 			<div class="stat-box">
 				<span class="stat-box-label">Linhas staged</span>
@@ -307,6 +571,11 @@
 			<div class="stat-box">
 				<span class="stat-box-label">Erros encontrados</span>
 				<strong>{validationStats.errors}</strong>
+			</div>
+
+			<div class="stat-box">
+				<span class="stat-box-label">Warnings</span>
+				<strong>{validationStats.warnings ?? 0}</strong>
 			</div>
 
 			{#if defaultScale}
@@ -328,6 +597,18 @@
 			<div class="feedback error">
 				Foram encontrados <strong>{validationErrors.length}</strong> erros. Corrija o CSV ou o
 				mapeamento e valide novamente.
+			</div>
+
+			<div class="error-summary-grid">
+				<div class="stat-box compact">
+					<span class="stat-box-label">Erros de header</span>
+					<strong>{headerErrors.length}</strong>
+				</div>
+
+				<div class="stat-box compact">
+					<span class="stat-box-label">Erros por linha</span>
+					<strong>{rowErrors.length}</strong>
+				</div>
 			</div>
 
 			<div class="error-list">
@@ -352,8 +633,50 @@
 			</div>
 		{/if}
 
+		{#if validationWarnings.length > 0}
+			<div class="feedback warning">
+				Foram encontrados <strong>{validationWarnings.length}</strong> warnings. Eles não bloqueiam
+				a aplicação, mas merecem revisão.
+			</div>
+
+			<div class="warning-summary-grid">
+				<div class="stat-box compact warning-box">
+					<span class="stat-box-label">Warnings de header</span>
+					<strong>{headerWarnings.length}</strong>
+				</div>
+
+				<div class="stat-box compact warning-box">
+					<span class="stat-box-label">Warnings por linha</span>
+					<strong>{rowWarnings.length}</strong>
+				</div>
+			</div>
+
+			<div class="warning-list">
+				{#each validationWarnings as w}
+					<div class="warning-item">
+						<div class="warning-title">
+							{#if w.row_index === 0}
+								Header — coluna {w.column_index}
+							{:else}
+								Linha {w.row_index} — {w.column_name}
+							{/if}
+						</div>
+
+						<div class="warning-message">
+							{w.message}
+							{#if w.value}
+								<span class="warning-value">Valor: "{w.value}"</span>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{/if}
+
 		{#if validationErrors.length === 0}
-			<div class="feedback success">Sem erros. O job está validado e pode ser aplicado.</div>
+			{#if validationWarnings.length === 0}
+				<div class="feedback success">Sem erros e sem warnings. O job está pronto para aplicar.</div>
+			{/if}
 
 			<div class="apply-box">
 				<div>
@@ -411,7 +734,9 @@
 	.result-card,
 	.stat-box,
 	.helper-box,
-	.error-item {
+	.error-item,
+	.warning-item,
+	.mapping-card {
 		background: rgba(255, 255, 255, 0.92);
 		border: 1px solid rgba(148, 163, 184, 0.2);
 		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
@@ -448,7 +773,8 @@
 	.panel-head p,
 	.helper-box p,
 	.note,
-	.apply-box p {
+	.apply-box p,
+	.status-copy p {
 		color: #475569;
 		line-height: 1.6;
 		margin: 0.55rem 0 0;
@@ -514,24 +840,6 @@
 		gap: 1rem;
 	}
 
-	.mapping-top {
-		display: flex;
-		align-items: end;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.mapping-summary {
-		padding: 0.9rem 1rem;
-		border-radius: 1rem;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		color: #334155;
-		font-size: 0.92rem;
-		font-weight: 600;
-		white-space: nowrap;
-	}
-
 	.field {
 		display: flex;
 		flex-direction: column;
@@ -570,24 +878,49 @@
 		justify-content: flex-start;
 	}
 
-	.primary-button {
+	.primary-button,
+	.secondary-button {
 		height: 2.9rem;
 		padding: 0 1rem;
 		border-radius: 0.9rem;
 		font-weight: 700;
 		font-size: 0.95rem;
 		cursor: pointer;
+		transition:
+			transform 0.16s ease,
+			box-shadow 0.16s ease,
+			opacity 0.16s ease;
+	}
+
+	.primary-button {
 		border: 0;
 		background: linear-gradient(135deg, #2563eb, #1d4ed8);
 		color: white;
 		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
-		transition:
-			transform 0.16s ease,
-			box-shadow 0.16s ease;
 	}
 
-	.primary-button:hover {
+	.secondary-button {
+		border: 1px solid #cbd5e1;
+		background: white;
+		color: #0f172a;
+	}
+
+	.secondary-button.slim {
+		height: 2.6rem;
+		font-size: 0.9rem;
+		padding: 0 0.9rem;
+	}
+
+	.primary-button:hover,
+	.secondary-button:hover {
 		transform: translateY(-1px);
+	}
+
+	.primary-button:disabled,
+	.secondary-button:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	.feedback {
@@ -608,6 +941,28 @@
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid rgba(239, 68, 68, 0.2);
 		color: #991b1b;
+	}
+
+	.feedback.warning {
+		background: rgba(245, 158, 11, 0.12);
+		border: 1px solid rgba(245, 158, 11, 0.22);
+		color: #92400e;
+	}
+
+	.selection-summary {
+		margin-top: 1rem;
+	}
+
+	.summary-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.75rem 0.95rem;
+		border-radius: 999px;
+		background: #eff6ff;
+		border: 1px solid #bfdbfe;
+		color: #1d4ed8;
+		font-size: 0.9rem;
 	}
 
 	.job-meta {
@@ -636,6 +991,46 @@
 		font-size: 0.92rem;
 	}
 
+	.mapping-overview {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.9rem;
+		margin-bottom: 1rem;
+	}
+
+	.mapping-card {
+		padding: 1rem;
+	}
+
+	.mapping-card.student {
+		background: rgba(37, 99, 235, 0.1);
+		border-color: rgba(96, 165, 250, 0.25);
+	}
+
+	.mapping-card.skill {
+		background: rgba(34, 197, 94, 0.1);
+		border-color: rgba(34, 197, 94, 0.2);
+	}
+
+	.mapping-card.ignored {
+		background: rgba(248, 250, 252, 0.92);
+	}
+
+	.mapping-card-label {
+		display: block;
+		font-size: 0.82rem;
+		font-weight: 800;
+		color: #64748b;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.35rem;
+	}
+
+	.mapping-card strong {
+		color: #0f172a;
+		font-size: 1rem;
+	}
+
 	.preview-shell {
 		overflow: auto;
 		border: 1px solid #e2e8f0;
@@ -656,15 +1051,70 @@
 		border-bottom: 1px solid #e2e8f0;
 		text-align: left;
 		vertical-align: top;
+		min-width: 170px;
 	}
 
 	.preview-table th {
-		background: #f8fafc;
 		font-size: 0.82rem;
 		font-weight: 800;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: #475569;
+	}
+
+	.col-title {
+		font-weight: 800;
+		color: #0f172a;
+		text-transform: none;
+		letter-spacing: normal;
+		font-size: 0.9rem;
+	}
+
+	.col-role {
+		margin-top: 0.25rem;
+		font-size: 0.76rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #64748b;
+	}
+
+	.col-student {
+		background: rgba(37, 99, 235, 0.08);
+	}
+
+	.col-skill {
+		background: rgba(34, 197, 94, 0.08);
+	}
+
+	.col-ignored {
+		background: white;
+	}
+
+	.mapping-top {
+		display: flex;
+		align-items: end;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.mapping-summary {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+		padding: 0.9rem 1rem;
+		border-radius: 1rem;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		color: #334155;
+		font-size: 0.92rem;
+		font-weight: 600;
+	}
+
+	.mapping-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
 	}
 
 	.skill-picker {
@@ -675,8 +1125,8 @@
 
 	.skill-option {
 		display: flex;
-		align-items: center;
-		gap: 0.65rem;
+		align-items: flex-start;
+		gap: 0.75rem;
 		padding: 0.85rem 0.95rem;
 		border-radius: 1rem;
 		border: 1px solid #e2e8f0;
@@ -685,10 +1135,96 @@
 		font-size: 0.92rem;
 		font-weight: 600;
 		color: #0f172a;
+		transition:
+			border-color 0.16s ease,
+			transform 0.16s ease,
+			background 0.16s ease;
+	}
+
+	.skill-option:hover {
+		transform: translateY(-1px);
+		border-color: #cbd5e1;
+	}
+
+	.skill-option.selected {
+		background: rgba(34, 197, 94, 0.08);
+		border-color: rgba(34, 197, 94, 0.25);
+	}
+
+	.skill-option-copy {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.skill-option-title {
+		color: #0f172a;
+		font-weight: 700;
+	}
+
+	.skill-option-meta {
+		font-size: 0.8rem;
+		color: #64748b;
+		font-weight: 600;
+	}
+
+	.validation-status-row {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding: 1rem;
+		border-radius: 1rem;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+	}
+
+	.status-badge-large {
+		min-width: 110px;
+		padding: 0.9rem 1rem;
+		border-radius: 1rem;
+		text-align: center;
+	}
+
+	.status-badge-large.error {
+		background: rgba(239, 68, 68, 0.12);
+		border: 1px solid rgba(239, 68, 68, 0.2);
+		color: #991b1b;
+	}
+
+	.status-badge-large.warning {
+		background: rgba(245, 158, 11, 0.12);
+		border: 1px solid rgba(245, 158, 11, 0.2);
+		color: #92400e;
+	}
+
+	.status-badge-large.success {
+		background: rgba(34, 197, 94, 0.12);
+		border: 1px solid rgba(34, 197, 94, 0.2);
+		color: #166534;
+	}
+
+	.status-badge-label {
+		display: block;
+		font-size: 0.76rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		margin-bottom: 0.2rem;
+	}
+
+	.status-badge-large strong {
+		font-size: 1.25rem;
+	}
+
+	.status-copy strong {
+		color: #0f172a;
 	}
 
 	.validation-stats,
-	.apply-results {
+	.apply-results,
+	.error-summary-grid,
+	.warning-summary-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 		gap: 0.9rem;
@@ -698,6 +1234,15 @@
 	.stat-box,
 	.result-card {
 		padding: 1rem;
+	}
+
+	.stat-box.compact {
+		padding: 0.9rem 1rem;
+	}
+
+	.warning-box {
+		background: rgba(255, 251, 235, 0.92);
+		border-color: rgba(245, 158, 11, 0.2);
 	}
 
 	.stat-box-label,
@@ -722,14 +1267,16 @@
 		margin-bottom: 1rem;
 	}
 
-	.error-list {
+	.error-list,
+	.warning-list {
 		display: flex;
 		flex-direction: column;
 		gap: 0.75rem;
 		margin-top: 1rem;
 	}
 
-	.error-item {
+	.error-item,
+	.warning-item {
 		padding: 0.95rem 1rem;
 	}
 
@@ -740,7 +1287,15 @@
 		margin-bottom: 0.3rem;
 	}
 
-	.error-message {
+	.warning-title {
+		font-size: 0.9rem;
+		font-weight: 800;
+		color: #92400e;
+		margin-bottom: 0.3rem;
+	}
+
+	.error-message,
+	.warning-message {
 		font-size: 0.92rem;
 		color: #475569;
 		line-height: 1.5;
@@ -751,6 +1306,13 @@
 		margin-left: 0.45rem;
 		font-weight: 700;
 		color: #7f1d1d;
+	}
+
+	.warning-value {
+		display: inline-block;
+		margin-left: 0.45rem;
+		font-weight: 700;
+		color: #92400e;
 	}
 
 	.apply-box {
@@ -777,32 +1339,43 @@
 	}
 
 	@media (max-width: 980px) {
-		.info-grid {
+		.info-grid,
+		.mapping-overview {
 			grid-template-columns: 1fr;
 		}
 
 		.panel-head,
 		.mapping-top,
-		.apply-box {
+		.apply-box,
+		.validation-status-row {
 			flex-direction: column;
 			align-items: flex-start;
-		}
-
-		.mapping-summary {
-			white-space: normal;
 		}
 	}
 
 	@media (max-width: 640px) {
-		.skill-picker {
+		.skill-picker,
+		.validation-stats,
+		.apply-results,
+		.error-summary-grid,
+		.warning-summary-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.primary-button {
+		.primary-button,
+		.secondary-button {
 			width: 100%;
 		}
 
 		.actions {
+			width: 100%;
+		}
+
+		.mapping-actions {
+			width: 100%;
+		}
+
+		.mapping-actions :global(button) {
 			width: 100%;
 		}
 	}

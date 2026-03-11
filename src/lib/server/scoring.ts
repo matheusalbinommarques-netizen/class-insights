@@ -28,21 +28,62 @@ export type ScoreValidationResult =
 			scale: ScaleConfig;
 	  };
 
+const MAX_ALLOWED_DECIMALS = 6;
+
+function normalizeWhitespace(value: string): string {
+	return value.trim().replace(/\s+/g, ' ');
+}
+
+function stripDiacritics(value: string): string {
+	return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+export function normalizeTextForMatch(value: string | null | undefined): string {
+	return stripDiacritics(normalizeWhitespace(String(value ?? ''))).toLowerCase();
+}
+
+export function normalizeNumericString(raw: string | null | undefined): string {
+	const value = String(raw ?? '').trim().replace(/\s+/g, '');
+
+	if (!value) return '';
+
+	const hasComma = value.includes(',');
+	const hasDot = value.includes('.');
+
+	if (hasComma && hasDot) {
+		const lastComma = value.lastIndexOf(',');
+		const lastDot = value.lastIndexOf('.');
+
+		// Ex.: 1.234,56 -> remove pontos e usa vírgula como decimal
+		if (lastComma > lastDot) {
+			return value.replace(/\./g, '').replace(',', '.');
+		}
+
+		// Ex.: 1,234.56 -> remove vírgulas e mantém ponto como decimal
+		return value.replace(/,/g, '');
+	}
+
+	if (hasComma) {
+		return value.replace(',', '.');
+	}
+
+	return value;
+}
+
 export function parseNumericInput(raw: string): number | null {
-	const value = String(raw ?? '').trim();
-	if (!value) return null;
+	const normalized = normalizeNumericString(raw);
+	if (!normalized) return null;
 
-	const normalized = value.replace(',', '.');
 	const n = Number(normalized);
-
-	return Number.isNaN(n) ? null : n;
+	return Number.isFinite(n) ? n : null;
 }
 
 export function countDecimals(raw: string): number {
-	const value = String(raw ?? '').trim().replace(',', '.');
-	const idx = value.indexOf('.');
+	const normalized = normalizeNumericString(raw);
+	if (!normalized) return 0;
 
-	return idx === -1 ? 0 : value.length - idx - 1;
+	const idx = normalized.indexOf('.');
+	return idx === -1 ? 0 : normalized.length - idx - 1;
 }
 
 export function isBlank(raw: string | null | undefined): boolean {
@@ -50,7 +91,7 @@ export function isBlank(raw: string | null | undefined): boolean {
 }
 
 export function normalizeSkillName(name: string): string {
-	return String(name ?? '').trim().toLowerCase();
+	return normalizeTextForMatch(name);
 }
 
 export function resolveEffectiveScale(
@@ -73,8 +114,12 @@ export function validateScaleConfig(scale: ScaleConfig): string | null {
 		return 'Escala inválida: max precisa ser maior que min.';
 	}
 
-	if (!Number.isInteger(scale.decimals) || scale.decimals < 0 || scale.decimals > 6) {
-		return 'Decimais inválidos (0 a 6).';
+	if (
+		!Number.isInteger(scale.decimals) ||
+		scale.decimals < 0 ||
+		scale.decimals > MAX_ALLOWED_DECIMALS
+	) {
+		return `Decimais inválidos (0 a ${MAX_ALLOWED_DECIMALS}).`;
 	}
 
 	return null;
