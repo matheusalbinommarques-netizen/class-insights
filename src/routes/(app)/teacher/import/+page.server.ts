@@ -41,6 +41,7 @@ type ImportRowRecord = {
 	row_index: number;
 	student_name_raw: string | null;
 	cells: Record<string, string> | null;
+	raw_row: unknown;
 };
 
 type ImportCellIssue = {
@@ -52,7 +53,20 @@ type ImportCellIssue = {
 	value?: string;
 };
 
+type SelectedSkillColumn = {
+	columnIndex: number;
+	columnName: string;
+};
+
+type PersistableMappedRow = {
+	row_index: number;
+	student_name_raw: string;
+	cells: Record<string, string>;
+	raw_row: string[];
+};
+
 const MAX_PREVIEW_ROWS = 20;
+const UPDATE_CHUNK_SIZE = 50;
 
 async function getAuthenticatedUserId(locals: App.Locals): Promise<string | null> {
 	const {
@@ -230,9 +244,84 @@ async function cleanupImportJob(locals: App.Locals, jobId: string, userId: strin
 
 function hasAnySelectedSkillValue(
 	cells: Record<string, string>,
-	selectedSkills: Array<{ columnIndex: number; columnName: string }>
+	selectedSkills: SelectedSkillColumn[]
 ): boolean {
-	return selectedSkills.some((skill) => String(cells[skill.columnName] ?? '').trim().length > 0);
+	return selectedSkills.some(
+		(skill) => skill.columnName && String(cells[skill.columnName] ?? '').trim().length > 0
+	);
+}
+
+function normalizeRawRow(rawRow: unknown, headerCount: number): string[] | null {
+	if (!Array.isArray(rawRow)) return null;
+
+	const normalized = rawRow.map((value) => String(value ?? '').trim());
+	return normalizeRowLength(normalized, headerCount);
+}
+
+function buildMappedRowFromRawRow(
+	headers: string[],
+	rawRow: string[],
+	studentColIndex: number,
+	selectedSkills: SelectedSkillColumn[]
+): { studentNameRaw: string; cells: Record<string, string> } {
+	const studentNameRaw = String(rawRow[studentColIndex] ?? '').trim();
+	const cells: Record<string, string> = {};
+
+	for (const skill of selectedSkills) {
+		if (!skill.columnName) continue;
+		cells[skill.columnName] = String(rawRow[skill.columnIndex] ?? '').trim();
+	}
+
+	// Mantém outras colunas fora da coluna de aluno e fora das skills selecionadas como ausentes,
+	// para que o staging reflita exatamente o mapeamento validado.
+	void headers;
+
+	return {
+		studentNameRaw,
+		cells
+	};
+}
+
+function chunkArray<T>(items: T[], chunkSize: number): T[][] {
+	const chunks: T[][] = [];
+
+	for (let i = 0; i < items.length; i += chunkSize) {
+		chunks.push(items.slice(i, i + chunkSize));
+	}
+
+	return chunks;
+}
+
+async function persistMappedRowsForJob(
+	locals: App.Locals,
+	jobId: string,
+	rows: PersistableMappedRow[]
+): Promise<string | null> {
+	const chunks = chunkArray(rows, UPDATE_CHUNK_SIZE);
+
+	for (const chunk of chunks) {
+		const results = await Promise.all(
+			chunk.map((row) =>
+				locals.supabase
+					.from('import_rows')
+					.update({
+						student_name_raw: row.student_name_raw,
+						cells: row.cells,
+						raw_row: row.raw_row
+					})
+					.eq('job_id', jobId)
+					.eq('row_index', row.row_index)
+			)
+		);
+
+		for (const result of results) {
+			if (result.error) {
+				return result.error.message;
+			}
+		}
+	}
+
+	return null;
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -308,7 +397,8 @@ export const actions: Actions = {
 				status: 'uploaded',
 				delimiter: parsed.delimiter,
 				headers: parsed.headers,
-				rows_total: parsed.rows.length
+				rows_total: parsed.rows.length,
+				rows_skipped_no_student: 0
 			})
 			.select('id')
 			.single();
@@ -317,13 +407,10 @@ export const actions: Actions = {
 			return fail(400, { message: jobErr?.message ?? 'Erro ao criar job.' });
 		}
 
-		let skippedNoStudent = 0;
-
-		const staged = parsed.rows.map((r, idx) => {
-			const studentName = String(r[studentGuess] ?? '').trim();
-			if (!studentName) skippedNoStudent++;
-
-			const cells: Record<string, string> = {};
+		const staged = parsed.rows.map((row, idx) => {
+			const rawRow = normalizeRowLength(row, parsed.headers.length);
+			const initialStudentNameRaw = String(rawRow[studentGuess] ?? '').trim();
+			const initialCells: Record<string, string> = {};
 
 			for (let i = 0; i < parsed.headers.length; i++) {
 				if (i === studentGuess) continue;
@@ -331,14 +418,15 @@ export const actions: Actions = {
 				const header = String(parsed.headers[i] ?? '').trim();
 				if (!header) continue;
 
-				cells[header] = String(r[i] ?? '').trim();
+				initialCells[header] = String(rawRow[i] ?? '').trim();
 			}
 
 			return {
 				job_id: job.id,
 				row_index: idx + 1,
-				student_name_raw: studentName,
-				cells
+				student_name_raw: initialStudentNameRaw,
+				cells: initialCells,
+				raw_row: rawRow
 			};
 		});
 
@@ -346,16 +434,6 @@ export const actions: Actions = {
 		if (rowsErr) {
 			await cleanupImportJob(locals, job.id, userId);
 			return fail(400, { message: rowsErr.message });
-		}
-
-		const { error: updErr } = await locals.supabase
-			.from('import_jobs')
-			.update({ rows_skipped_no_student: skippedNoStudent })
-			.eq('id', job.id)
-			.eq('teacher_id', userId);
-
-		if (updErr) {
-			return fail(400, { message: updErr.message });
 		}
 
 		const preview = parsed.rows.slice(0, MAX_PREVIEW_ROWS);
@@ -449,7 +527,7 @@ export const actions: Actions = {
 
 		const { data: rows, error: rowsErr } = await locals.supabase
 			.from('import_rows')
-			.select('row_index, student_name_raw, cells')
+			.select('row_index, student_name_raw, cells, raw_row')
 			.eq('job_id', jobId)
 			.order('row_index', { ascending: true });
 
@@ -459,13 +537,16 @@ export const actions: Actions = {
 
 		const existingSkillsByName = await getExistingSkillsByClass(locals, ownedClass.id);
 
-		const selectedSkills = selectedSkillCols.map((columnIndex) => ({
+		const selectedSkills: SelectedSkillColumn[] = selectedSkillCols.map((columnIndex) => ({
 			columnIndex,
 			columnName: String(headers[columnIndex] ?? '').trim()
 		}));
 
 		const errors: ImportCellIssue[] = [];
 		const warnings: ImportCellIssue[] = [];
+		const mappedRows: PersistableMappedRow[] = [];
+
+		let skippedNoStudent = 0;
 
 		const emptySkillHeaders = selectedSkills.filter((s) => !s.columnName);
 
@@ -512,11 +593,29 @@ export const actions: Actions = {
 
 		const seenStudents = new Map<string, number[]>();
 
-		for (const r of (rows ?? []) as ImportRowRecord[]) {
-			const rowIndex = r.row_index;
-			const studentName = String(r.student_name_raw ?? '').trim();
+		for (const row of (rows ?? []) as ImportRowRecord[]) {
+			const rawRow = normalizeRawRow(row.raw_row, headers.length);
+
+			if (!rawRow) {
+				return fail(400, {
+					message:
+						'Este job foi criado em uma versão antiga do staging. Gere o preview novamente.'
+				});
+			}
+
+			const mapped = buildMappedRowFromRawRow(headers, rawRow, studentColIndex, selectedSkills);
+			mappedRows.push({
+				row_index: row.row_index,
+				student_name_raw: mapped.studentNameRaw,
+				cells: mapped.cells,
+				raw_row: rawRow
+			});
+
+			const rowIndex = row.row_index;
+			const studentName = mapped.studentNameRaw;
 
 			if (!studentName) {
+				skippedNoStudent += 1;
 				errors.push({
 					job_id: jobId,
 					row_index: rowIndex,
@@ -535,9 +634,7 @@ export const actions: Actions = {
 				seenStudents.set(normalizedStudent, existing);
 			}
 
-			const cells = (r.cells ?? {}) as Record<string, string>;
-
-			if (!hasAnySelectedSkillValue(cells, selectedSkills)) {
+			if (!hasAnySelectedSkillValue(mapped.cells, selectedSkills)) {
 				warnings.push({
 					job_id: jobId,
 					row_index: rowIndex,
@@ -551,7 +648,7 @@ export const actions: Actions = {
 			for (const skill of selectedSkills) {
 				if (!skill.columnName) continue;
 
-				const raw = String(cells[skill.columnName] ?? '').trim();
+				const raw = String(mapped.cells[skill.columnName] ?? '').trim();
 				if (!raw) continue;
 
 				const normalizedSkillName = normalizeSkillName(skill.columnName);
@@ -586,11 +683,17 @@ export const actions: Actions = {
 						row_index: rowIndex,
 						column_index: studentColIndex,
 						column_name: headers[studentColIndex] ?? '(aluno)',
-						message: 'Aluno repetido no mesmo CSV. Verifique se deve consolidar ou manter linhas separadas.',
+						message:
+							'Aluno repetido no mesmo CSV. Verifique se deve consolidar ou manter linhas separadas.',
 						value: studentNameKey
 					});
 				}
 			}
+		}
+
+		const persistError = await persistMappedRowsForJob(locals, jobId, mappedRows);
+		if (persistError) {
+			return fail(400, { message: persistError });
 		}
 
 		if (errors.length > 0) {
@@ -601,7 +704,10 @@ export const actions: Actions = {
 
 			const { error: stErr } = await locals.supabase
 				.from('import_jobs')
-				.update({ status: 'uploaded' })
+				.update({
+					status: 'uploaded',
+					rows_skipped_no_student: skippedNoStudent
+				})
 				.eq('id', jobId)
 				.eq('teacher_id', userId);
 
@@ -629,7 +735,10 @@ export const actions: Actions = {
 
 		const { error: okErr } = await locals.supabase
 			.from('import_jobs')
-			.update({ status: 'validated' })
+			.update({
+				status: 'validated',
+				rows_skipped_no_student: skippedNoStudent
+			})
 			.eq('id', jobId)
 			.eq('teacher_id', userId);
 

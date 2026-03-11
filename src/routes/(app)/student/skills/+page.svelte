@@ -1,13 +1,13 @@
 <script lang="ts">
-	type SkillStatus = 'dominada' | 'evoluindo' | 'atenção';
+	type SubjectStatus = 'good' | 'attention' | 'pending';
 
-	type SkillItem = {
+	type SubjectItem = {
 		id: string;
 		name: string;
 		progress: number | null;
 		score: number | null;
-		status: SkillStatus;
-		description: string | null;
+		status: SubjectStatus;
+		description: string;
 	};
 
 	export let data: {
@@ -15,7 +15,7 @@
 			id: string;
 			email: string | null;
 		};
-		skillsPortal: {
+		subjectsPortal: {
 			status: 'pending-link' | 'ready';
 			message: string;
 		};
@@ -23,243 +23,260 @@
 			displayName: string;
 			className: string | null;
 		};
-		skills: SkillItem[];
 		summary: {
-			total: number;
-			dominada: number;
-			evoluindo: number;
-			atencao: number;
+			totalSubjects: number;
+			subjectsWithScore: number;
+			goodSubjects: number;
+			attentionSubjects: number;
+			pendingSubjects: number;
+			generalAverage: number | null;
+			generalPercent: number | null;
+		};
+		bestSubject: SubjectItem | null;
+		prioritySubject: SubjectItem | null;
+		subjects: SubjectItem[];
+		academicSummary: {
+			title: string;
+			description: string;
 		};
 	};
 
-	const roadmap = [
-		'Agrupar skills por áreas de conhecimento',
-		'Adicionar leitura temporal de evolução',
-		'Exibir recomendações por skill crítica',
-		'Transformar a visão em skill tree visual'
+	type FilterKey = 'all' | 'good' | 'attention' | 'pending';
+
+	let activeFilter: FilterKey = 'all';
+
+	const filterOptions: Array<{ key: FilterKey; label: string }> = [
+		{ key: 'all', label: 'Todas' },
+		{ key: 'good', label: 'Bom desempenho' },
+		{ key: 'attention', label: 'Pedem atenção' },
+		{ key: 'pending', label: 'Sem nota' }
 	];
 
-	const statusLabel = (status: SkillStatus) => {
-		if (status === 'dominada') return 'Dominada';
-		if (status === 'evoluindo') return 'Evoluindo';
-		return 'Ponto de atenção';
+	const statusLabel = (status: SubjectStatus) => {
+		if (status === 'good') return 'Bom desempenho';
+		if (status === 'attention') return 'Pede atenção';
+		return 'Sem nota';
 	};
 
-	const statusClass = (status: SkillStatus) => {
-		if (status === 'dominada') return 'good';
-		if (status === 'evoluindo') return 'warn';
-		return 'risk';
+	const statusClass = (status: SubjectStatus) => {
+		if (status === 'good') return 'good';
+		if (status === 'attention') return 'attention';
+		return 'pending';
 	};
 
-	const progressLabel = (value: number | null) => {
-		if (typeof value !== 'number') return '—';
-		return `${value}%`;
-	};
-
-	const scoreLabel = (value: number | null) => {
+	const averageLabel = (value: number | null) => {
 		if (typeof value !== 'number') return '—';
 		return value.toFixed(1);
 	};
 
-	$: strongestSkill =
-		data.skills.length > 0
-			? [...data.skills].sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0]
-			: null;
+	const percentLabel = (value: number | null) => {
+		if (typeof value !== 'number') return '—';
+		return `${value}%`;
+	};
 
-	$: weakestSkill =
-		data.skills.length > 0
-			? [...data.skills].sort((a, b) => (a.progress ?? 0) - (b.progress ?? 0))[0]
-			: null;
+	$: filteredSubjects =
+		activeFilter === 'all'
+			? data.subjects
+			: data.subjects.filter((subject) => subject.status === activeFilter);
+
+	$: orderedSubjects = [...filteredSubjects].sort((a, b) => {
+		const order = (status: SubjectStatus) => {
+			if (status === 'attention') return 0;
+			if (status === 'pending') return 1;
+			return 2;
+		};
+
+		const statusCompare = order(a.status) - order(b.status);
+		if (statusCompare !== 0) return statusCompare;
+
+		const aProgress = a.progress ?? -1;
+		const bProgress = b.progress ?? -1;
+		return aProgress - bProgress;
+	});
+
+	$: pageTone =
+		data.summary.attentionSubjects > 0 || data.summary.pendingSubjects > 0 ? 'highlight' : 'neutral';
+
+	$: heroMessage =
+		data.subjectsPortal.status === 'ready'
+			? `Sua média geral atual é ${averageLabel(data.summary.generalAverage)} e esta página reúne o desempenho das suas matérias avaliadas.`
+			: 'Seu vínculo acadêmico ainda não foi concluído.';
 </script>
 
 <svelte:head>
-	<title>Student Skills • Class Insights</title>
+	<title>Student Subjects • Class Insights</title>
 </svelte:head>
 
 <section class="hero">
 	<div>
-		<div class="eyebrow">Skills</div>
-		<h1>Jornada de habilidades de {data.student.displayName}</h1>
+		<div class="eyebrow">Matérias</div>
+		<h1>Visão das matérias de {data.student.displayName}</h1>
 		<p>
 			{#if data.student.className}
-				Turma: <strong>{data.student.className}</strong>. Aqui você acompanha seu progresso por
-				habilidade e entende onde está indo bem e onde vale revisar primeiro.
+				Turma: <strong>{data.student.className}</strong>. {heroMessage}
 			{:else}
-				Esta área mostra suas habilidades e sua evolução. Assim que o vínculo acadêmico estiver
-				completo, os dados reais aparecerão aqui.
+				{heroMessage}
 			{/if}
 		</p>
 	</div>
 
-	<div class="summary-card">
-		<div class="summary-label">Status</div>
-		<div class="summary-value">
-			{data.skillsPortal.status === 'ready' ? 'Skills reais carregadas' : 'Aguardando vínculo'}
-		</div>
-		<div class="summary-foot">{data.skillsPortal.message}</div>
+	<div class={`summary-card ${pageTone}`}>
+		<div class="summary-label">Média geral</div>
+		<div class="summary-value">{averageLabel(data.summary.generalAverage)}</div>
+		<div class="summary-foot">Baseada na média das matérias com nota lançada</div>
+
+		{#if typeof data.summary.generalPercent === 'number'}
+			<div class="summary-progress">
+				<div class="summary-progress-track">
+					<div
+						class="summary-progress-fill"
+						style={`width: ${data.summary.generalPercent}%`}
+					></div>
+				</div>
+				<div class="summary-progress-value">{percentLabel(data.summary.generalPercent)}</div>
+			</div>
+		{/if}
 	</div>
 </section>
 
 <section class="summary-grid">
 	<article class="metric-card">
-		<span class="metric-label">Total</span>
-		<strong>{data.summary.total}</strong>
+		<span class="metric-label">Total de matérias</span>
+		<strong>{data.summary.totalSubjects}</strong>
 	</article>
 
 	<article class="metric-card">
-		<span class="metric-label">Dominadas</span>
-		<strong>{data.summary.dominada}</strong>
+		<span class="metric-label">Com nota</span>
+		<strong>{data.summary.subjectsWithScore}</strong>
 	</article>
 
 	<article class="metric-card">
-		<span class="metric-label">Evoluindo</span>
-		<strong>{data.summary.evoluindo}</strong>
+		<span class="metric-label">Bom desempenho</span>
+		<strong>{data.summary.goodSubjects}</strong>
 	</article>
 
-	<article class="metric-card">
-		<span class="metric-label">Atenção</span>
-		<strong>{data.summary.atencao}</strong>
+	<article class={`metric-card ${pageTone}`}>
+		<span class="metric-label">Pedem atenção</span>
+		<strong>{data.summary.attentionSubjects + data.summary.pendingSubjects}</strong>
 	</article>
 </section>
 
-{#if data.skills.length > 0}
-	<section class="panel">
-		<div class="panel-head">
-			<div>
-				<div class="section-kicker">Leitura rápida</div>
-				<h2>Destaques da sua jornada</h2>
-			</div>
+<section class="insight-grid">
+	<article class="insight-card good">
+		<span class="insight-label">Melhor matéria</span>
+		<strong>{data.bestSubject?.name ?? '—'}</strong>
+		<p>
+			{#if data.bestSubject}
+				{data.bestSubject.description}
+			{:else}
+				Assim que houver notas lançadas, sua melhor matéria aparecerá aqui.
+			{/if}
+		</p>
+	</article>
+
+	<article class="insight-card attention">
+		<span class="insight-label">Matéria que pede atenção</span>
+		<strong>{data.prioritySubject?.name ?? '—'}</strong>
+		<p>
+			{#if data.prioritySubject}
+				{data.prioritySubject.description}
+			{:else}
+				Assim que houver notas lançadas, a principal prioridade aparecerá aqui.
+			{/if}
+		</p>
+	</article>
+</section>
+
+<section class="panel">
+	<div class="panel-head">
+		<div>
+			<div class="section-kicker">Filtros</div>
+			<h2>Ver por status</h2>
 		</div>
+		<p>Use os filtros para destacar rapidamente as matérias mais importantes no momento.</p>
+	</div>
 
-		<div class="insight-grid">
-			<div class="insight-card good">
-				<span class="insight-label">Ponto forte</span>
-				<strong>{strongestSkill?.name ?? '—'}</strong>
-				<p>
-					{#if strongestSkill}
-						Progresso atual: {progressLabel(strongestSkill.progress)}.
-					{:else}
-						Sem dados suficientes.
-					{/if}
-				</p>
-			</div>
+	<div class="filters">
+		{#each filterOptions as option}
+			<button
+				type="button"
+				class:active={activeFilter === option.key}
+				class="filter-button"
+				onclick={() => (activeFilter = option.key)}
+			>
+				{option.label}
+			</button>
+		{/each}
+	</div>
+</section>
 
-			<div class="insight-card warn">
-				<span class="insight-label">Prioridade</span>
-				<strong>{weakestSkill?.name ?? '—'}</strong>
-				<p>
-					{#if weakestSkill}
-						Progresso atual: {progressLabel(weakestSkill.progress)}.
-					{:else}
-						Sem dados suficientes.
-					{/if}
-				</p>
-			</div>
+<section class="panel">
+	<div class="panel-head">
+		<div>
+			<div class="section-kicker">Desempenho por matéria</div>
+			<h2>Suas matérias avaliadas</h2>
 		</div>
-	</section>
+		<p>
+			As matérias aparecem com status visual para facilitar a leitura do que está bem, do que pede
+			atenção e do que ainda não recebeu nota.
+		</p>
+	</div>
 
-	<section class="panel">
-		<div class="panel-head">
-			<div>
-				<div class="section-kicker">Mapa de skills</div>
-				<h2>Seu progresso por habilidade</h2>
-			</div>
-			<p>
-				Estas skills foram carregadas da sua turma e combinadas com suas notas já lançadas.
-			</p>
-		</div>
-
-		<div class="skills-grid">
-			{#each data.skills as skill}
-				<article class="skill-card">
-					<div class="skill-top">
+	{#if orderedSubjects.length > 0}
+		<div class="subjects-grid">
+			{#each orderedSubjects as subject}
+				<article class="subject-card">
+					<div class="subject-top">
 						<div>
-							<h3>{skill.name}</h3>
-							<p>{skill.description ?? 'Descrição ainda não disponível.'}</p>
+							<h3>{subject.name}</h3>
+							<p>{subject.description}</p>
 						</div>
 
-						<span class={`status-badge ${statusClass(skill.status)}`}>
-							{statusLabel(skill.status)}
+						<span class={`status-badge ${statusClass(subject.status)}`}>
+							{statusLabel(subject.status)}
 						</span>
 					</div>
 
 					<div class="meta-row">
 						<div class="meta-box">
-							<span>Progresso</span>
-							<strong>{progressLabel(skill.progress)}</strong>
+							<span>Média</span>
+							<strong>{averageLabel(subject.score)}</strong>
 						</div>
 
 						<div class="meta-box">
-							<span>Nota</span>
-							<strong>{scoreLabel(skill.score)}</strong>
+							<span>Desempenho</span>
+							<strong>{percentLabel(subject.progress)}</strong>
 						</div>
 					</div>
 
 					<div class="progress-track">
 						<div
-							class={`progress-fill ${statusClass(skill.status)}`}
-							style={`width: ${skill.progress ?? 0}%`}
+							class={`progress-fill ${statusClass(subject.status)}`}
+							style={`width: ${subject.progress ?? 0}%`}
 						></div>
 					</div>
 				</article>
 			{/each}
 		</div>
-	</section>
-{:else}
-	<section class="panel">
-		<div class="panel-head">
-			<div>
-				<div class="section-kicker">Mapa de skills</div>
-				<h2>Nenhuma skill disponível</h2>
-			</div>
-		</div>
-
+	{:else}
 		<div class="empty-state">
-			<div class="empty-icon">🧩</div>
-			<h3>Ainda não encontramos skills para você</h3>
-			<p>
-				Isso pode significar que seu vínculo acadêmico ainda não foi concluído, que sua turma
-				ainda não possui skills cadastradas, ou que ainda não há dados lançados.
-			</p>
+			<div class="empty-icon">📘</div>
+			<h3>Nenhuma matéria neste filtro</h3>
+			<p>Ajuste o filtro acima para voltar a ver as matérias disponíveis.</p>
 		</div>
-	</section>
-{/if}
-
-<section class="panel">
-	<div class="panel-head">
-		<div>
-			<div class="section-kicker">Próximas evoluções</div>
-			<h2>O que entra depois</h2>
-		</div>
-	</div>
-
-	<div class="roadmap-box">
-		<ul>
-			{#each roadmap as item}
-				<li>{item}</li>
-			{/each}
-		</ul>
-	</div>
+	{/if}
 </section>
 
 <section class="panel">
 	<div class="panel-head">
 		<div>
-			<div class="section-kicker">Futuro</div>
-			<h2>Skill tree visual</h2>
+			<div class="section-kicker">Resumo acadêmico</div>
+			<h2>{data.academicSummary.title}</h2>
 		</div>
-		<p>
-			A próxima camada vai transformar essa leitura em uma jornada mais gamificada, com sensação
-			de progresso e níveis de evolução.
-		</p>
 	</div>
 
-	<div class="tree-placeholder">
-		<div class="tree-node unlocked">Base</div>
-		<div class="tree-line"></div>
-		<div class="tree-node in-progress">Evolução</div>
-		<div class="tree-line"></div>
-		<div class="tree-node locked">Próximo nível</div>
+	<div class={`summary-highlight ${pageTone}`}>
+		<p>{data.academicSummary.description}</p>
 	</div>
 </section>
 
@@ -267,11 +284,10 @@
 	.hero,
 	.panel,
 	.summary-card,
-	.skill-card,
-	.roadmap-box,
-	.tree-placeholder,
+	.subject-card,
 	.metric-card,
-	.insight-card {
+	.insight-card,
+	.summary-highlight {
 		background: rgba(255, 255, 255, 0.92);
 		border: 1px solid rgba(148, 163, 184, 0.2);
 		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
@@ -286,7 +302,7 @@
 
 	.hero {
 		display: grid;
-		grid-template-columns: minmax(0, 1.6fr) minmax(250px, 0.9fr);
+		grid-template-columns: minmax(0, 1.6fr) minmax(250px, 0.95fr);
 		gap: 1rem;
 		align-items: stretch;
 	}
@@ -306,7 +322,7 @@
 
 	.hero h1,
 	.panel-head h2,
-	.skill-card h3 {
+	.subject-card h3 {
 		margin: 0;
 		line-height: 1.15;
 		color: #0f172a;
@@ -319,8 +335,11 @@
 
 	.hero p,
 	.panel-head p,
-	.skill-card p,
-	.summary-foot {
+	.subject-card p,
+	.summary-foot,
+	.insight-card p,
+	.summary-highlight p,
+	.empty-state p {
 		color: #475569;
 		line-height: 1.6;
 	}
@@ -338,11 +357,22 @@
 		background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.05));
 	}
 
+	.summary-card.highlight {
+		background: linear-gradient(180deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.06));
+		border-color: rgba(245, 158, 11, 0.2);
+	}
+
+	.summary-card.neutral {
+		background: linear-gradient(180deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05));
+		border-color: rgba(34, 197, 94, 0.18);
+	}
+
 	.summary-value {
-		font-size: 1.2rem;
-		font-weight: 800;
+		font-size: 2.1rem;
+		font-weight: 900;
+		line-height: 1;
+		letter-spacing: -0.04em;
 		color: #1d4ed8;
-		line-height: 1.2;
 	}
 
 	.summary-foot {
@@ -350,14 +380,53 @@
 		font-size: 0.9rem;
 	}
 
-	.summary-grid {
+	.summary-progress {
+		margin-top: 0.9rem;
+	}
+
+	.summary-progress-track {
+		height: 0.8rem;
+		border-radius: 999px;
+		background: #dbe3ef;
+		overflow: hidden;
+	}
+
+	.summary-progress-fill {
+		height: 100%;
+		border-radius: 999px;
+		background: linear-gradient(90deg, #2563eb, #1d4ed8);
+	}
+
+	.summary-progress-value {
+		margin-top: 0.45rem;
+		font-size: 0.92rem;
+		font-weight: 800;
+		color: #1d4ed8;
+	}
+
+	.summary-grid,
+	.subjects-grid,
+	.insight-grid {
 		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 1rem;
 		margin-bottom: 1rem;
 	}
 
-	.metric-card {
+	.summary-grid {
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+	}
+
+	.insight-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.subjects-grid {
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	}
+
+	.metric-card,
+	.insight-card,
+	.subject-card {
 		padding: 1rem;
 	}
 
@@ -370,6 +439,16 @@
 		line-height: 1.2;
 	}
 
+	.metric-card.highlight {
+		background: rgba(245, 158, 11, 0.1);
+		border-color: rgba(245, 158, 11, 0.2);
+	}
+
+	.metric-card.neutral {
+		background: rgba(34, 197, 94, 0.1);
+		border-color: rgba(34, 197, 94, 0.18);
+	}
+
 	.panel-head {
 		display: flex;
 		align-items: flex-start;
@@ -380,53 +459,64 @@
 
 	.panel-head p {
 		margin: 0.15rem 0 0;
-		max-width: 430px;
+		max-width: 440px;
 		font-size: 0.94rem;
-	}
-
-	.insight-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 1rem;
-	}
-
-	.insight-card {
-		padding: 1rem;
 	}
 
 	.insight-card.good {
 		background: rgba(34, 197, 94, 0.1);
-		border-color: rgba(34, 197, 94, 0.2);
+		border-color: rgba(34, 197, 94, 0.18);
 	}
 
-	.insight-card.warn {
+	.insight-card.attention {
 		background: rgba(245, 158, 11, 0.1);
-		border-color: rgba(245, 158, 11, 0.2);
+		border-color: rgba(245, 158, 11, 0.18);
 	}
 
 	.insight-card strong {
 		display: block;
-		color: #0f172a;
 		font-size: 1.05rem;
+		color: #0f172a;
 	}
 
 	.insight-card p {
 		margin: 0.45rem 0 0;
 		font-size: 0.92rem;
-		color: #475569;
 	}
 
-	.skills-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-		gap: 1rem;
+	.filters {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
 	}
 
-	.skill-card {
-		padding: 1rem;
+	.filter-button {
+		height: 2.75rem;
+		padding: 0 1rem;
+		border-radius: 999px;
+		border: 1px solid #cbd5e1;
+		background: white;
+		color: #334155;
+		font-size: 0.9rem;
+		font-weight: 700;
+		cursor: pointer;
+		transition:
+			transform 0.16s ease,
+			background 0.16s ease,
+			border-color 0.16s ease;
 	}
 
-	.skill-top {
+	.filter-button:hover {
+		transform: translateY(-1px);
+	}
+
+	.filter-button.active {
+		background: rgba(37, 99, 235, 0.1);
+		border-color: rgba(96, 165, 250, 0.35);
+		color: #1d4ed8;
+	}
+
+	.subject-top {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
@@ -434,12 +524,12 @@
 		margin-bottom: 1rem;
 	}
 
-	.skill-card h3 {
+	.subject-card h3 {
 		font-size: 1rem;
 	}
 
-	.skill-card p {
-		margin: 0.4rem 0 0;
+	.subject-card p {
+		margin: 0.42rem 0 0;
 		font-size: 0.92rem;
 	}
 
@@ -456,14 +546,14 @@
 		color: #166534;
 	}
 
-	.status-badge.warn {
+	.status-badge.attention {
 		background: rgba(245, 158, 11, 0.14);
 		color: #92400e;
 	}
 
-	.status-badge.risk {
-		background: rgba(239, 68, 68, 0.12);
-		color: #991b1b;
+	.status-badge.pending {
+		background: rgba(148, 163, 184, 0.18);
+		color: #475569;
 	}
 
 	.meta-row {
@@ -474,7 +564,7 @@
 	}
 
 	.meta-box {
-		padding: 0.8rem 0.85rem;
+		padding: 0.82rem 0.88rem;
 		border-radius: 0.95rem;
 		background: #f8fafc;
 		border: 1px solid #e2e8f0;
@@ -490,13 +580,13 @@
 
 	.meta-box strong {
 		color: #0f172a;
-		font-size: 0.98rem;
+		font-size: 1rem;
 	}
 
 	.progress-track {
 		height: 0.8rem;
 		border-radius: 999px;
-		background: #e2e8f0;
+		background: #dbe3ef;
 		overflow: hidden;
 	}
 
@@ -509,62 +599,32 @@
 		background: linear-gradient(90deg, #22c55e, #16a34a);
 	}
 
-	.progress-fill.warn {
+	.progress-fill.attention {
 		background: linear-gradient(90deg, #f59e0b, #d97706);
 	}
 
-	.progress-fill.risk {
-		background: linear-gradient(90deg, #ef4444, #dc2626);
+	.progress-fill.pending {
+		background: linear-gradient(90deg, #94a3b8, #64748b);
 	}
 
-	.roadmap-box {
+	.summary-highlight {
 		padding: 1rem 1.1rem;
 		background: rgba(248, 250, 252, 0.92);
 	}
 
-	.roadmap-box ul {
+	.summary-highlight.highlight {
+		background: rgba(245, 158, 11, 0.1);
+		border-color: rgba(245, 158, 11, 0.18);
+	}
+
+	.summary-highlight.neutral {
+		background: rgba(34, 197, 94, 0.1);
+		border-color: rgba(34, 197, 94, 0.18);
+	}
+
+	.summary-highlight p {
 		margin: 0;
-		padding-left: 1.1rem;
-		color: #334155;
-		line-height: 1.8;
-	}
-
-	.tree-placeholder {
-		padding: 1.2rem;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 0.8rem;
-		flex-wrap: wrap;
-		background: rgba(248, 250, 252, 0.9);
-	}
-
-	.tree-node {
-		padding: 0.8rem 1rem;
-		border-radius: 999px;
-		font-weight: 800;
-		font-size: 0.9rem;
-	}
-
-	.tree-node.unlocked {
-		background: rgba(34, 197, 94, 0.14);
-		color: #166534;
-	}
-
-	.tree-node.in-progress {
-		background: rgba(245, 158, 11, 0.16);
-		color: #92400e;
-	}
-
-	.tree-node.locked {
-		background: rgba(148, 163, 184, 0.18);
-		color: #475569;
-	}
-
-	.tree-line {
-		width: 32px;
-		height: 2px;
-		background: #cbd5e1;
+		font-size: 0.96rem;
 	}
 
 	.empty-state {
@@ -588,10 +648,10 @@
 
 	.empty-state p {
 		margin: 0.65rem auto 0;
-		max-width: 640px;
+		max-width: 620px;
 	}
 
-	@media (max-width: 900px) {
+	@media (max-width: 980px) {
 		.hero,
 		.summary-grid,
 		.insight-grid {
@@ -604,16 +664,18 @@
 	}
 
 	@media (max-width: 640px) {
-		.skill-top,
-		.meta-row,
-		.tree-placeholder {
-			flex-direction: column;
+		.subject-top,
+		.meta-row {
 			grid-template-columns: 1fr;
+			flex-direction: column;
 		}
 
-		.tree-line {
-			width: 2px;
-			height: 24px;
+		.filters {
+			flex-direction: column;
+		}
+
+		.filter-button {
+			width: 100%;
 		}
 	}
 </style>

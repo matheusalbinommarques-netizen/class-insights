@@ -43,7 +43,16 @@ type ScoreRow = {
 	score: number;
 };
 
-type SkillStatus = 'dominada' | 'evoluindo' | 'atenção';
+type SubjectStatus = 'good' | 'attention' | 'pending';
+
+type SubjectItem = {
+	id: string;
+	name: string;
+	progress: number | null;
+	score: number | null;
+	status: SubjectStatus;
+	description: string;
+};
 
 function ratioToPercent(value: number, min: number, max: number): number {
 	const range = max - min;
@@ -53,30 +62,25 @@ function ratioToPercent(value: number, min: number, max: number): number {
 	return Math.round(Math.max(0, Math.min(1, ratio)) * 100);
 }
 
-function statusFromPercent(percent: number): SkillStatus {
-	if (percent >= 70) return 'dominada';
-	if (percent >= 40) return 'evoluindo';
-	return 'atenção';
+function statusFromPercent(percent: number): Exclude<SubjectStatus, 'pending'> {
+	if (percent >= 70) return 'good';
+	return 'attention';
 }
 
 function descriptionFromStatus(
-	status: SkillStatus,
-	progress: number,
+	status: SubjectStatus,
+	progress: number | null,
 	score: number | null
 ): string {
 	if (score === null) {
-		return 'Ainda não há nota lançada para esta skill.';
+		return 'Ainda não há nota lançada para esta matéria.';
 	}
 
-	if (status === 'dominada') {
-		return `Bom desempenho até aqui, com progresso estimado de ${progress}%.`;
+	if (status === 'good') {
+		return `Você está com bom desempenho nesta matéria (${progress ?? 0}%).`;
 	}
 
-	if (status === 'evoluindo') {
-		return `Você está avançando nesta skill. Progresso atual estimado: ${progress}%.`;
-	}
-
-	return `Esta skill pede revisão prioritária. Progresso atual estimado: ${progress}%.`;
+	return `Esta matéria pede mais atenção no momento (${progress ?? 0}%).`;
 }
 
 export const load: PageServerLoad = async ({ locals, parent }) => {
@@ -97,7 +101,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (studentError) {
 		return {
 			authUser,
-			skillsPortal: {
+			subjectsPortal: {
 				status: 'pending-link' as const,
 				message: studentError.message
 			},
@@ -105,19 +109,22 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 				displayName: profile.display_name,
 				className: null as string | null
 			},
-			skills: [] as {
-				id: string;
-				name: string;
-				progress: number | null;
-				score: number | null;
-				status: SkillStatus;
-				description: string | null;
-			}[],
 			summary: {
-				total: 0,
-				dominada: 0,
-				evoluindo: 0,
-				atencao: 0
+				totalSubjects: 0,
+				subjectsWithScore: 0,
+				goodSubjects: 0,
+				attentionSubjects: 0,
+				pendingSubjects: 0,
+				generalAverage: null as number | null,
+				generalPercent: null as number | null
+			},
+			bestSubject: null as SubjectItem | null,
+			prioritySubject: null as SubjectItem | null,
+			subjects: [] as SubjectItem[],
+			academicSummary: {
+				title: 'Acesso acadêmico ainda não concluído',
+				description:
+					'Seu login existe, mas ainda não foi ligado a um registro acadêmico válido.'
 			}
 		};
 	}
@@ -125,7 +132,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (!student) {
 		return {
 			authUser,
-			skillsPortal: {
+			subjectsPortal: {
 				status: 'pending-link' as const,
 				message:
 					'Conta autenticada, mas ainda não encontramos um aluno vinculado a este usuário.'
@@ -134,19 +141,22 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 				displayName: profile.display_name,
 				className: null as string | null
 			},
-			skills: [] as {
-				id: string;
-				name: string;
-				progress: number | null;
-				score: number | null;
-				status: SkillStatus;
-				description: string | null;
-			}[],
 			summary: {
-				total: 0,
-				dominada: 0,
-				evoluindo: 0,
-				atencao: 0
+				totalSubjects: 0,
+				subjectsWithScore: 0,
+				goodSubjects: 0,
+				attentionSubjects: 0,
+				pendingSubjects: 0,
+				generalAverage: null as number | null,
+				generalPercent: null as number | null
+			},
+			bestSubject: null as SubjectItem | null,
+			prioritySubject: null as SubjectItem | null,
+			subjects: [] as SubjectItem[],
+			academicSummary: {
+				title: 'Conta sem vínculo acadêmico',
+				description:
+					'Faça login com a conta correta ou conclua o vínculo usando o código de convite.'
 			}
 		};
 	}
@@ -154,7 +164,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (!student.class_id) {
 		return {
 			authUser,
-			skillsPortal: {
+			subjectsPortal: {
 				status: 'pending-link' as const,
 				message: 'Aluno vinculado sem turma associada.'
 			},
@@ -162,19 +172,22 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 				displayName: student.name || profile.display_name,
 				className: null as string | null
 			},
-			skills: [] as {
-				id: string;
-				name: string;
-				progress: number | null;
-				score: number | null;
-				status: SkillStatus;
-				description: string | null;
-			}[],
 			summary: {
-				total: 0,
-				dominada: 0,
-				evoluindo: 0,
-				atencao: 0
+				totalSubjects: 0,
+				subjectsWithScore: 0,
+				goodSubjects: 0,
+				attentionSubjects: 0,
+				pendingSubjects: 0,
+				generalAverage: null as number | null,
+				generalPercent: null as number | null
+			},
+			bestSubject: null as SubjectItem | null,
+			prioritySubject: null as SubjectItem | null,
+			subjects: [] as SubjectItem[],
+			academicSummary: {
+				title: 'Turma não encontrada',
+				description:
+					'Seu usuário foi ligado a um aluno, mas esse aluno ainda não possui turma válida.'
 			}
 		};
 	}
@@ -188,7 +201,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (classError || !classData) {
 		return {
 			authUser,
-			skillsPortal: {
+			subjectsPortal: {
 				status: 'pending-link' as const,
 				message: classError?.message ?? 'Turma não encontrada.'
 			},
@@ -196,19 +209,22 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 				displayName: student.name || profile.display_name,
 				className: null as string | null
 			},
-			skills: [] as {
-				id: string;
-				name: string;
-				progress: number | null;
-				score: number | null;
-				status: SkillStatus;
-				description: string | null;
-			}[],
 			summary: {
-				total: 0,
-				dominada: 0,
-				evoluindo: 0,
-				atencao: 0
+				totalSubjects: 0,
+				subjectsWithScore: 0,
+				goodSubjects: 0,
+				attentionSubjects: 0,
+				pendingSubjects: 0,
+				generalAverage: null as number | null,
+				generalPercent: null as number | null
+			},
+			bestSubject: null as SubjectItem | null,
+			prioritySubject: null as SubjectItem | null,
+			subjects: [] as SubjectItem[],
+			academicSummary: {
+				title: 'Turma indisponível',
+				description:
+					'Seu vínculo existe, mas não conseguimos carregar os dados da turma no momento.'
 			}
 		};
 	}
@@ -222,27 +238,29 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 	if (skillsError) {
 		return {
 			authUser,
-			skillsPortal: {
-				status: 'pending-link' as const,
-				message: skillsError.message
+			subjectsPortal: {
+				status: 'ready' as const,
+				message: 'Aluno vinculado, mas houve erro ao carregar as matérias.'
 			},
 			student: {
 				displayName: student.name || profile.display_name,
 				className: classData.name
 			},
-			skills: [] as {
-				id: string;
-				name: string;
-				progress: number | null;
-				score: number | null;
-				status: SkillStatus;
-				description: string | null;
-			}[],
 			summary: {
-				total: 0,
-				dominada: 0,
-				evoluindo: 0,
-				atencao: 0
+				totalSubjects: 0,
+				subjectsWithScore: 0,
+				goodSubjects: 0,
+				attentionSubjects: 0,
+				pendingSubjects: 0,
+				generalAverage: null as number | null,
+				generalPercent: null as number | null
+			},
+			bestSubject: null as SubjectItem | null,
+			prioritySubject: null as SubjectItem | null,
+			subjects: [] as SubjectItem[],
+			academicSummary: {
+				title: 'Erro ao carregar matérias',
+				description: skillsError.message
 			}
 		};
 	}
@@ -265,33 +283,32 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 
 	const scoreBySkillId = new Map(scores.map((s) => [s.skill_id, s.score]));
 
-	let dominada = 0;
-	let evoluindo = 0;
-	let atencao = 0;
+	let goodSubjects = 0;
+	let attentionSubjects = 0;
+	let pendingSubjects = 0;
 
-	const mappedSkills = skillList.map((skill) => {
+	const subjects: SubjectItem[] = skillList.map((skill) => {
 		const rawScore = scoreBySkillId.get(skill.id);
+		const scale = resolveEffectiveScale(classData, skill);
 
 		if (typeof rawScore !== 'number') {
-			atencao += 1;
+			pendingSubjects += 1;
 
 			return {
 				id: skill.id,
 				name: skill.name,
-				progress: 0,
-				score: null as number | null,
-				status: 'atenção' as const,
-				description: 'Ainda não há nota lançada para esta skill.'
+				progress: null,
+				score: null,
+				status: 'pending',
+				description: descriptionFromStatus('pending', null, null)
 			};
 		}
 
-		const scale = resolveEffectiveScale(classData, skill);
 		const progress = ratioToPercent(rawScore, scale.min, scale.max);
 		const status = statusFromPercent(progress);
 
-		if (status === 'dominada') dominada += 1;
-		else if (status === 'evoluindo') evoluindo += 1;
-		else atencao += 1;
+		if (status === 'good') goodSubjects += 1;
+		else attentionSubjects += 1;
 
 		return {
 			id: skill.id,
@@ -303,22 +320,74 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 		};
 	});
 
+	const scoredSubjects = subjects.filter((subject) => typeof subject.score === 'number');
+
+	const generalAverage =
+		scoredSubjects.length > 0
+			? Number(
+					(
+						scoredSubjects.reduce((sum, subject) => sum + (subject.score ?? 0), 0) /
+						scoredSubjects.length
+					).toFixed(classData.score_decimals)
+				)
+			: null;
+
+	const generalPercent =
+		scoredSubjects.length > 0
+			? Math.round(
+					scoredSubjects.reduce((sum, subject) => sum + (subject.progress ?? 0), 0) /
+						scoredSubjects.length
+				)
+			: null;
+
+	const bestSubject =
+		[...scoredSubjects].sort((a, b) => (b.progress ?? 0) - (a.progress ?? 0))[0] ?? null;
+
+	const prioritySubject =
+		[...scoredSubjects].sort((a, b) => (a.progress ?? 0) - (b.progress ?? 0))[0] ??
+		(subjects.find((subject) => subject.status === 'pending') ?? null);
+
+	const academicSummary =
+		pendingSubjects > 0
+			? {
+					title: `${pendingSubjects} matéria(s) ainda sem nota`,
+					description:
+						'Algumas matérias ainda não possuem lançamento. Assim que novas notas entrarem, sua visão ficará mais completa.'
+				}
+			: attentionSubjects > 0
+				? {
+						title: `${attentionSubjects} matéria(s) pedem mais atenção`,
+						description:
+							'Vale começar pelas matérias com menor desempenho para equilibrar sua média geral.'
+					}
+				: {
+						title: 'Sem pontos críticos no momento',
+						description:
+							'Seu desempenho está equilibrado nas matérias avaliadas até aqui.'
+					};
+
 	return {
 		authUser,
-		skillsPortal: {
+		subjectsPortal: {
 			status: 'ready' as const,
-			message: 'Skills reais carregadas.'
+			message: 'Matérias carregadas com sucesso.'
 		},
 		student: {
 			displayName: student.name || profile.display_name,
 			className: classData.name
 		},
-		skills: mappedSkills,
 		summary: {
-			total: mappedSkills.length,
-			dominada,
-			evoluindo,
-			atencao
-		}
+			totalSubjects: subjects.length,
+			subjectsWithScore: scoredSubjects.length,
+			goodSubjects,
+			attentionSubjects,
+			pendingSubjects,
+			generalAverage,
+			generalPercent
+		},
+		bestSubject,
+		prioritySubject,
+		subjects,
+		academicSummary
 	};
 };

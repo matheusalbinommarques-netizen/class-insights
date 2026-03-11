@@ -1,23 +1,60 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 
-	type ClassItem = {
-		id: string;
-		name: string;
-		created_at: string;
-		score_min: number;
-		score_max: number;
-		score_decimals: number;
-	};
-
-	type FormState = {
+	type ActionFeedback = {
+		action?: 'createClass' | 'deleteClass' | 'generateClassSnapshot';
 		message?: string;
 		success?: boolean;
 	};
 
+	type Summary = {
+		displayName: string;
+		totalClasses: number;
+		totalStudents: number;
+		totalRiskStudents: number;
+		totalPendingCells: number;
+		classesNeedingSnapshot: number;
+		classesAtRisk: number;
+		classesInSetup: number;
+		healthyClasses: number;
+		message: string;
+	};
+
+	type ClassCard = {
+		id: string;
+		name: string;
+		created_at: string;
+		scaleLabel: string;
+		studentsCount: number;
+		skillsCount: number;
+		filledScoresCount: number;
+		totalExpectedCells: number;
+		pendingCells: number;
+		coveragePercent: number;
+		averagePercent: number | null;
+		riskStudentsCount: number;
+		latestSnapshotDate: string | null;
+		needsSnapshot: boolean;
+		trendDelta: number | null;
+		focusSkills: string[];
+		status: 'setup' | 'healthy' | 'attention' | 'critical';
+	};
+
+	type ActionQueueItem = {
+		id: string;
+		classId: string;
+		title: string;
+		description: string;
+		ctaLabel: string;
+		href: string;
+		priority: number;
+	};
+
 	type Props = {
 		data: {
-			classes: ClassItem[];
+			classes: ClassCard[];
+			actionQueue: ActionQueueItem[];
+			summary: Summary;
 			error: string | null;
 		};
 	};
@@ -28,67 +65,16 @@
 	let newMax = $state(10);
 	let newDecimals = $state(0);
 
-	const formState = $derived(($page.form ?? null) as FormState | null);
+	const formState = $derived(($page.form ?? null) as ActionFeedback | null);
 	const formMessage = $derived(formState?.message ?? null);
 	const formSuccess = $derived(formState?.success ?? false);
+	const formAction = $derived(formState?.action ?? null);
 
-	const totalClasses = $derived(data.classes.length);
+	const hasClasses = $derived(data.classes.length > 0);
 
-	const widestScale = $derived(
-		data.classes.length > 0
-			? data.classes.reduce(
-					(acc, current) => ({
-						min: Math.min(acc.min, current.score_min),
-						max: Math.max(acc.max, current.score_max)
-					}),
-					{
-						min: data.classes[0].score_min,
-						max: data.classes[0].score_max
-					}
-				)
-			: null
-	);
-
-	const decimalProfiles = $derived(
-		Array.from(new Set(data.classes.map((c) => c.score_decimals))).sort((a, b) => a - b)
-	);
-
-	const latestClass = $derived(
-		data.classes.length > 0
-			? [...data.classes].sort(
-					(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-				)[0]
-			: null
-	);
-
-	const normalizedScales = $derived(
-		data.classes.map((c) => `${c.score_min}-${c.score_max}-dec-${c.score_decimals}`)
-	);
-
-	const uniqueScaleProfiles = $derived(Array.from(new Set(normalizedScales)));
-	const scaleProfileCount = $derived(uniqueScaleProfiles.length);
-
-	const classesWithDecimals = $derived(data.classes.filter((c) => c.score_decimals > 0).length);
-	const classesWithoutDecimals = $derived(data.classes.filter((c) => c.score_decimals === 0).length);
-
-	const averageScaleSpan = $derived(
-		data.classes.length > 0
-			? (
-					data.classes.reduce((sum, current) => sum + (current.score_max - current.score_min), 0) /
-					data.classes.length
-				).toFixed(1)
-			: null
-	);
-
-	const confirmDelete = (e: MouseEvent) => {
-		if (!confirm('Deletar esta turma? Isso remove alunos, skills e scores.')) {
-			e.preventDefault();
-		}
-	};
-
-	const formatDate = (value: string) => {
-		const date = new Date(value);
-
+	const formatDate = (value: string | null) => {
+		if (!value) return 'Nunca';
+		const date = new Date(`${value}T00:00:00`);
 		if (Number.isNaN(date.getTime())) return 'Data indisponível';
 
 		return new Intl.DateTimeFormat('pt-BR', {
@@ -96,8 +82,60 @@
 		}).format(date);
 	};
 
-	const formatScaleLabel = (item: ClassItem) =>
-		`${item.score_min}–${item.score_max} • dec ${item.score_decimals}`;
+	const formatPercent = (value: number | null) => {
+		if (typeof value !== 'number') return '—';
+		return `${value}%`;
+	};
+
+	const formatDelta = (value: number | null) => {
+		if (typeof value !== 'number') return 'Sem baseline';
+		const rounded = value.toFixed(2);
+		return `${value >= 0 ? '+' : ''}${rounded}`;
+	};
+
+	const statusLabel = (status: ClassCard['status']) => {
+		if (status === 'healthy') return 'Saudável';
+		if (status === 'attention') return 'Atenção';
+		if (status === 'critical') return 'Crítica';
+		return 'Configuração';
+	};
+
+	const statusClass = (status: ClassCard['status']) => {
+		if (status === 'healthy') return 'good';
+		if (status === 'attention') return 'warn';
+		if (status === 'critical') return 'risk';
+		return 'setup';
+	};
+
+	const coverageClass = (coverage: number) => {
+		if (coverage < 50) return 'risk';
+		if (coverage < 85) return 'warn';
+		return 'good';
+	};
+
+	const confirmDelete = (event: MouseEvent) => {
+		if (!confirm('Deletar esta turma? Isso remove alunos, skills e scores.')) {
+			event.preventDefault();
+		}
+	};
+
+	const feedbackTone = $derived(
+		formMessage ? (formSuccess ? 'success' : 'error') : null
+	);
+
+	const quickGuidance = $derived(
+		data.summary.totalClasses === 0
+			? [
+					'Crie sua primeira turma',
+					'Cadastre skills e alunos',
+					'Comece a lançar ou importar notas'
+				]
+			: [
+					'Priorize turmas com risco alto',
+					'Use snapshot para manter histórico auditável',
+					'Importe notas direto no contexto da turma'
+				]
+	);
 </script>
 
 <svelte:head>
@@ -106,222 +144,240 @@
 
 <section class="hero">
 	<div class="hero-copy">
-		<div class="eyebrow">Dashboard</div>
-		<h1>Workspace do professor</h1>
-		<p>
-			Gerencie turmas, padronize escalas, entre no cockpit de cada classe e avance da operação
-			para os insights.
-		</p>
+		<div class="eyebrow">Workspace do professor</div>
+		<h1>Olá, {data.summary.displayName}.</h1>
+		<p>{data.summary.message}</p>
 
-		<div class="hero-chips">
-			<span class="hero-chip">Turmas: <strong>{totalClasses}</strong></span>
-			<span class="hero-chip">
-				Perfis de escala: <strong>{scaleProfileCount}</strong>
-			</span>
-			{#if averageScaleSpan}
-				<span class="hero-chip">Amplitude média: <strong>{averageScaleSpan}</strong></span>
-			{/if}
+		<div class="hero-actions">
+			<a href="#create-class" class="primary-button">Criar nova turma</a>
+			<a href="/teacher/import" class="secondary-button">Importar notas</a>
 		</div>
 	</div>
 
 	<div class="hero-side">
-		<div class="hero-side-label">Próxima ação</div>
-		<h2>{totalClasses > 0 ? 'Entrar numa turma e operar' : 'Criar a primeira turma'}</h2>
-		<p>
-			{#if totalClasses > 0}
-				Você já pode abrir uma turma para lançar notas, ajustar skills, gerar snapshots e analisar
-				evolução.
-			{:else}
-				Comece definindo uma turma com a escala padrão que será herdada pelas skills.
-			{/if}
-		</p>
-		<div class="hero-actions">
-			<a href="/teacher/import" class="secondary-link">Ir para importação</a>
+		<div class="hero-side-label">Resumo executivo</div>
+		<div class="hero-side-grid">
+			<div class="hero-side-item">
+				<span>Turmas em risco</span>
+				<strong>{data.summary.classesAtRisk}</strong>
+			</div>
+			<div class="hero-side-item">
+				<span>Snapshots pendentes</span>
+				<strong>{data.summary.classesNeedingSnapshot}</strong>
+			</div>
+			<div class="hero-side-item">
+				<span>Alunos em risco</span>
+				<strong>{data.summary.totalRiskStudents}</strong>
+			</div>
+			<div class="hero-side-item">
+				<span>Pendências de lançamento</span>
+				<strong>{data.summary.totalPendingCells}</strong>
+			</div>
 		</div>
 	</div>
 </section>
 
-<section class="stats-grid">
-	<article class="stat-card">
-		<div class="stat-label">Total de turmas</div>
-		<div class="stat-value">{totalClasses}</div>
-		<div class="stat-foot">
-			{#if totalClasses > 0}
-				Pronto para navegar no cockpit de cada turma
-			{:else}
-				Crie sua primeira turma para começar
-			{/if}
-		</div>
+<section class="summary-grid">
+	<article class="summary-card">
+		<div class="summary-label">Turmas ativas</div>
+		<div class="summary-value">{data.summary.totalClasses}</div>
+		<div class="summary-foot">Portfólio atual do professor</div>
 	</article>
 
-	<article class="stat-card">
-		<div class="stat-label">Escala mais ampla</div>
-		<div class="stat-value">
-			{#if widestScale}
-				{widestScale.min}–{widestScale.max}
-			{:else}
-				—
-			{/if}
-		</div>
-		<div class="stat-foot">Faixa encontrada entre as turmas cadastradas</div>
+	<article class="summary-card">
+		<div class="summary-label">Alunos ativos</div>
+		<div class="summary-value">{data.summary.totalStudents}</div>
+		<div class="summary-foot">Base monitorada nas turmas</div>
 	</article>
 
-	<article class="stat-card">
-		<div class="stat-label">Perfis de decimais</div>
-		<div class="stat-value">
-			{#if decimalProfiles.length > 0}
-				{decimalProfiles.join(', ')}
-			{:else}
-				—
-			{/if}
-		</div>
-		<div class="stat-foot">Quantidades de casas decimais hoje em uso</div>
+	<article class="summary-card">
+		<div class="summary-label">Turmas saudáveis</div>
+		<div class="summary-value">{data.summary.healthyClasses}</div>
+		<div class="summary-foot">Sem alerta crítico imediato</div>
 	</article>
 
-	<article class="stat-card">
-		<div class="stat-label">Turma mais recente</div>
-		<div class="stat-value small">
-			{#if latestClass}
-				{latestClass.name}
-			{:else}
-				—
-			{/if}
-		</div>
-		<div class="stat-foot">
-			{#if latestClass}
-				Criada em {formatDate(latestClass.created_at)}
-			{:else}
-				Sem turmas cadastradas ainda
-			{/if}
-		</div>
+	<article class="summary-card">
+		<div class="summary-label">Turmas em setup</div>
+		<div class="summary-value">{data.summary.classesInSetup}</div>
+		<div class="summary-foot">Ainda precisam de alunos ou skills</div>
 	</article>
 </section>
 
+{#if formMessage}
+	<div class={`feedback ${feedbackTone}`}>
+		{formMessage}
+	</div>
+{/if}
+
+{#if data.error}
+	<div class="feedback error">{data.error}</div>
+{/if}
+
 <section class="dashboard-grid">
 	<div class="main-column">
-		<section class="panel create-panel">
+		<section class="panel attention-panel">
 			<div class="panel-head">
 				<div>
-					<div class="section-kicker">Configuração</div>
-					<h2>Criar nova turma</h2>
+					<div class="section-kicker">Fila de ação</div>
+					<h2>O que merece atenção agora</h2>
 				</div>
 				<p>
-					Defina a escala padrão da turma. Skills podem herdar essa escala ou receber override
-					depois.
+					Aqui entram as próximas melhores ações para o professor, em vez de só configuração.
 				</p>
 			</div>
 
-			<form method="POST" action="?/createClass" class="create-form">
-				<div class="field field-name">
-					<label for="class-name">Nome da turma</label>
-					<input id="class-name" name="name" placeholder="Ex: 2º Ano A" />
+			{#if data.actionQueue.length === 0}
+				<div class="empty-state">
+					<h3>Nenhuma pendência urgente</h3>
+					<p>
+						Suas turmas não têm alertas prioritários neste momento. Você pode seguir com
+						importações, novas avaliações ou novas turmas.
+					</p>
 				</div>
+			{:else}
+				<div class="action-list">
+					{#each data.actionQueue as item}
+						<article class="action-item">
+							<div class="action-copy">
+								<strong>{item.title}</strong>
+								<p>{item.description}</p>
+							</div>
 
-				<div class="field field-small">
-					<label for="score-min">Min</label>
-					<input id="score-min" name="score_min" type="number" step="any" bind:value={newMin} />
+							<a href={item.href} class="secondary-button">{item.ctaLabel}</a>
+						</article>
+					{/each}
 				</div>
-
-				<div class="field field-small">
-					<label for="score-max">Max</label>
-					<input id="score-max" name="score_max" type="number" step="any" bind:value={newMax} />
-				</div>
-
-				<div class="field field-small">
-					<label for="score-decimals">Decimais</label>
-					<input
-						id="score-decimals"
-						name="score_decimals"
-						type="number"
-						min="0"
-						max="6"
-						bind:value={newDecimals}
-					/>
-				</div>
-
-				<div class="actions">
-					<button type="submit" class="primary-button">Criar turma</button>
-				</div>
-			</form>
-
-			<div class="create-hints">
-				<div class="hint-card">
-					<strong>Escala inteira</strong>
-					<p>Boa para contextos simples, como 0–10 com decimais 0.</p>
-				</div>
-				<div class="hint-card">
-					<strong>Escala com precisão</strong>
-					<p>Útil quando o professor precisa lançar 7,5 ou 8,25 com mais fidelidade.</p>
-				</div>
-			</div>
-
-			{#if formMessage}
-				<div class="feedback error">{formMessage}</div>
-			{:else if formSuccess}
-				<div class="feedback success">Turma criada com sucesso.</div>
-			{/if}
-
-			{#if data.error}
-				<div class="feedback error">{data.error}</div>
 			{/if}
 		</section>
 
 		<section class="panel classes-panel">
 			<div class="panel-head">
 				<div>
-					<div class="section-kicker">Workspace</div>
-					<h2>Turmas cadastradas</h2>
+					<div class="section-kicker">Cockpit de turmas</div>
+					<h2>Turmas vivas, não só cadastradas</h2>
 				</div>
 				<p>
-					Acesse uma turma para operar alunos, skills, notas, importação e insights.
+					Os cards abaixo priorizam saúde, risco, cobertura e recência para ajudar na tomada de
+					decisão.
 				</p>
 			</div>
 
-			{#if data.classes.length === 0}
-				<div class="empty-state">
-					<h3>Nenhuma turma ainda</h3>
+			{#if !hasClasses}
+				<div class="empty-state empty-hero">
+					<div class="empty-badge">CI</div>
+					<h3>Pronto para transformar dados em progresso?</h3>
 					<p>
-						Crie a primeira turma acima para começar a operar o fluxo professor → notas →
-						insights.
+						Crie sua primeira turma para começar a operar o fluxo real de professor, notas,
+						skills, snapshots e insights.
 					</p>
+					<a href="#create-class" class="primary-button">Criar primeira turma</a>
 				</div>
 			{:else}
 				<div class="classes-grid">
 					{#each data.classes as c}
 						<article class="class-card">
-							<div class="class-top">
+							<div class="class-card-head">
 								<div>
-									<h3>{c.name}</h3>
-									<p>Criada em {formatDate(c.created_at)}</p>
+									<div class="class-name-row">
+										<h3>{c.name}</h3>
+										<span class={`status-badge ${statusClass(c.status)}`}>
+											{statusLabel(c.status)}
+										</span>
+									</div>
+
+									<p class="class-subtitle">
+										Criada em {formatDate(c.created_at)} • {c.scaleLabel}
+									</p>
 								</div>
 
-								<span class="badge">Turma</span>
+								<details class="options-menu">
+									<summary aria-label="Mais opções">⋯</summary>
+									<div class="options-popover">
+										<form method="POST" action="?/deleteClass">
+											<input type="hidden" name="classId" value={c.id} />
+											<button type="submit" class="danger-option" onclick={confirmDelete}>
+												Excluir turma
+											</button>
+										</form>
+									</div>
+								</details>
 							</div>
 
-							<div class="meta-grid">
-								<div class="meta-item">
-									<span class="meta-label">Escala padrão</span>
-									<strong>{c.score_min}–{c.score_max}</strong>
+							<div class="card-metrics">
+								<div class="metric-box">
+									<span>Aproveitamento</span>
+									<strong>{formatPercent(c.averagePercent)}</strong>
 								</div>
 
-								<div class="meta-item">
-									<span class="meta-label">Decimais</span>
-									<strong>{c.score_decimals}</strong>
+								<div class="metric-box">
+									<span>Alunos em risco</span>
+									<strong>{c.riskStudentsCount}</strong>
+								</div>
+
+								<div class="metric-box">
+									<span>Cobertura</span>
+									<strong class={coverageClass(c.coveragePercent)}>
+										{c.coveragePercent}%
+									</strong>
+								</div>
+
+								<div class="metric-box">
+									<span>Último snapshot</span>
+									<strong>{formatDate(c.latestSnapshotDate)}</strong>
 								</div>
 							</div>
 
-							<div class="class-note">
-								<div class="class-note-label">Perfil</div>
-								<div class="class-note-value">{formatScaleLabel(c)}</div>
+							<div class="card-meta-row">
+								<div class="meta-pill">
+									<span>Alunos</span>
+									<strong>{c.studentsCount}</strong>
+								</div>
+
+								<div class="meta-pill">
+									<span>Skills</span>
+									<strong>{c.skillsCount}</strong>
+								</div>
+
+								<div class="meta-pill">
+									<span>Pendências</span>
+									<strong>{c.pendingCells}</strong>
+								</div>
+
+								<div class="meta-pill">
+									<span>Tendência</span>
+									<strong class:positive={typeof c.trendDelta === 'number' && c.trendDelta >= 0}
+										class:negative={typeof c.trendDelta === 'number' && c.trendDelta < 0}>
+										{formatDelta(c.trendDelta)}
+									</strong>
+								</div>
 							</div>
 
-							<div class="class-actions">
-								<a href={`/teacher/${c.id}`} class="link-button">Abrir turma</a>
+							{#if c.focusSkills.length > 0}
+								<div class="focus-box">
+									<div class="focus-label">Top lacunas atuais</div>
+									<div class="focus-tags">
+										{#each c.focusSkills as skillName}
+											<span>{skillName}</span>
+										{/each}
+									</div>
+								</div>
+							{/if}
 
-								<form method="POST" action="?/deleteClass">
+							<div class="card-footer">
+								<a href={`/teacher/${c.id}`} class="primary-button">Abrir turma</a>
+
+								<a href={`/teacher/import?classId=${c.id}`} class="secondary-button">
+									Importar notas
+								</a>
+
+								<form method="POST" action="?/generateClassSnapshot">
 									<input type="hidden" name="classId" value={c.id} />
-									<button type="submit" class="danger-button" onclick={confirmDelete}>
-										Deletar
+									<button
+										type="submit"
+										class="secondary-button"
+										disabled={c.studentsCount === 0 || c.skillsCount === 0}
+									>
+										Gerar snapshot
 									</button>
 								</form>
 							</div>
@@ -333,125 +389,157 @@
 	</div>
 
 	<aside class="side-column">
-		<section class="panel side-panel">
+		<section class="panel create-panel" id="create-class">
 			<div class="panel-head compact">
 				<div>
-					<div class="section-kicker">Leitura rápida</div>
-					<h2>Padrões atuais</h2>
+					<div class="section-kicker">Nova turma</div>
+					<h2>Criar turma</h2>
+				</div>
+			</div>
+
+			<form method="POST" action="?/createClass" class="create-form">
+				<div class="field">
+					<label for="class-name">Nome da turma</label>
+					<input id="class-name" name="name" placeholder="Ex: 2º Ano A" />
+				</div>
+
+				<div class="form-mini-grid">
+					<div class="field">
+						<label for="score-min">Min</label>
+						<input id="score-min" name="score_min" type="number" step="any" bind:value={newMin} />
+					</div>
+
+					<div class="field">
+						<label for="score-max">Max</label>
+						<input id="score-max" name="score_max" type="number" step="any" bind:value={newMax} />
+					</div>
+
+					<div class="field">
+						<label for="score-decimals">Decimais</label>
+						<input
+							id="score-decimals"
+							name="score_decimals"
+							type="number"
+							min="0"
+							max="6"
+							bind:value={newDecimals}
+						/>
+					</div>
+				</div>
+
+				<div class="scale-preview">
+					Escala padrão: <strong>{newMin}–{newMax}</strong> • dec <strong>{newDecimals}</strong>
+				</div>
+
+				<button type="submit" class="primary-button">Criar turma</button>
+			</form>
+		</section>
+
+		<section class="panel">
+			<div class="panel-head compact">
+				<div>
+					<div class="section-kicker">Próximos movimentos</div>
+					<h2>Guia rápido</h2>
+				</div>
+			</div>
+
+			<ul class="guidance-list">
+				{#each quickGuidance as item}
+					<li>{item}</li>
+				{/each}
+			</ul>
+		</section>
+
+		<section class="panel">
+			<div class="panel-head compact">
+				<div>
+					<div class="section-kicker">Visão geral</div>
+					<h2>Saúde do workspace</h2>
 				</div>
 			</div>
 
 			<div class="mini-stats">
 				<div class="mini-stat">
-					<span>Perfis de escala</span>
-					<strong>{scaleProfileCount}</strong>
+					<span>Saudáveis</span>
+					<strong>{data.summary.healthyClasses}</strong>
 				</div>
 
 				<div class="mini-stat">
-					<span>Com decimais</span>
-					<strong>{classesWithDecimals}</strong>
+					<span>Em setup</span>
+					<strong>{data.summary.classesInSetup}</strong>
 				</div>
 
 				<div class="mini-stat">
-					<span>Sem decimais</span>
-					<strong>{classesWithoutDecimals}</strong>
+					<span>Com risco</span>
+					<strong>{data.summary.classesAtRisk}</strong>
+				</div>
+
+				<div class="mini-stat">
+					<span>Snapshot pendente</span>
+					<strong>{data.summary.classesNeedingSnapshot}</strong>
 				</div>
 			</div>
-		</section>
-
-		<section class="panel side-panel">
-			<div class="panel-head compact">
-				<div>
-					<div class="section-kicker">Ação rápida</div>
-					<h2>Atalhos</h2>
-				</div>
-			</div>
-
-			<div class="quick-links">
-				<a href="/teacher/import" class="quick-link">
-					<div>
-						<strong>Importação com staging</strong>
-						<p>Subir CSV, validar, aplicar.</p>
-					</div>
-					<span>→</span>
-				</a>
-
-				{#if latestClass}
-					<a href={`/teacher/${latestClass.id}`} class="quick-link">
-						<div>
-							<strong>Abrir última turma</strong>
-							<p>{latestClass.name}</p>
-						</div>
-						<span>→</span>
-					</a>
-				{/if}
-			</div>
-		</section>
-
-		<section class="panel side-panel">
-			<div class="panel-head compact">
-				<div>
-					<div class="section-kicker">Próximo nível</div>
-					<h2>Depois daqui</h2>
-				</div>
-			</div>
-
-			<ul class="next-steps">
-				<li>Entrar na turma e operar alunos, skills e notas</li>
-				<li>Gerar snapshots para histórico comparativo</li>
-				<li>Transformar o cockpit em leitura prescritiva</li>
-			</ul>
 		</section>
 	</aside>
 </section>
 
 <style>
 	.hero,
-	.stat-card,
+	.summary-card,
 	.panel,
 	.class-card,
-	.hint-card,
-	.mini-stat,
-	.quick-link {
-		background: rgba(255, 255, 255, 0.92);
-		border: 1px solid rgba(148, 163, 184, 0.2);
+	.action-item,
+	.metric-box,
+	.meta-pill,
+	.focus-box,
+	.mini-stat {
+		background: rgba(255, 255, 255, 0.94);
+		border: 1px solid rgba(148, 163, 184, 0.18);
 		border-radius: 1.25rem;
 		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
 	}
 
 	.hero {
-		padding: 1.35rem;
+		padding: 1.4rem;
 		margin-bottom: 1rem;
 		display: grid;
-		grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr);
+		grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.85fr);
 		gap: 1rem;
+		align-items: stretch;
 	}
 
 	.hero-copy h1,
 	.panel-head h2,
-	.hero-side h2 {
+	.class-card h3,
+	.empty-state h3 {
 		margin: 0;
 		color: #0f172a;
-		line-height: 1.15;
+		line-height: 1.08;
 	}
 
 	.hero-copy h1 {
-		font-size: clamp(1.7rem, 2.5vw, 2.3rem);
+		font-size: clamp(2rem, 3.5vw, 3rem);
+		letter-spacing: -0.04em;
 	}
 
 	.hero-copy p,
+	.hero-side-item span,
 	.panel-head p,
-	.hero-side p,
-	.hint-card p,
-	.quick-link p,
-	.empty-state p {
-		margin: 0.55rem 0 0;
+	.class-subtitle,
+	.empty-state p,
+	.action-copy p,
+	.guidance-list,
+	.mini-stat span,
+	.scale-preview {
 		color: #475569;
-		line-height: 1.6;
+		line-height: 1.7;
 	}
 
 	.eyebrow,
-	.section-kicker {
+	.section-kicker,
+	.summary-label,
+	.hero-side-label,
+	.focus-label {
 		font-size: 0.78rem;
 		font-weight: 800;
 		letter-spacing: 0.08em;
@@ -460,23 +548,57 @@
 		margin-bottom: 0.35rem;
 	}
 
-	.hero-chips {
+	.hero-actions,
+	.card-footer {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.65rem;
+		gap: 0.75rem;
 		margin-top: 1rem;
 	}
 
-	.hero-chip {
+	.primary-button,
+	.secondary-button {
+		height: 2.95rem;
+		padding: 0 1rem;
+		border-radius: 0.95rem;
+		font-weight: 800;
+		font-size: 0.95rem;
+		cursor: pointer;
+		text-decoration: none;
 		display: inline-flex;
 		align-items: center;
-		gap: 0.35rem;
-		padding: 0.65rem 0.85rem;
-		border-radius: 999px;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		font-size: 0.88rem;
-		color: #334155;
+		justify-content: center;
+		transition:
+			transform 0.16s ease,
+			box-shadow 0.16s ease,
+			background 0.16s ease,
+			border-color 0.16s ease,
+			opacity 0.16s ease;
+	}
+
+	.primary-button {
+		border: 0;
+		background: linear-gradient(135deg, #2563eb, #1d4ed8);
+		color: white;
+		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+	}
+
+	.secondary-button {
+		background: white;
+		color: #0f172a;
+		border: 1px solid #cbd5e1;
+	}
+
+	.primary-button:hover,
+	.secondary-button:hover {
+		transform: translateY(-1px);
+	}
+
+	.primary-button:disabled,
+	.secondary-button:disabled {
+		opacity: 0.7;
+		cursor: not-allowed;
+		transform: none;
 	}
 
 	.hero-side {
@@ -486,79 +608,80 @@
 		border: 1px solid rgba(96, 165, 250, 0.22);
 	}
 
-	.hero-side-label {
-		font-size: 0.78rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #1d4ed8;
-		margin-bottom: 0.35rem;
+	.hero-side-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-top: 0.75rem;
 	}
 
-	.hero-actions {
-		margin-top: 1rem;
-	}
-
-	.secondary-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		height: 2.9rem;
-		padding: 0 1rem;
-		border-radius: 0.9rem;
-		text-decoration: none;
-		font-weight: 700;
-		font-size: 0.95rem;
-		color: #0f172a;
+	.hero-side-item {
+		padding: 0.9rem;
+		border-radius: 1rem;
 		background: white;
-		border: 1px solid #cbd5e1;
-		transition: transform 0.16s ease;
+		border: 1px solid rgba(148, 163, 184, 0.14);
 	}
 
-	.secondary-link:hover {
-		transform: translateY(-1px);
+	.hero-side-item span {
+		display: block;
+		font-size: 0.8rem;
+		margin-bottom: 0.2rem;
 	}
 
-	.stats-grid {
+	.hero-side-item strong {
+		font-size: 1.3rem;
+		color: #0f172a;
+		line-height: 1.1;
+	}
+
+	.summary-grid {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 1rem;
 		margin-bottom: 1rem;
 	}
 
-	.stat-card {
-		padding: 1.1rem 1.15rem;
+	.summary-card {
+		padding: 1rem;
 	}
 
-	.stat-label {
-		font-size: 0.82rem;
-		font-weight: 700;
-		color: #64748b;
-		margin-bottom: 0.4rem;
-	}
-
-	.stat-value {
-		font-size: 1.85rem;
-		font-weight: 800;
+	.summary-value {
+		font-size: 1.8rem;
+		font-weight: 900;
 		color: #0f172a;
-		line-height: 1.1;
+		line-height: 1.05;
 	}
 
-	.stat-value.small {
-		font-size: 1.15rem;
-		line-height: 1.3;
-	}
-
-	.stat-foot {
+	.summary-foot {
 		margin-top: 0.45rem;
 		font-size: 0.88rem;
-		color: #475569;
+		color: #64748b;
 		line-height: 1.5;
+	}
+
+	.feedback {
+		margin-bottom: 1rem;
+		padding: 0.95rem 1rem;
+		border-radius: 1rem;
+		font-size: 0.92rem;
+		font-weight: 700;
+	}
+
+	.feedback.success {
+		background: rgba(34, 197, 94, 0.12);
+		border: 1px solid rgba(34, 197, 94, 0.22);
+		color: #166534;
+	}
+
+	.feedback.error {
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.2);
+		color: #991b1b;
 	}
 
 	.dashboard-grid {
 		display: grid;
-		grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.85fr);
+		grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.85fr);
 		gap: 1rem;
 		align-items: start;
 	}
@@ -572,7 +695,7 @@
 	}
 
 	.panel {
-		padding: 1.25rem;
+		padding: 1.2rem;
 	}
 
 	.panel-head {
@@ -589,15 +712,254 @@
 
 	.panel-head p {
 		max-width: 460px;
-		margin-top: 0.15rem;
-		font-size: 0.95rem;
+		margin: 0.15rem 0 0;
+		font-size: 0.94rem;
+	}
+
+	.action-list {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.action-item {
+		padding: 1rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+
+	.action-copy strong {
+		display: block;
+		color: #0f172a;
+		font-size: 0.98rem;
+		margin-bottom: 0.2rem;
+	}
+
+	.classes-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+		gap: 1rem;
+	}
+
+	.class-card {
+		padding: 1rem;
+	}
+
+	.class-card-head {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.75rem;
+		margin-bottom: 1rem;
+	}
+
+	.class-name-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+	}
+
+	.class-card h3 {
+		font-size: 1.08rem;
+	}
+
+	.class-subtitle {
+		margin: 0.35rem 0 0;
+		font-size: 0.88rem;
+	}
+
+	.status-badge {
+		padding: 0.4rem 0.72rem;
+		border-radius: 999px;
+		font-size: 0.74rem;
+		font-weight: 900;
+		white-space: nowrap;
+	}
+
+	.status-badge.good {
+		background: rgba(34, 197, 94, 0.12);
+		color: #166534;
+	}
+
+	.status-badge.warn {
+		background: rgba(245, 158, 11, 0.14);
+		color: #92400e;
+	}
+
+	.status-badge.risk {
+		background: rgba(239, 68, 68, 0.12);
+		color: #991b1b;
+	}
+
+	.status-badge.setup {
+		background: rgba(148, 163, 184, 0.16);
+		color: #475569;
+	}
+
+	.options-menu {
+		position: relative;
+	}
+
+	.options-menu summary {
+		list-style: none;
+		width: 2.2rem;
+		height: 2.2rem;
+		border-radius: 0.8rem;
+		display: grid;
+		place-items: center;
+		background: #f8fafc;
+		border: 1px solid #e2e8f0;
+		color: #475569;
+		cursor: pointer;
+		font-size: 1.1rem;
+		font-weight: 900;
+	}
+
+	.options-menu summary::-webkit-details-marker {
+		display: none;
+	}
+
+	.options-popover {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 0.35rem);
+		min-width: 150px;
+		padding: 0.5rem;
+		border-radius: 0.9rem;
+		background: white;
+		border: 1px solid rgba(148, 163, 184, 0.18);
+		box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+		z-index: 5;
+	}
+
+	.danger-option {
+		width: 100%;
+		height: 2.5rem;
+		border-radius: 0.75rem;
+		border: 1px solid rgba(239, 68, 68, 0.18);
+		background: white;
+		color: #b91c1c;
+		font-weight: 800;
+		cursor: pointer;
+	}
+
+	.card-metrics {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-bottom: 0.85rem;
+	}
+
+	.metric-box {
+		padding: 0.85rem 0.9rem;
+		background: #f8fafc;
+	}
+
+	.metric-box span,
+	.meta-pill span {
+		display: block;
+		font-size: 0.76rem;
+		font-weight: 800;
+		letter-spacing: 0.03em;
+		text-transform: uppercase;
+		color: #64748b;
+		margin-bottom: 0.2rem;
+	}
+
+	.metric-box strong,
+	.meta-pill strong {
+		color: #0f172a;
+		font-size: 1rem;
+	}
+
+	.metric-box strong.good,
+	.meta-pill strong.positive {
+		color: #166534;
+	}
+
+	.metric-box strong.warn {
+		color: #92400e;
+	}
+
+	.metric-box strong.risk,
+	.meta-pill strong.negative {
+		color: #991b1b;
+	}
+
+	.card-meta-row {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.65rem;
+		margin-bottom: 0.85rem;
+	}
+
+	.meta-pill {
+		padding: 0.75rem 0.8rem;
+		background: rgba(248, 250, 252, 0.9);
+	}
+
+	.focus-box {
+		padding: 0.9rem;
+		background: rgba(37, 99, 235, 0.05);
+		margin-bottom: 0.95rem;
+	}
+
+	.focus-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+	}
+
+	.focus-tags span {
+		padding: 0.42rem 0.65rem;
+		border-radius: 999px;
+		background: white;
+		border: 1px solid rgba(148, 163, 184, 0.2);
+		font-size: 0.8rem;
+		font-weight: 700;
+		color: #23415f;
+	}
+
+	.card-footer form {
+		display: inline-flex;
+	}
+
+	.empty-state {
+		padding: 1.2rem;
+		border-radius: 1rem;
+		border: 1px dashed #cbd5e1;
+		background: rgba(248, 250, 252, 0.88);
+		text-align: center;
+	}
+
+	.empty-hero {
+		padding: 2rem 1.2rem;
+	}
+
+	.empty-badge {
+		width: 3rem;
+		height: 3rem;
+		margin: 0 auto 0.75rem;
+		border-radius: 1rem;
+		display: grid;
+		place-items: center;
+		font-weight: 900;
+		color: white;
+		background: linear-gradient(135deg, #2563eb, #1d4ed8);
+		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+	}
+
+	.empty-state .primary-button {
+		margin-top: 1rem;
 	}
 
 	.create-form {
-		display: grid;
-		grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(110px, 0.6fr)) auto;
-		gap: 0.9rem;
-		align-items: end;
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
 	}
 
 	.field {
@@ -607,15 +969,15 @@
 	}
 
 	.field label {
-		font-size: 0.86rem;
-		font-weight: 700;
+		font-size: 0.84rem;
+		font-weight: 800;
 		color: #334155;
 	}
 
 	.field input {
 		height: 2.9rem;
 		padding: 0 0.9rem;
-		border-radius: 0.9rem;
+		border-radius: 0.95rem;
 		border: 1px solid #cbd5e1;
 		background: white;
 		color: #0f172a;
@@ -631,210 +993,24 @@
 		box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
 	}
 
-	.actions {
-		display: flex;
-		align-items: end;
-	}
-
-	.primary-button,
-	.link-button,
-	.danger-button {
-		height: 2.9rem;
-		padding: 0 1rem;
-		border-radius: 0.9rem;
-		font-weight: 700;
-		font-size: 0.95rem;
-		cursor: pointer;
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		transition:
-			transform 0.16s ease,
-			box-shadow 0.16s ease,
-			background 0.16s ease,
-			border-color 0.16s ease;
-	}
-
-	.primary-button {
-		border: 0;
-		background: linear-gradient(135deg, #2563eb, #1d4ed8);
-		color: white;
-		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
-	}
-
-	.primary-button:hover,
-	.link-button:hover,
-	.danger-button:hover {
-		transform: translateY(-1px);
-	}
-
-	.create-hints {
+	.form-mini-grid {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.85rem;
-		margin-top: 1rem;
-	}
-
-	.hint-card {
-		padding: 0.95rem 1rem;
-		background: rgba(248, 250, 252, 0.92);
-	}
-
-	.hint-card strong {
-		color: #0f172a;
-		font-size: 0.95rem;
-	}
-
-	.hint-card p {
-		font-size: 0.9rem;
-	}
-
-	.feedback {
-		margin-top: 1rem;
-		padding: 0.9rem 1rem;
-		border-radius: 0.95rem;
-		font-size: 0.92rem;
-		font-weight: 600;
-	}
-
-	.feedback.success {
-		background: rgba(34, 197, 94, 0.12);
-		border: 1px solid rgba(34, 197, 94, 0.22);
-		color: #166534;
-	}
-
-	.feedback.error {
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.2);
-		color: #991b1b;
-	}
-
-	.empty-state {
-		padding: 1.2rem;
-		border-radius: 1rem;
-		border: 1px dashed #cbd5e1;
-		background: rgba(248, 250, 252, 0.85);
-		text-align: center;
-	}
-
-	.empty-state h3 {
-		margin: 0 0 0.45rem;
-		color: #0f172a;
-	}
-
-	.classes-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-		gap: 1rem;
-	}
-
-	.class-card {
-		padding: 1.1rem;
-	}
-
-	.class-top {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.class-top h3 {
-		margin: 0;
-		font-size: 1.08rem;
-		color: #0f172a;
-	}
-
-	.class-top p {
-		margin: 0.35rem 0 0;
-		font-size: 0.9rem;
-		color: #64748b;
-	}
-
-	.badge {
-		padding: 0.4rem 0.7rem;
-		border-radius: 999px;
-		background: rgba(37, 99, 235, 0.1);
-		color: #1d4ed8;
-		font-size: 0.76rem;
-		font-weight: 800;
-		white-space: nowrap;
-	}
-
-	.meta-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.75rem;
-		margin-bottom: 1rem;
 	}
 
-	.meta-item {
-		padding: 0.8rem 0.85rem;
+	.scale-preview {
+		padding: 0.85rem 0.9rem;
 		border-radius: 0.95rem;
 		background: #f8fafc;
 		border: 1px solid #e2e8f0;
+		font-size: 0.9rem;
 	}
 
-	.meta-label {
-		display: block;
-		font-size: 0.78rem;
-		font-weight: 700;
-		color: #64748b;
-		margin-bottom: 0.2rem;
-	}
-
-	.meta-item strong {
-		color: #0f172a;
-		font-size: 0.98rem;
-	}
-
-	.class-note {
-		padding: 0.9rem 0.95rem;
-		border-radius: 0.95rem;
-		background: rgba(37, 99, 235, 0.06);
-		border: 1px solid rgba(96, 165, 250, 0.18);
-		margin-bottom: 1rem;
-	}
-
-	.class-note-label {
-		font-size: 0.76rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #64748b;
-		margin-bottom: 0.22rem;
-	}
-
-	.class-note-value {
-		font-size: 0.94rem;
-		font-weight: 700;
-		color: #0f172a;
-	}
-
-	.class-actions {
-		display: flex;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.link-button {
-		background: #0f172a;
-		color: white;
-		border: 0;
-		min-width: 128px;
-	}
-
-	.danger-button {
-		background: white;
-		color: #b91c1c;
-		border: 1px solid rgba(239, 68, 68, 0.25);
-		min-width: 110px;
-	}
-
-	.side-panel {
-		padding: 1.1rem;
+	.guidance-list {
+		margin: 0;
+		padding-left: 1.1rem;
+		line-height: 1.9;
 	}
 
 	.mini-stats {
@@ -845,70 +1021,13 @@
 	.mini-stat {
 		padding: 0.9rem 0.95rem;
 		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		border-radius: 0.95rem;
-	}
-
-	.mini-stat span {
-		display: block;
-		font-size: 0.8rem;
-		font-weight: 700;
-		color: #64748b;
-		margin-bottom: 0.25rem;
 	}
 
 	.mini-stat strong {
+		display: block;
 		font-size: 1.05rem;
 		color: #0f172a;
-	}
-
-	.quick-links {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.quick-link {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 0.95rem 1rem;
-		border-radius: 1rem;
-		text-decoration: none;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		transition:
-			transform 0.16s ease,
-			border-color 0.16s ease;
-	}
-
-	.quick-link:hover {
-		transform: translateY(-1px);
-		border-color: #cbd5e1;
-	}
-
-	.quick-link strong {
-		color: #0f172a;
-		font-size: 0.96rem;
-	}
-
-	.quick-link p {
-		margin-top: 0.25rem;
-		font-size: 0.86rem;
-	}
-
-	.quick-link span:last-child {
-		font-size: 1.2rem;
-		font-weight: 800;
-		color: #64748b;
-	}
-
-	.next-steps {
-		margin: 0;
-		padding-left: 1.1rem;
-		color: #334155;
-		line-height: 1.8;
+		margin-top: 0.2rem;
 	}
 
 	@media (max-width: 1180px) {
@@ -919,45 +1038,46 @@
 
 	@media (max-width: 980px) {
 		.hero,
-		.stats-grid {
+		.summary-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.panel-head {
+		.panel-head,
+		.action-item {
 			flex-direction: column;
+			align-items: flex-start;
 		}
 
-		.create-form {
-			grid-template-columns: 1fr 1fr;
-		}
-
-		.field-name {
-			grid-column: 1 / -1;
-		}
-
-		.actions {
-			grid-column: 1 / -1;
-		}
-
-		.create-hints {
-			grid-template-columns: 1fr;
+		.hero-side-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 
-	@media (max-width: 640px) {
-		.create-form,
-		.meta-grid {
+	@media (max-width: 720px) {
+		.card-metrics,
+		.card-meta-row,
+		.form-mini-grid,
+		.hero-side-grid {
 			grid-template-columns: 1fr;
 		}
 
-		.class-actions {
+		.card-footer,
+		.hero-actions {
 			flex-direction: column;
+			align-items: stretch;
 		}
 
-		.link-button,
-		.danger-button,
-		.secondary-link {
+		.primary-button,
+		.secondary-button {
 			width: 100%;
+		}
+
+		.card-footer form {
+			width: 100%;
+		}
+
+		.classes-grid {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>
