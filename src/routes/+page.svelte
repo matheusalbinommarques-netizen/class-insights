@@ -1,165 +1,127 @@
 <script lang="ts">
-	import { fade, fly } from 'svelte/transition';
+	import { fly, fade } from 'svelte/transition';
+	import Flowchart from '$lib/components/Flowchart.svelte';
 
-	// Estado para os inputs (Svelte 5 Runes)
-	let email = $state('');
-	let password = $state('');
+	let menuOpen = $state(false);
+	let showFlowchart = $state(false);
+
+	// Lazy-load simplificado
+	$effect(() => {
+		const section = document.getElementById('funciona');
+		const observer = new IntersectionObserver((entries) => {
+			if (entries[0].isIntersecting) showFlowchart = true;
+		}, { threshold: 0.1 });
+
+		if (section) observer.observe(section);
+		return () => observer.disconnect();
+	});
 </script>
 
-<svelte:head>
-	<title>Class Insights | Inteligência Educacional Premium</title>
-</svelte:head>
-
-<div class="flex min-h-screen flex-col lg:flex-row bg-[#0c1421] text-white">
+<div class="min-h-screen bg-[#0c1421] text-white selection:bg-brand-accent/30 selection:text-white">
 	
-	<section class="relative hidden flex-1 flex-col justify-between overflow-hidden p-16 lg:flex border-r border-slate-800">
-		
-		<div class="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
-			<div class="absolute -top-32 -left-32 w-125 h-125 bg-brand-accent/20 rounded-full blur-3xl"></div>
-			<div class="absolute top-1/2 -right-32 w-96 h-96 bg-brand-primary/10 rounded-full blur-3xl"></div>
+	<nav class="fixed top-0 z-50 w-full border-b border-white/5 bg-[#0c1421]/90 backdrop-blur-xl">
+		<div class="mx-auto flex max-w-7xl items-center justify-between p-5">
+			<div class="flex items-center gap-3">
+				<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-accent text-brand-dark shadow-lg shadow-brand-accent/20">
+					<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+						<path d="M13 10V3L4 14h7v7l9-11h-7z" />
+					</svg>
+				</div>
+				<span class="text-xl font-black tracking-tighter uppercase">Class Insights</span>
+			</div>
+
+			<div class="hidden items-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400 md:flex">
+				<a href="#funciona" class="hover:text-brand-accent transition-colors">Como Funciona</a>
+				<a href="#recursos" class="hover:text-brand-accent transition-colors">Recursos</a>
+				<a href="/login" class="rounded-xl border border-white/10 px-6 py-2.5 text-white hover:bg-white hover:text-brand-dark transition-all">
+					Entrar
+				</a>
+			</div>
+
+			<button onclick={() => menuOpen = !menuOpen} class="md:hidden text-2xl p-2 text-slate-400">
+				{menuOpen ? '✕' : '☰'}
+			</button>
 		</div>
 
-		<div class="relative z-10 flex items-center gap-3">
-			<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-dark/50 text-white shadow-2xl ring-1 ring-white/10 backdrop-blur-sm shadow-brand-dark/30">
-				<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-					<path stroke-linecap="round" stroke-linejoin="round" d="M16 8v8m-4-5v5m-4-2v2M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-				</svg>
+		{#if menuOpen}
+			<div class="absolute w-full bg-[#0c1421] border-b border-white/10 p-8 md:hidden shadow-2xl" in:fade>
+				<div class="flex flex-col gap-6 text-sm font-bold uppercase tracking-widest">
+					<a href="#funciona" onclick={() => menuOpen = false}>Como Funciona</a>
+					<a href="#recursos" onclick={() => menuOpen = false}>Recursos</a>
+					<hr class="border-white/5" />
+					<div class="grid grid-cols-1 gap-3">
+						<a href="/register/teacher" class="bg-blue-500/10 text-blue-400 p-4 rounded-xl text-center">Sou Professor</a>
+						<a href="/register/coordinator" class="bg-purple-500/10 text-purple-400 p-4 rounded-xl text-center">Sou Coordenador</a>
+					</div>
+				</div>
 			</div>
-			<div class="flex flex-col">
-				<span class="text-2xl font-black tracking-tighter text-white leading-none">CLASS INSIGHTS</span>
-				<span class="text-[10px] font-bold tracking-[0.4em] text-brand-accent uppercase">Educational Analytics</span>
-			</div>
-		</div>
+		{/if}
+	</nav>
 
-		<div class="relative z-10 max-w-xl space-y-16" in:fly={{ x: -40, duration: 900 }}>
-			<div class="space-y-4">
-				<h1 class="text-7xl font-black leading-[0.85] text-white tracking-tighter">
-					DADOS QUE <br/>VIRAM <br/><span class="text-brand-accent">PROGRESSO.</span>
+	<header class="relative pt-32 pb-20 lg:pt-52 lg:pb-32">
+		<div class="mx-auto max-w-7xl px-6 relative z-10">
+			<div class="text-center md:text-left" in:fly={{ y: 20, duration: 800 }}>
+				<span class="inline-block rounded-full border border-brand-accent/20 bg-brand-accent/5 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.4em] text-brand-accent mb-6">
+					Do Dado ao Progresso
+				</span>
+				<h1 class="text-5xl font-black leading-none tracking-tighter md:text-8xl lg:text-9xl uppercase">
+					O Ciclo que <br /> <span class="text-brand-accent">Transforma.</span>
 				</h1>
-				<p class="text-xl font-medium text-slate-300">INSIGHTS QUE TRANSFORMAM A EDUCAÇÃO.</p>
-			</div>
-			
-			<div class="space-y-12">
-				<div class="flex items-start gap-6">
-					<div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-800/60 shadow-lg ring-1 ring-slate-700/50 text-brand-accent">
-						<svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-					</div>
-					<div>
-						<h3 class="text-lg font-black text-white uppercase tracking-tight">Análise Longitudinal</h3>
-						<p class="mt-2 text-sm text-slate-400 font-medium leading-relaxed">Acompanhe a evolução por habilidade, semestre após semestre.</p>
-					</div>
+				<p class="mt-8 max-w-2xl text-lg font-medium leading-relaxed text-slate-400 md:text-xl">
+					A plataforma definitiva para quem acredita que a educação deve ser guiada por evidências, não por suposições.
+				</p>
+
+				<div class="mt-16 hidden md:block">
+					<Flowchart variant="mini" class="justify-start" />
 				</div>
-				<div class="flex items-start gap-6">
-					<div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-slate-800/60 shadow-lg ring-1 ring-slate-700/50 text-brand-accent">
-						<svg class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-					</div>
-					<div>
-						<h3 class="text-lg font-black text-white uppercase tracking-tight">Intervenção Ágil</h3>
-						<p class="mt-2 text-sm text-slate-400 font-medium leading-relaxed">Antecipe quedas de rendimento e intervenha antes que elas virem reprovações.</p>
-					</div>
+
+				<div class="mt-12 flex flex-wrap gap-4 justify-center md:justify-start">
+					<a href="/login" class="rounded-2xl bg-brand-accent px-10 py-5 text-xs font-black uppercase tracking-widest text-brand-dark shadow-2xl shadow-brand-accent/40 hover:-translate-y-1 transition-all">
+						Acessar Painel
+					</a>
+					<a href="/register/teacher" class="rounded-2xl border border-white/10 bg-white/5 px-10 py-5 text-xs font-black uppercase tracking-widest hover:bg-white/10 transition-all">
+						Começar Agora
+					</a>
 				</div>
 			</div>
 		</div>
+	</header>
 
-		<div class="relative z-10 mt-16 rounded-3xl border border-slate-700/50 bg-slate-800/40 p-2 shadow-2xl shadow-slate-900/50" in:fade={{ delay: 600 }}>
-			<div class="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-8 backdrop-blur-sm">
-				<div class="flex items-center justify-between mb-8">
-					<div class="h-4 w-40 rounded-full bg-slate-800"></div>
-					<div class="flex gap-2">
-						<div class="h-3 w-3 rounded-full bg-brand-accent"></div>
-						<div class="h-3 w-3 rounded-full bg-slate-700"></div>
+	<section id="funciona" class="py-24 border-t border-white/5 bg-black/20">
+		<div class="mx-auto max-w-7xl px-6">
+			<div class="mb-20 text-center">
+				<h2 class="text-4xl font-black tracking-tighter uppercase md:text-6xl">O Fluxo da Inteligência</h2>
+				<p class="mt-4 text-slate-500 uppercase tracking-widest text-xs font-bold">Cada etapa desenhada para o sucesso do aluno</p>
+			</div>
+
+			{#if showFlowchart}
+				<div in:fade>
+					<Flowchart variant="desktop" class="hidden lg:flex" />
+					<Flowchart variant="mobile" class="lg:hidden" />
+				</div>
+			{/if}
+			
+			<div class="mt-20 group relative mx-auto max-w-5xl overflow-hidden rounded-[2.5rem] border border-white/10 bg-slate-900 shadow-2xl transition-all hover:border-brand-accent/20">
+				<div class="absolute inset-0 bg-linear-to-b from-transparent to-black/60 z-10"></div>
+				<div class="aspect-video bg-slate-800 flex items-center justify-center">
+					<span class="text-slate-600 font-black italic">Video: Demonstração do Fluxo em 30s</span>
 					</div>
-				</div>
-				<div class="flex items-end gap-4 h-40">
-					<div class="relative group w-full h-full">
-						<div class="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-[10px] text-white px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity font-bold">Lógica: 7.2</div>
-						<div class="w-full bg-slate-800/50 rounded-t-xl h-[60%] border-t border-slate-700/30 transition-all group-hover:bg-slate-700"></div>
-					</div>
-					<div class="w-full bg-slate-800/50 rounded-t-xl h-[80%]"></div>
-					<div class="w-full bg-brand-accent rounded-t-xl h-[95%] shadow-lg shadow-brand-accent/40 ring-1 ring-white/10"></div>
-					<div class="w-full bg-slate-800/50 rounded-t-xl h-[50%]"></div>
-					<div class="w-full bg-brand-primary rounded-t-xl h-[90%] shadow-lg shadow-brand-primary/40 ring-1 ring-white/10"></div>
-				</div>
-				<div class="mt-5 pt-5 border-t border-slate-800 flex justify-between text-[10px] font-medium text-slate-500 uppercase tracking-widest">
-					<span>Matemática</span>
-					<span>Português</span>
-					<span class="text-brand-accent">Habilidades</span>
-					<span>Ciências</span>
-				</div>
 			</div>
 		</div>
 	</section>
 
-	<section class="flex flex-1 items-center justify-center p-8 bg-white">
-		<div class="w-full max-w-sm space-y-12">
-			
-			<div class="text-center lg:text-left">
-				<span class="text-[10px] font-black uppercase tracking-[0.4em] text-brand-accent">Acesso Identificado</span>
-				<h2 class="mt-3 text-5xl font-black tracking-tighter text-brand-dark leading-none">Acesse sua conta</h2>
-				<p class="mt-4 text-sm font-semibold text-slate-400">Entre para gerenciar turmas, alunos e insights.</p>
-			</div>
-
-			<form class="space-y-6" onsubmit={(e) => e.preventDefault()}>
-				<div class="space-y-2">
-					<label for="email" class="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Usuário ou E-mail</label>
-					<div class="relative">
-						<span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" /></svg>
-						</span>
-						<input 
-							type="email" 
-							id="email" 
-							bind:value={email}
-							placeholder="nome@instituicao.com"
-							class="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-4 text-sm font-bold text-brand-dark outline-none transition-all placeholder:text-slate-300 focus:border-brand-dark focus:bg-white focus:ring-8 focus:ring-brand-dark/5"
-						/>
-					</div>
-				</div>
-
-				<div class="space-y-2">
-					<div class="flex justify-between items-center px-1">
-						<label for="password" class="text-[10px] font-black uppercase tracking-widest text-slate-400">Senha</label>
-						<a href="/recuperar" class="text-[10px] font-black text-brand-accent hover:underline uppercase tracking-widest">Esqueceu?</a>
-					</div>
-					<div class="relative">
-						<span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-						</span>
-						<input 
-							type="password" 
-							id="password" 
-							bind:value={password}
-							placeholder="••••••••"
-							class="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 py-4 text-sm font-bold text-brand-dark outline-none transition-all placeholder:text-slate-300 focus:border-brand-dark focus:bg-white focus:ring-8 focus:ring-brand-dark/5"
-						/>
-					</div>
-				</div>
-
-				<button class="w-full rounded-2xl bg-brand-dark py-5 text-xs font-black uppercase tracking-[0.2em] text-white shadow-2xl shadow-brand-dark/30 transition-all hover:-translate-y-0.5 hover:shadow-brand-dark/40 active:translate-y-0">
-					Entrar na Plataforma
-				</button>
-			</form>
-
-			<div class="relative flex items-center justify-center py-2">
-				<div class="absolute inset-0 flex items-center"><div class="w-full border-t border-slate-100"></div></div>
-				<span class="relative bg-white px-6 text-[10px] font-black uppercase tracking-widest text-slate-300">ou continue com</span>
-			</div>
-
-			<div class="grid grid-cols-2 gap-4">
-				<button class="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 py-4 text-[10px] font-black uppercase tracking-widest text-brand-dark transition-all hover:bg-slate-50 hover:border-slate-300">
-					<img src="https://www.google.com/favicon.ico" class="h-4 w-4" alt="Google" />
-					Google
-				</button>
-				<button class="flex items-center justify-center gap-3 rounded-2xl border border-slate-200 py-4 text-[10px] font-black uppercase tracking-widest text-brand-dark transition-all hover:bg-slate-50 hover:border-slate-300">
-					<img src="https://www.microsoft.com/favicon.ico" class="h-4 w-4" alt="Microsoft" />
-					Outlook
-				</button>
-			</div>
-
-			<p class="text-center text-[10px] font-bold text-slate-400 leading-relaxed uppercase tracking-wider">
-				Não possui acesso? <br/>
-				<a href="/contato" class="text-brand-accent hover:underline decoration-2 underline-offset-4">Solicite à sua coordenação</a>
-			</p>
+	<section class="py-32 text-center bg-brand-accent/5">
+		<h2 class="text-5xl font-black uppercase tracking-tighter md:text-7xl">Pronto para o próximo nível?</h2>
+		<p class="mt-6 text-slate-400 text-lg">Escolha seu perfil e inicie sua jornada baseada em dados.</p>
+		<div class="mt-12 flex justify-center gap-4 flex-wrap">
+			<a href="/register/teacher" class="px-8 py-5 bg-blue-500/20 text-blue-400 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-blue-500/30 hover:bg-blue-500/30 transition-all">Professor</a>
+			<a href="/register/coordinator" class="px-8 py-5 bg-purple-500/20 text-purple-400 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-purple-500/30 hover:bg-purple-500/30 transition-all">Coordenador</a>
+			<a href="/register/student" class="px-8 py-5 bg-orange-500/20 text-orange-400 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-orange-500/30 hover:bg-orange-500/30 transition-all">Aluno</a>
 		</div>
 	</section>
+
 </div>
+
+<style>
+	:global(html) { scroll-behavior: smooth; }
+</style>
