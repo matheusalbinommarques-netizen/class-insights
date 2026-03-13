@@ -1,321 +1,217 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 
+	type NavItem = {
+		label: string;
+		href: string;
+		description: string;
+		match: (pathname: string) => boolean;
+	};
+
 	let { children } = $props();
 
-	const links = [
+	let mobileNavOpen = $state(false);
+
+	const navItems: NavItem[] = [
 		{
-			href: '/teacher',
 			label: 'Dashboard',
-			description: 'Turmas e visão geral'
+			href: '/teacher',
+			description: 'Workspace e cockpit',
+			match: (pathname) => pathname === '/teacher'
 		},
 		{
-			href: '/teacher/import',
 			label: 'Importação',
-			description: 'CSV, staging e validação'
+			href: '/teacher/import',
+			description: 'CSV, staging e validação',
+			match: (pathname) => pathname.startsWith('/teacher/import')
 		}
 	];
 
-	const isActive = (href: string) => {
-		if (href === '/teacher') return $page.url.pathname === '/teacher';
-		return $page.url.pathname.startsWith(href);
-	};
+	const pathname = $derived($page.url.pathname);
+
+	const currentTitle = $derived(getCurrentTitle(pathname));
+	const currentSubtitle = $derived(getCurrentSubtitle(pathname));
+
+	function getCurrentTitle(path: string) {
+		if (path.startsWith('/teacher/import')) return 'Importação de notas';
+		if (path.startsWith('/teacher/')) return 'Workspace do professor';
+		return 'Workspace do professor';
+	}
+
+	function getCurrentSubtitle(path: string) {
+		if (path.startsWith('/teacher/import')) return 'Entrada de dados, staging e validação';
+		if (path.startsWith('/teacher/')) return 'Área interna';
+		return 'Área interna';
+	}
+
+	function isActive(item: NavItem, path: string) {
+		return item.match(path);
+	}
+
+	function closeMobileNav() {
+		mobileNavOpen = false;
+	}
 </script>
 
 <svelte:head>
-	<title>Teacher • Class Insights</title>
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div class="teacher-shell">
-	<aside class="sidebar">
-		<div class="brand-card">
-			<div class="brand-badge">CI</div>
-			<div>
-				<h1>Class Insights</h1>
-				<p>Painel do professor</p>
-			</div>
-		</div>
+<div class="min-h-screen bg-slate-50 text-slate-900">
+	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+		<div class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/35 blur-3xl"></div>
+		<div class="absolute -right-24 top-40 h-72 w-72 rounded-full bg-sky-200/35 blur-3xl"></div>
+		<div class="absolute -left-24 top-96 h-72 w-72 rounded-full bg-indigo-200/25 blur-3xl"></div>
+	</div>
 
-		<nav class="nav">
-			{#each links as link}
-				<a
-					href={link.href}
-					class:active={isActive(link.href)}
-					class="nav-link"
-					aria-current={isActive(link.href) ? 'page' : undefined}
-				>
-					<div class="nav-title">{link.label}</div>
-					<div class="nav-description">{link.description}</div>
+	<div class="grid min-h-screen lg:grid-cols-[280px_1fr]">
+		<aside class="hidden border-r border-slate-200 bg-slate-950 text-white lg:flex lg:flex-col">
+			<div class="border-b border-white/10 p-5">
+				<a href="/" class="flex items-center gap-4">
+					<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-blue-600 shadow-lg shadow-blue-950/30">
+						<span class="text-lg font-black tracking-tight text-white">CI</span>
+					</div>
+
+					<div class="min-w-0">
+						<p class="truncate text-2xl font-black tracking-tight text-white">
+							Class Insights
+						</p>
+						<p class="mt-1 text-sm text-slate-300">Painel do professor</p>
+					</div>
 				</a>
-			{/each}
-		</nav>
-
-		<div class="sidebar-footer">
-			<div class="footer-card">
-				<strong>MVP funcional</strong>
-				<p>
-					Professor, importação, grid e snapshots já ativos. Agora o foco é UX, cockpit e
-					portal do aluno.
-				</p>
-			</div>
-		</div>
-	</aside>
-
-	<div class="content-shell">
-		<header class="topbar">
-			<div>
-				<div class="eyebrow">Área interna</div>
-				<h2>Workspace do professor</h2>
 			</div>
 
-			<div class="topbar-meta">
-				<span class="status-dot" aria-hidden="true"></span>
-				<span>Sessão ativa</span>
-			</div>
-		</header>
+			<nav class="flex-1 p-5">
+				<div class="space-y-3">
+					{#each navItems as item}
+						<a
+							href={item.href}
+							class={`block rounded-3xl border px-4 py-4 transition ${
+								isActive(item, pathname)
+									? 'border-sky-400/30 bg-sky-500/15 text-white shadow-sm'
+									: 'border-transparent bg-white/5 text-slate-200 hover:border-white/10 hover:bg-white/8'
+							}`}
+						>
+							<p class="text-xl font-black tracking-tight">{item.label}</p>
+							<p class="mt-1 text-sm text-slate-300">{item.description}</p>
+						</a>
+					{/each}
+				</div>
+			</nav>
 
-		<main class="content">
-			<div class="content-inner">
+			<div class="p-5 pt-0">
+				<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
+					<p class="text-lg font-black tracking-tight text-white">MVP funcional</p>
+					<p class="mt-3 text-sm leading-7 text-slate-300">
+						Professor, importação, grid e snapshots já ativos. Agora o foco é UX, cockpit e
+						portal do aluno.
+					</p>
+				</div>
+			</div>
+		</aside>
+
+		<div class="flex min-w-0 flex-col">
+			<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur-xl">
+				<div class="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+					<div class="flex min-w-0 items-center gap-3">
+						<button
+							type="button"
+							class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 lg:hidden"
+							onclick={() => (mobileNavOpen = true)}
+							aria-label="Abrir navegação"
+						>
+							<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+							</svg>
+						</button>
+
+						<div class="min-w-0">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								{currentSubtitle}
+							</p>
+							<h1 class="truncate text-2xl font-medium tracking-tight text-slate-800 sm:text-4xl">
+								{currentTitle}
+							</h1>
+						</div>
+					</div>
+
+					<div class="hidden sm:flex">
+						<div class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700">
+							<span class="h-3 w-3 rounded-full bg-emerald-500"></span>
+							Sessão ativa
+						</div>
+					</div>
+				</div>
+			</header>
+
+			{#if mobileNavOpen}
+				<div class="fixed inset-0 z-40 lg:hidden">
+					<button
+						type="button"
+						class="absolute inset-0 bg-slate-950/35 backdrop-blur-sm"
+						onclick={closeMobileNav}
+						aria-label="Fechar navegação"
+					></button>
+
+					<div class="absolute left-0 top-0 flex h-full w-[320px] max-w-[88vw] flex-col border-r border-slate-200 bg-white shadow-2xl">
+						<div class="flex items-center justify-between border-b border-slate-200 p-5">
+							<a href="/" class="flex items-center gap-3" onclick={closeMobileNav}>
+								<div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-blue-600 shadow-sm">
+									<span class="text-base font-black tracking-tight text-white">CI</span>
+								</div>
+
+								<div>
+									<p class="text-lg font-black tracking-tight text-slate-950">Class Insights</p>
+									<p class="text-sm text-slate-500">Painel do professor</p>
+								</div>
+							</a>
+
+							<button
+								type="button"
+								class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+								onclick={closeMobileNav}
+								aria-label="Fechar navegação"
+							>
+								<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+								</svg>
+							</button>
+						</div>
+
+						<nav class="flex-1 p-5">
+							<div class="space-y-3">
+								{#each navItems as item}
+									<a
+										href={item.href}
+										class={`block rounded-3xl border px-4 py-4 transition ${
+											isActive(item, pathname)
+												? 'border-sky-200 bg-sky-50 text-sky-700'
+												: 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+										}`}
+										onclick={closeMobileNav}
+									>
+										<p class="text-lg font-black tracking-tight">{item.label}</p>
+										<p class="mt-1 text-sm text-slate-500">{item.description}</p>
+									</a>
+								{/each}
+							</div>
+						</nav>
+
+						<div class="border-t border-slate-200 p-5">
+							<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+								<p class="text-base font-black text-slate-950">MVP funcional</p>
+								<p class="mt-2 text-sm leading-7 text-slate-600">
+									Professor, importação, grid e snapshots já ativos.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+
+			<main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
 				{@render children()}
-			</div>
-		</main>
+			</main>
+		</div>
 	</div>
 </div>
-
-<style>
-	:global(body) {
-		margin: 0;
-		background:
-			radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-			linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-		color: #0f172a;
-		font-family:
-			Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-	}
-
-	:global(a) {
-		color: inherit;
-	}
-
-	.teacher-shell {
-		min-height: 100vh;
-		display: grid;
-		grid-template-columns: 280px minmax(0, 1fr);
-	}
-
-	.sidebar {
-		display: flex;
-		flex-direction: column;
-		gap: 1.5rem;
-		padding: 1.25rem;
-		background: rgba(15, 23, 42, 0.96);
-		color: #e2e8f0;
-		border-right: 1px solid rgba(148, 163, 184, 0.16);
-	}
-
-	.brand-card {
-		display: flex;
-		align-items: center;
-		gap: 0.9rem;
-		padding: 1rem;
-		border-radius: 1.25rem;
-		background: linear-gradient(180deg, rgba(30, 41, 59, 0.96), rgba(15, 23, 42, 0.96));
-		border: 1px solid rgba(148, 163, 184, 0.16);
-		box-shadow: 0 12px 30px rgba(2, 6, 23, 0.24);
-	}
-
-	.brand-badge {
-		width: 2.9rem;
-		height: 2.9rem;
-		border-radius: 0.95rem;
-		display: grid;
-		place-items: center;
-		font-weight: 800;
-		letter-spacing: 0.03em;
-		background: linear-gradient(135deg, #3b82f6, #2563eb);
-		color: white;
-		box-shadow: 0 10px 20px rgba(37, 99, 235, 0.35);
-		flex-shrink: 0;
-	}
-
-	.brand-card h1 {
-		margin: 0;
-		font-size: 1rem;
-		line-height: 1.2;
-	}
-
-	.brand-card p {
-		margin: 0.2rem 0 0 0;
-		font-size: 0.85rem;
-		color: #94a3b8;
-	}
-
-	.nav {
-		display: flex;
-		flex-direction: column;
-		gap: 0.65rem;
-	}
-
-	.nav-link {
-		display: block;
-		padding: 0.9rem 1rem;
-		text-decoration: none;
-		border-radius: 1rem;
-		border: 1px solid transparent;
-		background: rgba(255, 255, 255, 0.02);
-		transition:
-			transform 0.16s ease,
-			background 0.16s ease,
-			border-color 0.16s ease,
-			box-shadow 0.16s ease;
-	}
-
-	.nav-link:hover {
-		transform: translateY(-1px);
-		background: rgba(255, 255, 255, 0.05);
-		border-color: rgba(148, 163, 184, 0.16);
-	}
-
-	.nav-link.active {
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.22), rgba(37, 99, 235, 0.14));
-		border-color: rgba(96, 165, 250, 0.45);
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-	}
-
-	.nav-title {
-		font-weight: 700;
-		font-size: 0.96rem;
-	}
-
-	.nav-description {
-		margin-top: 0.22rem;
-		font-size: 0.8rem;
-		color: #94a3b8;
-	}
-
-	.sidebar-footer {
-		margin-top: auto;
-	}
-
-	.footer-card {
-		padding: 1rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(148, 163, 184, 0.14);
-	}
-
-	.footer-card strong {
-		display: block;
-		font-size: 0.92rem;
-		margin-bottom: 0.35rem;
-	}
-
-	.footer-card p {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.5;
-		color: #94a3b8;
-	}
-
-	.content-shell {
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.topbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 1.25rem 1.5rem 1rem;
-		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-		background: rgba(255, 255, 255, 0.7);
-		backdrop-filter: blur(12px);
-		position: sticky;
-		top: 0;
-		z-index: 10;
-	}
-
-	.eyebrow {
-		font-size: 0.78rem;
-		font-weight: 700;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #64748b;
-		margin-bottom: 0.28rem;
-	}
-
-	.topbar h2 {
-		margin: 0;
-		font-size: 1.35rem;
-		line-height: 1.2;
-		color: #0f172a;
-	}
-
-	.topbar-meta {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.55rem;
-		padding: 0.6rem 0.85rem;
-		border-radius: 999px;
-		background: rgba(255, 255, 255, 0.85);
-		border: 1px solid rgba(148, 163, 184, 0.22);
-		color: #334155;
-		font-size: 0.88rem;
-		font-weight: 600;
-		white-space: nowrap;
-	}
-
-	.status-dot {
-		width: 0.65rem;
-		height: 0.65rem;
-		border-radius: 999px;
-		background: #22c55e;
-		box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
-	}
-
-	.content {
-		flex: 1;
-		padding: 1.5rem;
-	}
-
-	.content-inner {
-		max-width: 1200px;
-	}
-
-	@media (max-width: 980px) {
-		.teacher-shell {
-			grid-template-columns: 1fr;
-		}
-
-		.sidebar {
-			border-right: 0;
-			border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-		}
-
-		.content {
-			padding: 1rem;
-		}
-
-		.topbar {
-			padding: 1rem;
-		}
-	}
-
-	@media (max-width: 640px) {
-		.brand-card {
-			padding: 0.9rem;
-		}
-
-		.topbar {
-			align-items: flex-start;
-			flex-direction: column;
-		}
-
-		.topbar-meta {
-			width: 100%;
-			justify-content: center;
-		}
-	}
-</style>

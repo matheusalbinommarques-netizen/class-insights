@@ -50,6 +50,22 @@
 		priority: number;
 	};
 
+	type ClassFilter = 'all' | 'setup' | 'healthy' | 'attention' | 'critical';
+	type StatTone = 'good' | 'neutral' | 'warn' | 'danger';
+
+	type TopStatItem = {
+		label: string;
+		value: number;
+		foot: string;
+		tone: StatTone;
+	};
+
+	type FilterChip = {
+		filter: ClassFilter;
+		label: string;
+		count: number;
+	};
+
 	type Props = {
 		data: {
 			classes: ClassCard[];
@@ -64,66 +80,95 @@
 	let newMin = $state(0);
 	let newMax = $state(10);
 	let newDecimals = $state(0);
+	let selectedFilter = $state<ClassFilter>('all');
+	let showCreateForm = $state(false);
+	let createFormInitialized = $state(false);
+
+	$effect(() => {
+		if (!createFormInitialized) {
+			showCreateForm = data.classes.length === 0;
+			createFormInitialized = true;
+		}
+	});
 
 	const formState = $derived(($page.form ?? null) as ActionFeedback | null);
 	const formMessage = $derived(formState?.message ?? null);
 	const formSuccess = $derived(formState?.success ?? false);
-	const formAction = $derived(formState?.action ?? null);
 
 	const hasClasses = $derived(data.classes.length > 0);
 
-	const formatDate = (value: string | null) => {
-		if (!value) return 'Nunca';
-		const date = new Date(`${value}T00:00:00`);
-		if (Number.isNaN(date.getTime())) return 'Data indisponível';
-
-		return new Intl.DateTimeFormat('pt-BR', {
-			dateStyle: 'medium'
-		}).format(date);
-	};
-
-	const formatPercent = (value: number | null) => {
-		if (typeof value !== 'number') return '—';
-		return `${value}%`;
-	};
-
-	const formatDelta = (value: number | null) => {
-		if (typeof value !== 'number') return 'Sem baseline';
-		const rounded = value.toFixed(2);
-		return `${value >= 0 ? '+' : ''}${rounded}`;
-	};
-
-	const statusLabel = (status: ClassCard['status']) => {
-		if (status === 'healthy') return 'Saudável';
-		if (status === 'attention') return 'Atenção';
-		if (status === 'critical') return 'Crítica';
-		return 'Configuração';
-	};
-
-	const statusClass = (status: ClassCard['status']) => {
-		if (status === 'healthy') return 'good';
-		if (status === 'attention') return 'warn';
-		if (status === 'critical') return 'risk';
-		return 'setup';
-	};
-
-	const coverageClass = (coverage: number) => {
-		if (coverage < 50) return 'risk';
-		if (coverage < 85) return 'warn';
-		return 'good';
-	};
-
-	const confirmDelete = (event: MouseEvent) => {
-		if (!confirm('Deletar esta turma? Isso remove alunos, skills e scores.')) {
-			event.preventDefault();
-		}
-	};
-
-	const feedbackTone = $derived(
-		formMessage ? (formSuccess ? 'success' : 'error') : null
+	const sortedActionQueue = $derived.by(() =>
+		[...data.actionQueue].sort((a, b) => a.priority - b.priority)
 	);
 
-	const quickGuidance = $derived(
+	const firstPriorityAction = $derived.by(() => sortedActionQueue[0] ?? null);
+
+	const filterChips = $derived.by(
+		(): FilterChip[] => [
+			{
+				filter: 'all',
+				label: 'Todas',
+				count: data.classes.length
+			},
+			{
+				filter: 'critical',
+				label: 'Críticas',
+				count: data.classes.filter((c) => c.status === 'critical').length
+			},
+			{
+				filter: 'attention',
+				label: 'Atenção',
+				count: data.classes.filter((c) => c.status === 'attention').length
+			},
+			{
+				filter: 'setup',
+				label: 'Setup',
+				count: data.classes.filter((c) => c.status === 'setup').length
+			},
+			{
+				filter: 'healthy',
+				label: 'Saudáveis',
+				count: data.classes.filter((c) => c.status === 'healthy').length
+			}
+		]
+	);
+
+	const visibleClasses = $derived.by(() =>
+		selectedFilter === 'all'
+			? data.classes
+			: data.classes.filter((classCard) => classCard.status === selectedFilter)
+	);
+
+	const topStats = $derived.by(
+		(): TopStatItem[] => [
+			{
+				label: 'Turmas ativas',
+				value: data.summary.totalClasses,
+				foot: 'Portfólio atual',
+				tone: 'neutral'
+			},
+			{
+				label: 'Turmas em risco',
+				value: data.summary.classesAtRisk,
+				foot: 'Pedem atenção',
+				tone: 'warn'
+			},
+			{
+				label: 'Alunos em risco',
+				value: data.summary.totalRiskStudents,
+				foot: 'Precisam de leitura',
+				tone: 'danger'
+			},
+			{
+				label: 'Snapshots pendentes',
+				value: data.summary.classesNeedingSnapshot,
+				foot: 'Base ainda não consolidada',
+				tone: 'neutral'
+			}
+		]
+	);
+
+	const quickGuidance = $derived.by(() =>
 		data.summary.totalClasses === 0
 			? [
 					'Crie sua primeira turma',
@@ -132,952 +177,622 @@
 				]
 			: [
 					'Priorize turmas com risco alto',
-					'Use snapshot para manter histórico auditável',
-					'Importe notas direto no contexto da turma'
+					'Gere snapshot após novos lançamentos',
+					'Use importação para acelerar cobertura'
 				]
 	);
+
+	function formatDate(value: string | null) {
+		if (!value) return 'Nunca';
+		const date = new Date(`${value}T00:00:00`);
+		if (Number.isNaN(date.getTime())) return 'Data indisponível';
+
+		return new Intl.DateTimeFormat('pt-BR', {
+			dateStyle: 'medium'
+		}).format(date);
+	}
+
+	function formatPercent(value: number | null) {
+		if (typeof value !== 'number') return '—';
+		return `${value}%`;
+	}
+
+	function formatDelta(value: number | null) {
+		if (typeof value !== 'number') return 'Sem baseline';
+		const rounded = value.toFixed(2);
+		return `${value >= 0 ? '+' : ''}${rounded}`;
+	}
+
+	function statusLabel(status: ClassCard['status']) {
+		if (status === 'healthy') return 'Saudável';
+		if (status === 'attention') return 'Atenção';
+		if (status === 'critical') return 'Crítica';
+		return 'Configuração';
+	}
+
+	function statusBadgeClass(status: ClassCard['status']) {
+		if (status === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+		if (status === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
+		if (status === 'critical') return 'border-red-200 bg-red-50 text-red-700';
+		return 'border-sky-200 bg-sky-50 text-sky-700';
+	}
+
+	function coverageClass(coverage: number) {
+		if (coverage < 50) return 'text-red-700';
+		if (coverage < 85) return 'text-amber-700';
+		return 'text-emerald-700';
+	}
+
+	function deltaClass(value: number | null) {
+		if (typeof value !== 'number') return 'text-slate-500';
+		if (value >= 0) return 'text-emerald-700';
+		return 'text-red-700';
+	}
+
+	function statCardTone(tone: StatTone) {
+		if (tone === 'good') return 'border-emerald-200 bg-emerald-50';
+		if (tone === 'warn') return 'border-amber-200 bg-amber-50';
+		if (tone === 'danger') return 'border-red-200 bg-red-50';
+		return 'border-slate-200 bg-white';
+	}
+
+	function filterButtonClass(filter: ClassFilter) {
+		const isActive = selectedFilter === filter;
+
+		if (!isActive) {
+			return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900';
+		}
+
+		if (filter === 'healthy') {
+			return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+		}
+
+		if (filter === 'attention') {
+			return 'border-amber-200 bg-amber-50 text-amber-700';
+		}
+
+		if (filter === 'critical') {
+			return 'border-red-200 bg-red-50 text-red-700';
+		}
+
+		if (filter === 'setup') {
+			return 'border-sky-200 bg-sky-50 text-sky-700';
+		}
+
+		return 'border-slate-300 bg-slate-100 text-slate-900';
+	}
+
+	function criticalHint(classCard: ClassCard) {
+		if (classCard.studentsCount === 0) {
+			return 'Turma criada, mas ainda sem alunos.';
+		}
+
+		if (classCard.skillsCount === 0) {
+			return 'Turma sem skills cadastradas.';
+		}
+
+		if (classCard.pendingCells > 0) {
+			return `${classCard.pendingCells} pendência(s) de lançamento ainda abertas.`;
+		}
+
+		if (classCard.needsSnapshot) {
+			return 'Já existe dado novo sem snapshot atualizado.';
+		}
+
+		if (classCard.riskStudentsCount > 0) {
+			return `${classCard.riskStudentsCount} aluno(s) em risco nesta turma.`;
+		}
+
+		return 'Turma operacional sem alertas críticos neste momento.';
+	}
+
+	function coverageBarClass(coverage: number) {
+		if (coverage < 50) return 'bg-red-500';
+		if (coverage < 85) return 'bg-amber-500';
+		return 'bg-emerald-500';
+	}
+
+	function confirmDelete(event: MouseEvent) {
+		if (!confirm('Deletar esta turma? Isso remove alunos, skills e scores.')) {
+			event.preventDefault();
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>Teacher Dashboard • Class Insights</title>
 </svelte:head>
 
-<section class="hero">
-	<div class="hero-copy">
-		<div class="eyebrow">Workspace do professor</div>
-		<h1>Olá, {data.summary.displayName}.</h1>
-		<p>{data.summary.message}</p>
-
-		<div class="hero-actions">
-			<a href="#create-class" class="primary-button">Criar nova turma</a>
-			<a href="/teacher/import" class="secondary-button">Importar notas</a>
-		</div>
-	</div>
-
-	<div class="hero-side">
-		<div class="hero-side-label">Resumo executivo</div>
-		<div class="hero-side-grid">
-			<div class="hero-side-item">
-				<span>Turmas em risco</span>
-				<strong>{data.summary.classesAtRisk}</strong>
-			</div>
-			<div class="hero-side-item">
-				<span>Snapshots pendentes</span>
-				<strong>{data.summary.classesNeedingSnapshot}</strong>
-			</div>
-			<div class="hero-side-item">
-				<span>Alunos em risco</span>
-				<strong>{data.summary.totalRiskStudents}</strong>
-			</div>
-			<div class="hero-side-item">
-				<span>Pendências de lançamento</span>
-				<strong>{data.summary.totalPendingCells}</strong>
-			</div>
-		</div>
-	</div>
-</section>
-
-<section class="summary-grid">
-	<article class="summary-card">
-		<div class="summary-label">Turmas ativas</div>
-		<div class="summary-value">{data.summary.totalClasses}</div>
-		<div class="summary-foot">Portfólio atual do professor</div>
-	</article>
-
-	<article class="summary-card">
-		<div class="summary-label">Alunos ativos</div>
-		<div class="summary-value">{data.summary.totalStudents}</div>
-		<div class="summary-foot">Base monitorada nas turmas</div>
-	</article>
-
-	<article class="summary-card">
-		<div class="summary-label">Turmas saudáveis</div>
-		<div class="summary-value">{data.summary.healthyClasses}</div>
-		<div class="summary-foot">Sem alerta crítico imediato</div>
-	</article>
-
-	<article class="summary-card">
-		<div class="summary-label">Turmas em setup</div>
-		<div class="summary-value">{data.summary.classesInSetup}</div>
-		<div class="summary-foot">Ainda precisam de alunos ou skills</div>
-	</article>
-</section>
-
-{#if formMessage}
-	<div class={`feedback ${feedbackTone}`}>
-		{formMessage}
-	</div>
-{/if}
-
-{#if data.error}
-	<div class="feedback error">{data.error}</div>
-{/if}
-
-<section class="dashboard-grid">
-	<div class="main-column">
-		<section class="panel attention-panel">
-			<div class="panel-head">
-				<div>
-					<div class="section-kicker">Fila de ação</div>
-					<h2>O que merece atenção agora</h2>
-				</div>
-				<p>
-					Aqui entram as próximas melhores ações para o professor, em vez de só configuração.
+<div class="space-y-6">
+	<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+		<div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+			<div class="max-w-3xl">
+				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+					Workspace do professor
 				</p>
-			</div>
 
-			{#if data.actionQueue.length === 0}
-				<div class="empty-state">
-					<h3>Nenhuma pendência urgente</h3>
-					<p>
-						Suas turmas não têm alertas prioritários neste momento. Você pode seguir com
-						importações, novas avaliações ou novas turmas.
-					</p>
-				</div>
-			{:else}
-				<div class="action-list">
-					{#each data.actionQueue as item}
-						<article class="action-item">
-							<div class="action-copy">
-								<strong>{item.title}</strong>
-								<p>{item.description}</p>
-							</div>
+				<h1 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+					Bom trabalho, {data.summary.displayName}.
+				</h1>
 
-							<a href={item.href} class="secondary-button">{item.ctaLabel}</a>
-						</article>
-					{/each}
-				</div>
-			{/if}
-		</section>
-
-		<section class="panel classes-panel">
-			<div class="panel-head">
-				<div>
-					<div class="section-kicker">Cockpit de turmas</div>
-					<h2>Turmas vivas, não só cadastradas</h2>
-				</div>
-				<p>
-					Os cards abaixo priorizam saúde, risco, cobertura e recência para ajudar na tomada de
-					decisão.
+				<p class="mt-3 text-base leading-8 text-slate-600">
+					{data.summary.message}
 				</p>
-			</div>
 
-			{#if !hasClasses}
-				<div class="empty-state empty-hero">
-					<div class="empty-badge">CI</div>
-					<h3>Pronto para transformar dados em progresso?</h3>
-					<p>
-						Crie sua primeira turma para começar a operar o fluxo real de professor, notas,
-						skills, snapshots e insights.
-					</p>
-					<a href="#create-class" class="primary-button">Criar primeira turma</a>
-				</div>
-			{:else}
-				<div class="classes-grid">
-					{#each data.classes as c}
-						<article class="class-card">
-							<div class="class-card-head">
-								<div>
-									<div class="class-name-row">
-										<h3>{c.name}</h3>
-										<span class={`status-badge ${statusClass(c.status)}`}>
-											{statusLabel(c.status)}
-										</span>
-									</div>
+				<div class="mt-5 flex flex-wrap gap-3">
+					<button
+						type="button"
+						class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white shadow-sm transition hover:bg-slate-800"
+						onclick={() => (showCreateForm = !showCreateForm)}
+					>
+						<span>{showCreateForm ? 'Ocultar nova turma' : 'Criar nova turma'}</span>
+					</button>
 
-									<p class="class-subtitle">
-										Criada em {formatDate(c.created_at)} • {c.scaleLabel}
-									</p>
-								</div>
+					<a
+						href="/teacher/import"
+						class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+					>
+						<span>Importar notas</span>
+					</a>
 
-								<details class="options-menu">
-									<summary aria-label="Mais opções">⋯</summary>
-									<div class="options-popover">
-										<form method="POST" action="?/deleteClass">
-											<input type="hidden" name="classId" value={c.id} />
-											<button type="submit" class="danger-option" onclick={confirmDelete}>
-												Excluir turma
-											</button>
-										</form>
-									</div>
-								</details>
-							</div>
-
-							<div class="card-metrics">
-								<div class="metric-box">
-									<span>Aproveitamento</span>
-									<strong>{formatPercent(c.averagePercent)}</strong>
-								</div>
-
-								<div class="metric-box">
-									<span>Alunos em risco</span>
-									<strong>{c.riskStudentsCount}</strong>
-								</div>
-
-								<div class="metric-box">
-									<span>Cobertura</span>
-									<strong class={coverageClass(c.coveragePercent)}>
-										{c.coveragePercent}%
-									</strong>
-								</div>
-
-								<div class="metric-box">
-									<span>Último snapshot</span>
-									<strong>{formatDate(c.latestSnapshotDate)}</strong>
-								</div>
-							</div>
-
-							<div class="card-meta-row">
-								<div class="meta-pill">
-									<span>Alunos</span>
-									<strong>{c.studentsCount}</strong>
-								</div>
-
-								<div class="meta-pill">
-									<span>Skills</span>
-									<strong>{c.skillsCount}</strong>
-								</div>
-
-								<div class="meta-pill">
-									<span>Pendências</span>
-									<strong>{c.pendingCells}</strong>
-								</div>
-
-								<div class="meta-pill">
-									<span>Tendência</span>
-									<strong class:positive={typeof c.trendDelta === 'number' && c.trendDelta >= 0}
-										class:negative={typeof c.trendDelta === 'number' && c.trendDelta < 0}>
-										{formatDelta(c.trendDelta)}
-									</strong>
-								</div>
-							</div>
-
-							{#if c.focusSkills.length > 0}
-								<div class="focus-box">
-									<div class="focus-label">Top lacunas atuais</div>
-									<div class="focus-tags">
-										{#each c.focusSkills as skillName}
-											<span>{skillName}</span>
-										{/each}
-									</div>
-								</div>
-							{/if}
-
-							<div class="card-footer">
-								<a href={`/teacher/${c.id}`} class="primary-button">Abrir turma</a>
-
-								<a href={`/teacher/import?classId=${c.id}`} class="secondary-button">
-									Importar notas
-								</a>
-
-								<form method="POST" action="?/generateClassSnapshot">
-									<input type="hidden" name="classId" value={c.id} />
-									<button
-										type="submit"
-										class="secondary-button"
-										disabled={c.studentsCount === 0 || c.skillsCount === 0}
-									>
-										Gerar snapshot
-									</button>
-								</form>
-							</div>
-						</article>
-					{/each}
-				</div>
-			{/if}
-		</section>
-	</div>
-
-	<aside class="side-column">
-		<section class="panel create-panel" id="create-class">
-			<div class="panel-head compact">
-				<div>
-					<div class="section-kicker">Nova turma</div>
-					<h2>Criar turma</h2>
+					{#if firstPriorityAction}
+						<a
+							href={firstPriorityAction.href}
+							class="inline-flex h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+						>
+							<span>Ver turma prioritária</span>
+						</a>
+					{/if}
 				</div>
 			</div>
 
-			<form method="POST" action="?/createClass" class="create-form">
-				<div class="field">
-					<label for="class-name">Nome da turma</label>
-					<input id="class-name" name="name" placeholder="Ex: 2º Ano A" />
-				</div>
-
-				<div class="form-mini-grid">
-					<div class="field">
-						<label for="score-min">Min</label>
-						<input id="score-min" name="score_min" type="number" step="any" bind:value={newMin} />
+			<div class="grid gap-3 sm:grid-cols-2 xl:w-full xl:max-w-sm">
+				{#each topStats as stat}
+					<div class={`rounded-2xl border p-4 ${statCardTone(stat.tone)}`}>
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							{stat.label}
+						</p>
+						<p class="mt-2 text-3xl font-black text-slate-950">{stat.value}</p>
+						<p class="mt-2 text-sm leading-6 text-slate-600">{stat.foot}</p>
 					</div>
-
-					<div class="field">
-						<label for="score-max">Max</label>
-						<input id="score-max" name="score_max" type="number" step="any" bind:value={newMax} />
-					</div>
-
-					<div class="field">
-						<label for="score-decimals">Decimais</label>
-						<input
-							id="score-decimals"
-							name="score_decimals"
-							type="number"
-							min="0"
-							max="6"
-							bind:value={newDecimals}
-						/>
-					</div>
-				</div>
-
-				<div class="scale-preview">
-					Escala padrão: <strong>{newMin}–{newMax}</strong> • dec <strong>{newDecimals}</strong>
-				</div>
-
-				<button type="submit" class="primary-button">Criar turma</button>
-			</form>
-		</section>
-
-		<section class="panel">
-			<div class="panel-head compact">
-				<div>
-					<div class="section-kicker">Próximos movimentos</div>
-					<h2>Guia rápido</h2>
-				</div>
-			</div>
-
-			<ul class="guidance-list">
-				{#each quickGuidance as item}
-					<li>{item}</li>
 				{/each}
-			</ul>
-		</section>
-
-		<section class="panel">
-			<div class="panel-head compact">
-				<div>
-					<div class="section-kicker">Visão geral</div>
-					<h2>Saúde do workspace</h2>
-				</div>
 			</div>
+		</div>
+	</section>
 
-			<div class="mini-stats">
-				<div class="mini-stat">
-					<span>Saudáveis</span>
-					<strong>{data.summary.healthyClasses}</strong>
+	{#if formMessage}
+		<div
+			class={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+				formSuccess
+					? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+					: 'border-red-200 bg-red-50 text-red-700'
+			}`}
+		>
+			{formMessage}
+		</div>
+	{/if}
+
+	{#if data.error}
+		<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+			{data.error}
+		</div>
+	{/if}
+
+	<div class="grid gap-6 xl:grid-cols-[1.65fr_0.85fr]">
+		<div class="space-y-6">
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+				<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+					<div>
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Fila de ação
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							O que merece atenção agora
+						</h2>
+					</div>
+
+					<p class="max-w-xl text-sm leading-7 text-slate-600">
+						As próximas melhores ações aparecem aqui primeiro, para o professor decidir rápido
+						sem precisar procurar o problema no dashboard.
+					</p>
 				</div>
 
-				<div class="mini-stat">
-					<span>Em setup</span>
-					<strong>{data.summary.classesInSetup}</strong>
+				{#if sortedActionQueue.length === 0}
+					<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+						<h3 class="text-lg font-black text-slate-950">Nenhuma pendência urgente</h3>
+						<p class="mt-2 text-sm leading-7 text-slate-600">
+							Suas turmas não têm alertas prioritários neste momento. Você pode seguir com
+							importações, novas avaliações ou criação de novas turmas.
+						</p>
+					</div>
+				{:else}
+					<div class="mt-5 space-y-3">
+						{#each sortedActionQueue as item}
+							<article class="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+								<div class="min-w-0">
+									<p class="text-base font-black text-slate-950">{item.title}</p>
+									<p class="mt-1 text-sm leading-7 text-slate-600">{item.description}</p>
+								</div>
+
+								<a
+									href={item.href}
+									class="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
+								>
+									<span>{item.ctaLabel}</span>
+								</a>
+							</article>
+						{/each}
+					</div>
+				{/if}
+			</section>
+
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+				<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+					<div>
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Cockpit de turmas
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Turmas vivas, não só cadastradas
+						</h2>
+						<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
+							Cobertura, risco, pendências, snapshot e tendência aparecem com prioridade para
+							ajudar na decisão do professor.
+						</p>
+					</div>
+
+					<div class="flex flex-wrap gap-2">
+						{#each filterChips as chip}
+							<button
+								type="button"
+								class={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-bold transition ${filterButtonClass(chip.filter)}`}
+								onclick={() => (selectedFilter = chip.filter)}
+							>
+								<span>{chip.label}</span>
+								<span class="rounded-full bg-white/80 px-2 py-0.5 text-xs font-black">
+									{chip.count}
+								</span>
+							</button>
+						{/each}
+					</div>
 				</div>
 
-				<div class="mini-stat">
-					<span>Com risco</span>
-					<strong>{data.summary.classesAtRisk}</strong>
+				{#if !hasClasses}
+					<div class="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+						<div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-xl font-black text-white shadow-sm">
+							CI
+						</div>
+
+						<h3 class="mt-4 text-2xl font-black tracking-tight text-slate-950">
+							Pronto para criar a primeira turma?
+						</h3>
+
+						<p class="mx-auto mt-3 max-w-xl text-sm leading-7 text-slate-600">
+							Comece pelo fluxo essencial: turma, skills, alunos, lançamento de notas e leitura
+							de progresso.
+						</p>
+
+						<button
+							type="button"
+							class="mt-5 inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+							onclick={() => (showCreateForm = true)}
+						>
+							<span>Criar primeira turma</span>
+						</button>
+					</div>
+				{:else if visibleClasses.length === 0}
+					<div class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+						<h3 class="text-lg font-black text-slate-950">Nenhuma turma nesse filtro</h3>
+						<p class="mt-2 text-sm leading-7 text-slate-600">
+							Troque o filtro para visualizar outras turmas do workspace.
+						</p>
+					</div>
+				{:else}
+					<div class="mt-6 grid gap-4">
+						{#each visibleClasses as c}
+							<article class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+								<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+									<div class="min-w-0">
+										<div class="flex flex-wrap items-center gap-3">
+											<h3 class="text-2xl font-black tracking-tight text-slate-950">
+												{c.name}
+											</h3>
+
+											<span class={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-widest ${statusBadgeClass(c.status)}`}>
+												{statusLabel(c.status)}
+											</span>
+										</div>
+
+										<p class="mt-2 text-sm leading-7 text-slate-600">
+											Criada em {formatDate(c.created_at)} • {c.scaleLabel}
+										</p>
+									</div>
+
+									<div class="flex items-center gap-2">
+										{#if c.needsSnapshot}
+											<span class="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-black uppercase tracking-widest text-sky-700">
+												snapshot pendente
+											</span>
+										{/if}
+
+										<details class="relative">
+											<summary class="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-600 transition hover:border-slate-300 hover:bg-slate-100">
+												⋯
+											</summary>
+
+											<div class="absolute right-0 top-12 z-10 w-40 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+												<form method="POST" action="?/deleteClass">
+													<input type="hidden" name="classId" value={c.id} />
+													<button
+														type="submit"
+														class="flex h-11 w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 transition hover:bg-red-100"
+														onclick={confirmDelete}
+													>
+														Excluir turma
+													</button>
+												</form>
+											</div>
+										</details>
+									</div>
+								</div>
+
+								<div class="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+									<p class="text-sm font-semibold text-slate-900">{criticalHint(c)}</p>
+								</div>
+
+								<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+									<div class="flex items-center justify-between gap-3">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Cobertura da turma
+										</p>
+										<p class={`text-sm font-black ${coverageClass(c.coveragePercent)}`}>
+											{c.coveragePercent}%
+										</p>
+									</div>
+
+									<div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+										<div
+											class={`h-full rounded-full ${coverageBarClass(c.coveragePercent)}`}
+											style={`width: ${Math.max(0, Math.min(100, c.coveragePercent))}%`}
+										></div>
+									</div>
+								</div>
+
+								<div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Média
+										</p>
+										<p class="mt-2 text-2xl font-black text-slate-950">
+											{formatPercent(c.averagePercent)}
+										</p>
+									</div>
+
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Risco
+										</p>
+										<p class="mt-2 text-2xl font-black text-slate-950">
+											{c.riskStudentsCount}
+										</p>
+									</div>
+
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Snapshot
+										</p>
+										<p class="mt-2 text-lg font-black text-slate-950">
+											{formatDate(c.latestSnapshotDate)}
+										</p>
+									</div>
+
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Tendência
+										</p>
+										<p class={`mt-2 text-2xl font-black ${deltaClass(c.trendDelta)}`}>
+											{formatDelta(c.trendDelta)}
+										</p>
+									</div>
+								</div>
+
+								<div class="mt-3 grid gap-3 sm:grid-cols-3 xl:grid-cols-3">
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Alunos
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">{c.studentsCount}</p>
+									</div>
+
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Skills
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">{c.skillsCount}</p>
+									</div>
+
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Pendências
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">{c.pendingCells}</p>
+									</div>
+								</div>
+
+								{#if c.focusSkills.length > 0}
+									<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Top lacunas atuais
+										</p>
+
+										<div class="mt-3 flex flex-wrap gap-2">
+											{#each c.focusSkills as skillName}
+												<span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700">
+													{skillName}
+												</span>
+											{/each}
+										</div>
+									</div>
+								{/if}
+
+								<div class="mt-5 flex flex-wrap gap-3">
+									<a
+										href={`/teacher/${c.id}`}
+										class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+									>
+										<span class="text-white">Abrir turma</span>
+									</a>
+
+									<a
+										href={`/teacher/import?classId=${c.id}`}
+										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
+									>
+										<span>Importar notas</span>
+									</a>
+
+									<form method="POST" action="?/generateClassSnapshot">
+										<input type="hidden" name="classId" value={c.id} />
+										<button
+											type="submit"
+											class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+											disabled={c.studentsCount === 0 || c.skillsCount === 0}
+										>
+											<span>Gerar snapshot</span>
+										</button>
+									</form>
+								</div>
+							</article>
+						{/each}
+					</div>
+				{/if}
+			</section>
+		</div>
+
+		<aside class="space-y-6 xl:sticky xl:top-6 xl:self-start">
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" id="create-class">
+				<div class="flex items-center justify-between gap-3">
+					<div>
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Nova turma
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Criar turma
+						</h2>
+					</div>
+
+					<button
+						type="button"
+						class="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
+						onclick={() => (showCreateForm = !showCreateForm)}
+					>
+						<span>{showCreateForm ? 'Recolher' : 'Abrir'}</span>
+					</button>
 				</div>
 
-				<div class="mini-stat">
-					<span>Snapshot pendente</span>
-					<strong>{data.summary.classesNeedingSnapshot}</strong>
-				</div>
-			</div>
-		</section>
-	</aside>
-</section>
-
-<style>
-	.hero,
-	.summary-card,
-	.panel,
-	.class-card,
-	.action-item,
-	.metric-box,
-	.meta-pill,
-	.focus-box,
-	.mini-stat {
-		background: rgba(255, 255, 255, 0.94);
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		border-radius: 1.25rem;
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-	}
-
-	.hero {
-		padding: 1.4rem;
-		margin-bottom: 1rem;
-		display: grid;
-		grid-template-columns: minmax(0, 1.5fr) minmax(300px, 0.85fr);
-		gap: 1rem;
-		align-items: stretch;
-	}
-
-	.hero-copy h1,
-	.panel-head h2,
-	.class-card h3,
-	.empty-state h3 {
-		margin: 0;
-		color: #0f172a;
-		line-height: 1.08;
-	}
-
-	.hero-copy h1 {
-		font-size: clamp(2rem, 3.5vw, 3rem);
-		letter-spacing: -0.04em;
-	}
-
-	.hero-copy p,
-	.hero-side-item span,
-	.panel-head p,
-	.class-subtitle,
-	.empty-state p,
-	.action-copy p,
-	.guidance-list,
-	.mini-stat span,
-	.scale-preview {
-		color: #475569;
-		line-height: 1.7;
-	}
-
-	.eyebrow,
-	.section-kicker,
-	.summary-label,
-	.hero-side-label,
-	.focus-label {
-		font-size: 0.78rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #64748b;
-		margin-bottom: 0.35rem;
-	}
-
-	.hero-actions,
-	.card-footer {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-		margin-top: 1rem;
-	}
-
-	.primary-button,
-	.secondary-button {
-		height: 2.95rem;
-		padding: 0 1rem;
-		border-radius: 0.95rem;
-		font-weight: 800;
-		font-size: 0.95rem;
-		cursor: pointer;
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		transition:
-			transform 0.16s ease,
-			box-shadow 0.16s ease,
-			background 0.16s ease,
-			border-color 0.16s ease,
-			opacity 0.16s ease;
-	}
-
-	.primary-button {
-		border: 0;
-		background: linear-gradient(135deg, #2563eb, #1d4ed8);
-		color: white;
-		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
-	}
-
-	.secondary-button {
-		background: white;
-		color: #0f172a;
-		border: 1px solid #cbd5e1;
-	}
-
-	.primary-button:hover,
-	.secondary-button:hover {
-		transform: translateY(-1px);
-	}
-
-	.primary-button:disabled,
-	.secondary-button:disabled {
-		opacity: 0.7;
-		cursor: not-allowed;
-		transform: none;
-	}
-
-	.hero-side {
-		padding: 1rem;
-		border-radius: 1rem;
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.03));
-		border: 1px solid rgba(96, 165, 250, 0.22);
-	}
-
-	.hero-side-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
-		margin-top: 0.75rem;
-	}
-
-	.hero-side-item {
-		padding: 0.9rem;
-		border-radius: 1rem;
-		background: white;
-		border: 1px solid rgba(148, 163, 184, 0.14);
-	}
-
-	.hero-side-item span {
-		display: block;
-		font-size: 0.8rem;
-		margin-bottom: 0.2rem;
-	}
-
-	.hero-side-item strong {
-		font-size: 1.3rem;
-		color: #0f172a;
-		line-height: 1.1;
-	}
-
-	.summary-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.summary-card {
-		padding: 1rem;
-	}
-
-	.summary-value {
-		font-size: 1.8rem;
-		font-weight: 900;
-		color: #0f172a;
-		line-height: 1.05;
-	}
-
-	.summary-foot {
-		margin-top: 0.45rem;
-		font-size: 0.88rem;
-		color: #64748b;
-		line-height: 1.5;
-	}
-
-	.feedback {
-		margin-bottom: 1rem;
-		padding: 0.95rem 1rem;
-		border-radius: 1rem;
-		font-size: 0.92rem;
-		font-weight: 700;
-	}
-
-	.feedback.success {
-		background: rgba(34, 197, 94, 0.12);
-		border: 1px solid rgba(34, 197, 94, 0.22);
-		color: #166534;
-	}
-
-	.feedback.error {
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.2);
-		color: #991b1b;
-	}
-
-	.dashboard-grid {
-		display: grid;
-		grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.85fr);
-		gap: 1rem;
-		align-items: start;
-	}
-
-	.main-column,
-	.side-column {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		min-width: 0;
-	}
-
-	.panel {
-		padding: 1.2rem;
-	}
-
-	.panel-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.panel-head.compact {
-		margin-bottom: 0.85rem;
-	}
-
-	.panel-head p {
-		max-width: 460px;
-		margin: 0.15rem 0 0;
-		font-size: 0.94rem;
-	}
-
-	.action-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.action-item {
-		padding: 1rem;
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.action-copy strong {
-		display: block;
-		color: #0f172a;
-		font-size: 0.98rem;
-		margin-bottom: 0.2rem;
-	}
-
-	.classes-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-		gap: 1rem;
-	}
-
-	.class-card {
-		padding: 1rem;
-	}
-
-	.class-card-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.75rem;
-		margin-bottom: 1rem;
-	}
-
-	.class-name-row {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.6rem;
-	}
-
-	.class-card h3 {
-		font-size: 1.08rem;
-	}
-
-	.class-subtitle {
-		margin: 0.35rem 0 0;
-		font-size: 0.88rem;
-	}
-
-	.status-badge {
-		padding: 0.4rem 0.72rem;
-		border-radius: 999px;
-		font-size: 0.74rem;
-		font-weight: 900;
-		white-space: nowrap;
-	}
-
-	.status-badge.good {
-		background: rgba(34, 197, 94, 0.12);
-		color: #166534;
-	}
-
-	.status-badge.warn {
-		background: rgba(245, 158, 11, 0.14);
-		color: #92400e;
-	}
-
-	.status-badge.risk {
-		background: rgba(239, 68, 68, 0.12);
-		color: #991b1b;
-	}
-
-	.status-badge.setup {
-		background: rgba(148, 163, 184, 0.16);
-		color: #475569;
-	}
-
-	.options-menu {
-		position: relative;
-	}
-
-	.options-menu summary {
-		list-style: none;
-		width: 2.2rem;
-		height: 2.2rem;
-		border-radius: 0.8rem;
-		display: grid;
-		place-items: center;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		color: #475569;
-		cursor: pointer;
-		font-size: 1.1rem;
-		font-weight: 900;
-	}
-
-	.options-menu summary::-webkit-details-marker {
-		display: none;
-	}
-
-	.options-popover {
-		position: absolute;
-		right: 0;
-		top: calc(100% + 0.35rem);
-		min-width: 150px;
-		padding: 0.5rem;
-		border-radius: 0.9rem;
-		background: white;
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-		z-index: 5;
-	}
-
-	.danger-option {
-		width: 100%;
-		height: 2.5rem;
-		border-radius: 0.75rem;
-		border: 1px solid rgba(239, 68, 68, 0.18);
-		background: white;
-		color: #b91c1c;
-		font-weight: 800;
-		cursor: pointer;
-	}
-
-	.card-metrics {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
-		margin-bottom: 0.85rem;
-	}
-
-	.metric-box {
-		padding: 0.85rem 0.9rem;
-		background: #f8fafc;
-	}
-
-	.metric-box span,
-	.meta-pill span {
-		display: block;
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.03em;
-		text-transform: uppercase;
-		color: #64748b;
-		margin-bottom: 0.2rem;
-	}
-
-	.metric-box strong,
-	.meta-pill strong {
-		color: #0f172a;
-		font-size: 1rem;
-	}
-
-	.metric-box strong.good,
-	.meta-pill strong.positive {
-		color: #166534;
-	}
-
-	.metric-box strong.warn {
-		color: #92400e;
-	}
-
-	.metric-box strong.risk,
-	.meta-pill strong.negative {
-		color: #991b1b;
-	}
-
-	.card-meta-row {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.65rem;
-		margin-bottom: 0.85rem;
-	}
-
-	.meta-pill {
-		padding: 0.75rem 0.8rem;
-		background: rgba(248, 250, 252, 0.9);
-	}
-
-	.focus-box {
-		padding: 0.9rem;
-		background: rgba(37, 99, 235, 0.05);
-		margin-bottom: 0.95rem;
-	}
-
-	.focus-tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-	}
-
-	.focus-tags span {
-		padding: 0.42rem 0.65rem;
-		border-radius: 999px;
-		background: white;
-		border: 1px solid rgba(148, 163, 184, 0.2);
-		font-size: 0.8rem;
-		font-weight: 700;
-		color: #23415f;
-	}
-
-	.card-footer form {
-		display: inline-flex;
-	}
-
-	.empty-state {
-		padding: 1.2rem;
-		border-radius: 1rem;
-		border: 1px dashed #cbd5e1;
-		background: rgba(248, 250, 252, 0.88);
-		text-align: center;
-	}
-
-	.empty-hero {
-		padding: 2rem 1.2rem;
-	}
-
-	.empty-badge {
-		width: 3rem;
-		height: 3rem;
-		margin: 0 auto 0.75rem;
-		border-radius: 1rem;
-		display: grid;
-		place-items: center;
-		font-weight: 900;
-		color: white;
-		background: linear-gradient(135deg, #2563eb, #1d4ed8);
-		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
-	}
-
-	.empty-state .primary-button {
-		margin-top: 1rem;
-	}
-
-	.create-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.85rem;
-	}
-
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.field label {
-		font-size: 0.84rem;
-		font-weight: 800;
-		color: #334155;
-	}
-
-	.field input {
-		height: 2.9rem;
-		padding: 0 0.9rem;
-		border-radius: 0.95rem;
-		border: 1px solid #cbd5e1;
-		background: white;
-		color: #0f172a;
-		font-size: 0.96rem;
-		outline: none;
-		transition:
-			border-color 0.16s ease,
-			box-shadow 0.16s ease;
-	}
-
-	.field input:focus {
-		border-color: #60a5fa;
-		box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
-	}
-
-	.form-mini-grid {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.scale-preview {
-		padding: 0.85rem 0.9rem;
-		border-radius: 0.95rem;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-		font-size: 0.9rem;
-	}
-
-	.guidance-list {
-		margin: 0;
-		padding-left: 1.1rem;
-		line-height: 1.9;
-	}
-
-	.mini-stats {
-		display: grid;
-		gap: 0.75rem;
-	}
-
-	.mini-stat {
-		padding: 0.9rem 0.95rem;
-		background: #f8fafc;
-	}
-
-	.mini-stat strong {
-		display: block;
-		font-size: 1.05rem;
-		color: #0f172a;
-		margin-top: 0.2rem;
-	}
-
-	@media (max-width: 1180px) {
-		.dashboard-grid {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	@media (max-width: 980px) {
-		.hero,
-		.summary-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.panel-head,
-		.action-item {
-			flex-direction: column;
-			align-items: flex-start;
-		}
-
-		.hero-side-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	@media (max-width: 720px) {
-		.card-metrics,
-		.card-meta-row,
-		.form-mini-grid,
-		.hero-side-grid {
-			grid-template-columns: 1fr;
-		}
-
-		.card-footer,
-		.hero-actions {
-			flex-direction: column;
-			align-items: stretch;
-		}
-
-		.primary-button,
-		.secondary-button {
-			width: 100%;
-		}
-
-		.card-footer form {
-			width: 100%;
-		}
-
-		.classes-grid {
-			grid-template-columns: 1fr;
-		}
-	}
-</style>
+				{#if showCreateForm}
+					<form method="POST" action="?/createClass" class="mt-5 space-y-4">
+						<div class="space-y-2">
+							<label for="class-name" class="block text-sm font-bold text-slate-700">
+								Nome da turma
+							</label>
+
+							<input
+								id="class-name"
+								name="name"
+								placeholder="Ex: 2º Ano A"
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							/>
+						</div>
+
+						<div class="grid grid-cols-3 gap-3">
+							<div class="space-y-2">
+								<label for="score-min" class="block text-sm font-bold text-slate-700">
+									Min
+								</label>
+								<input
+									id="score-min"
+									name="score_min"
+									type="number"
+									step="any"
+									bind:value={newMin}
+									class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<label for="score-max" class="block text-sm font-bold text-slate-700">
+									Max
+								</label>
+								<input
+									id="score-max"
+									name="score_max"
+									type="number"
+									step="any"
+									bind:value={newMax}
+									class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+								/>
+							</div>
+
+							<div class="space-y-2">
+								<label for="score-decimals" class="block text-sm font-bold text-slate-700">
+									Decimais
+								</label>
+								<input
+									id="score-decimals"
+									name="score_decimals"
+									type="number"
+									min="0"
+									max="6"
+									bind:value={newDecimals}
+									class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+								/>
+							</div>
+						</div>
+
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+							Escala padrão: <strong class="text-slate-950">{newMin}–{newMax}</strong> • dec
+							<strong class="text-slate-950">{newDecimals}</strong>
+						</div>
+
+						<button
+							type="submit"
+							class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white transition hover:bg-slate-800"
+						>
+							<span class="text-white">Criar turma</span>
+						</button>
+					</form>
+				{:else}
+					<p class="mt-4 text-sm leading-7 text-slate-600">
+						Abra este painel quando quiser criar uma nova turma com escala padrão definida.
+					</p>
+				{/if}
+			</section>
+
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+					Próximos movimentos
+				</p>
+				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+					Guia rápido
+				</h2>
+
+				<ul class="mt-4 space-y-3">
+					{#each quickGuidance as item}
+						<li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700">
+							{item}
+						</li>
+					{/each}
+				</ul>
+
+				{#if firstPriorityAction}
+					<a
+						href={firstPriorityAction.href}
+						class="mt-4 inline-flex h-12 w-full items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+					>
+						<span>Abrir prioridade atual</span>
+					</a>
+				{/if}
+			</section>
+		</aside>
+	</div>
+</div>

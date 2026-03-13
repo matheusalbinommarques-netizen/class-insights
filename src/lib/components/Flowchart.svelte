@@ -1,7 +1,4 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
-
-	// Svelte 5 Props
 	let {
 		variant = 'desktop',
 		class: className = ''
@@ -10,78 +7,202 @@
 		class?: string;
 	}>();
 
-	const steps = [
-		{ id: 1, persona: 'professor', color: 'blue', icon: '📋', title: 'Cria turma e importa alunos' },
-		{ id: 2, persona: 'professor', color: 'blue', icon: '📝', title: 'Lança notas e avaliações' },
-		{ id: 3, persona: 'sistema', color: 'brand', icon: '🔄', title: 'Atualiza histórico longitudinal' },
-		{ id: 4, persona: 'professor', color: 'blue', icon: '📊', title: 'Analisa quedas e médias' },
-		{ id: 5, persona: 'coordenador', color: 'purple', icon: '👀', title: 'Monitora instituição' },
-		{ id: 6, persona: 'aluno', color: 'orange', icon: '📬', title: 'Recebe portal transparente' },
-		{ id: 7, persona: 'ciclo', color: 'brand', icon: '🔁', title: 'Intervenção → Melhoria' }
+	type Tone = 'blue' | 'brand' | 'emerald' | 'amber';
+
+	type Step = {
+		id: string;
+		actor: string;
+		tone: Tone;
+		title: string;
+		description: string;
+		outcome: string;
+	};
+
+	const steps: Step[] = [
+		{
+			id: '01',
+			actor: 'Professor',
+			tone: 'blue',
+			title: 'Cria turma e vincula matéria',
+			description: 'O trabalho começa organizando a estrutura da turma e o contexto da disciplina.',
+			outcome: 'base de trabalho pronta'
+		},
+		{
+			id: '02',
+			actor: 'Professor',
+			tone: 'blue',
+			title: 'Cadastra ou importa alunos',
+			description: 'A entrada operacional precisa ser rápida, clara e segura para evitar retrabalho.',
+			outcome: 'alunos vinculados'
+		},
+		{
+			id: '03',
+			actor: 'Professor',
+			tone: 'blue',
+			title: 'Cria avaliação e lança notas',
+			description: 'A rotina do professor alimenta o sistema com o que realmente importa para a leitura.',
+			outcome: 'dados pedagógicos publicados'
+		},
+		{
+			id: '04',
+			actor: 'Sistema',
+			tone: 'brand',
+			title: 'Atualiza o histórico longitudinal',
+			description: 'A nota deixa de ser pontual e passa a compor uma visão acumulada do aluno.',
+			outcome: 'histórico vivo'
+		},
+		{
+			id: '05',
+			actor: 'Professor + Coordenação',
+			tone: 'emerald',
+			title: 'Gera leitura e prioridades',
+			description: 'Médias, quedas, padrões e comparações passam a orientar intervenção de verdade.',
+			outcome: 'insight acionável'
+		},
+		{
+			id: '06',
+			actor: 'Aluno',
+			tone: 'amber',
+			title: 'Acompanha evolução com clareza',
+			description: 'O aluno recebe uma visão simples do próprio progresso, sem depender de leitura manual.',
+			outcome: 'valor percebido'
+		}
 	];
 
-	// Mapeamento de cores para Tailwind (v4 compatível)
-	const colorMap = {
-		blue: 'text-blue-400 bg-blue-500/10 border-blue-400/20',
-		purple: 'text-purple-400 bg-purple-500/10 border-purple-400/20',
-		orange: 'text-orange-400 bg-orange-500/10 border-orange-400/20',
-		brand: 'text-brand-accent bg-brand-accent/10 border-brand-accent/20'
-	};
+	function tonePanel(tone: Tone) {
+		if (tone === 'blue') return 'border-blue-400/20 bg-blue-500/10';
+		if (tone === 'brand') return 'border-brand-accent/20 bg-brand-accent/10';
+		if (tone === 'emerald') return 'border-emerald-400/20 bg-emerald-500/10';
+		return 'border-amber-400/20 bg-amber-500/10';
+	}
+
+	function toneBadge(tone: Tone) {
+		if (tone === 'blue') return 'border-blue-400/20 bg-blue-500/12 text-blue-300';
+		if (tone === 'brand') return 'border-brand-accent/20 bg-brand-accent/12 text-brand-accent';
+		if (tone === 'emerald') return 'border-emerald-400/20 bg-emerald-500/12 text-emerald-300';
+		return 'border-amber-400/20 bg-amber-500/12 text-amber-300';
+	}
+
+	function toneDot(tone: Tone) {
+		if (tone === 'blue') return 'bg-blue-400';
+		if (tone === 'brand') return 'bg-brand-accent';
+		if (tone === 'emerald') return 'bg-emerald-400';
+		return 'bg-amber-400';
+	}
+
+	const miniSteps = steps.slice(0, 4);
 </script>
 
 {#if variant === 'mini'}
-	<div class="{className} flex items-center justify-center gap-2 opacity-60">
-		{#each steps.slice(0, 5) as step, i}
-			<div class="flex items-center gap-2">
-				<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-xl border border-white/10">
-					{step.icon}
+	<div class={`${className} items-center gap-3`}>
+		{#each miniSteps as step, i}
+			<div class="flex items-center gap-3">
+				<div class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.18em] ${toneBadge(step.tone)}`}>
+					{step.id}
 				</div>
-				{#if i < 4}
-					<div class="h-px w-6 bg-linear-to-r from-white/20 to-transparent"></div>
+
+				{#if i < miniSteps.length - 1}
+					<div class="flex items-center gap-2">
+						<div class="h-px w-8 bg-white/12"></div>
+						<div class={`h-2 w-2 rounded-full ${toneDot(step.tone)}`}></div>
+					</div>
 				{/if}
 			</div>
 		{/each}
+
+		<div class="ml-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+			operação → histórico → leitura
+		</div>
 	</div>
 
 {:else if variant === 'desktop'}
-	<div class="{className} flex items-start justify-between gap-2 py-8">
-		{#each steps as step, i}
-			<div class="group relative flex-1 px-2 text-center">
-				<div 
-					class="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl transition-all duration-500 group-hover:scale-110 group-hover:shadow-2xl shadow-black/50 {colorMap[step.color as keyof typeof colorMap]}"
-				>
-					<span class="text-4xl">{step.icon}</span>
+	<div class={className}>
+		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+			{#each steps as step, i}
+				<div class="relative">
+					{#if i < steps.length - 1}
+						<div class="pointer-events-none absolute left-[calc(100%-0.5rem)] top-10 hidden h-px w-4 bg-white/10 xl:block"></div>
+						<div class="pointer-events-none absolute left-[calc(100%+0.6rem)] top-[2.02rem] hidden text-white/25 xl:block">
+							→
+						</div>
+					{/if}
+
+					<article class={`h-full rounded-[1.75rem] border p-5 ${tonePanel(step.tone)}`}>
+						<div class="flex items-center justify-between gap-3">
+							<span class={`rounded-full border px-2.5 py-1 text-[11px] font-black tracking-[0.16em] ${toneBadge(step.tone)}`}>
+								{step.id}
+							</span>
+
+							<span class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+								{step.actor}
+							</span>
+						</div>
+
+						<h3 class="mt-5 text-lg font-black leading-tight text-white">
+							{step.title}
+						</h3>
+
+						<p class="mt-3 text-sm leading-6 text-slate-300">
+							{step.description}
+						</p>
+
+						<div class="mt-5 rounded-2xl border border-white/8 bg-slate-950/45 px-3 py-3">
+							<p class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+								Resultado
+							</p>
+							<p class="mt-1 text-sm font-semibold text-white">{step.outcome}</p>
+						</div>
+					</article>
 				</div>
-				<p class="mt-4 text-[11px] font-black uppercase tracking-tighter leading-tight text-slate-300">
-					{step.title}
-				</p>
-				
-				{#if i < steps.length - 1}
-					<div class="absolute -right-4.5 top-10 z-0 h-px w-9 bg-linear-to-r from-white/20 to-transparent"></div>
-					<div class="absolute -right-3 top-8.5 text-xs text-white/20">▶</div>
-				{/if}
-			</div>
-		{/each}
+			{/each}
+		</div>
+
+		<div class="mt-5 rounded-[1.75rem] border border-white/8 bg-slate-950/45 px-5 py-4">
+			<p class="text-sm text-slate-300">
+				<span class="font-bold text-white">Resumo:</span>
+				o professor alimenta uma vez, o sistema organiza o histórico e a plataforma devolve
+				leitura útil para professor, coordenação e aluno.
+			</p>
+		</div>
 	</div>
 
 {:else if variant === 'mobile'}
-	<div class="{className} space-y-4">
-		{#each steps as step}
-			<details class="group overflow-hidden rounded-2xl border border-white/5 bg-slate-900/40 transition-all open:bg-slate-900/80">
-				<summary class="flex cursor-pointer list-none items-center gap-4 p-5">
-					<span class="flex h-12 w-12 items-center justify-center rounded-xl text-2xl {colorMap[step.color as keyof typeof colorMap]}">
-						{step.icon}
-					</span>
-					<div class="flex-1">
-						<span class="block text-sm font-bold text-white">{step.title}</span>
-						<span class="text-[10px] font-black uppercase tracking-widest opacity-50">Ator: {step.persona}</span>
+	<div class={`${className} space-y-3`}>
+		{#each steps as step, i}
+			<div class="rounded-[1.5rem] border border-white/8 bg-slate-950/55 p-4">
+				<div class="flex items-start gap-4">
+					<div class="flex flex-col items-center">
+						<div class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.16em] ${toneBadge(step.tone)}`}>
+							{step.id}
+						</div>
+
+						{#if i < steps.length - 1}
+							<div class="mt-2 h-7 w-px bg-white/10"></div>
+						{/if}
 					</div>
-					<span class="text-slate-600 transition-transform group-open:rotate-180">▼</span>
-				</summary>
-				<div class="border-t border-white/5 p-5 text-sm text-slate-400 bg-black/20" in:fade>
-					Este passo garante que o fluxo {step.persona === 'sistema' ? 'seja automatizado' : `seja executado pelo ${step.persona}`}, alimentando os insights longitudinais da plataforma.
+
+					<div class="min-w-0 flex-1">
+						<div class="flex flex-wrap items-center gap-2">
+							<span class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+								{step.actor}
+							</span>
+							<div class={`h-2 w-2 rounded-full ${toneDot(step.tone)}`}></div>
+						</div>
+
+						<h3 class="mt-2 text-base font-black leading-tight text-white">
+							{step.title}
+						</h3>
+
+						<p class="mt-2 text-sm leading-6 text-slate-300">
+							{step.description}
+						</p>
+
+						<div class="mt-3 inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+							{step.outcome}
+						</div>
+					</div>
 				</div>
-			</details>
+			</div>
 		{/each}
 	</div>
 {/if}
