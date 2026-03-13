@@ -53,8 +53,22 @@
 	type TabKey = 'overview' | 'launch' | 'manage';
 	type LaunchStatusFilter = 'all' | 'risk' | 'attention' | 'good' | 'pending';
 	type LaunchSortMode = 'alpha' | 'lowest' | 'highest-risk';
+	type Tone = 'risk' | 'warn' | 'good' | 'empty';
 
-	export let data: {
+	type StudentSkillEntry = {
+		skill: Skill;
+		raw: string;
+		numeric: number | null;
+		percent: number | null;
+	};
+
+	type NextBestAction = {
+		title: string;
+		description: string;
+		cta: 'snapshot' | 'launch' | 'weakest';
+	};
+
+	type PageData = {
 		class: ClassData | null;
 		students: Student[];
 		skills: Skill[];
@@ -67,50 +81,71 @@
 		today: string;
 	};
 
+	let { data } = $props<{ data: PageData }>();
+
 	const emptyKpis: InsightKpis = {
 		classAvg: null,
 		criticalSkill: null,
 		strongSkill: null
 	};
 
-	$: pageTitle = data.class
-		? `${data.class.name} • Class Insights`
-		: 'Turma não encontrada • Class Insights';
+	const pageTitle = $derived(
+		data.class ? `${data.class.name} • Class Insights` : 'Turma não encontrada • Class Insights'
+	);
 
-	$: insightRows = data.insights?.rows ?? [];
-	$: insightKpis = data.insights?.kpis ?? emptyKpis;
+	const insightRows = $derived<InsightRow[]>(data.insights?.rows ?? []);
+	const insightKpis = $derived<InsightKpis>(data.insights?.kpis ?? emptyKpis);
 
-	$: weakestRows = [...insightRows]
-		.filter((r) => typeof r.latest_avg === 'number')
-		.sort((a, b) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))
-		.slice(0, 3);
+	const weakestRows = $derived.by(
+		(): InsightRow[] =>
+			[...insightRows]
+				.filter((r: InsightRow) => typeof r.latest_avg === 'number')
+				.sort((a: InsightRow, b: InsightRow) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))
+				.slice(0, 3)
+	);
 
-	$: strongestRows = [...insightRows]
-		.filter((r) => typeof r.latest_avg === 'number')
-		.sort((a, b) => (b.latest_avg ?? 0) - (a.latest_avg ?? 0))
-		.slice(0, 3);
+	const strongestRows = $derived.by(
+		(): InsightRow[] =>
+			[...insightRows]
+				.filter((r: InsightRow) => typeof r.latest_avg === 'number')
+				.sort((a: InsightRow, b: InsightRow) => (b.latest_avg ?? 0) - (a.latest_avg ?? 0))
+				.slice(0, 3)
+	);
 
-	$: orderedInsightRows = [...insightRows].sort((a, b) => {
-		const aVal = a.latest_avg ?? Number.POSITIVE_INFINITY;
-		const bVal = b.latest_avg ?? Number.POSITIVE_INFINITY;
-		return aVal - bVal;
-	});
+	const orderedInsightRows = $derived.by(
+		(): InsightRow[] =>
+			[...insightRows].sort((a: InsightRow, b: InsightRow) => {
+				const aVal = a.latest_avg ?? Number.POSITIVE_INFINITY;
+				const bVal = b.latest_avg ?? Number.POSITIVE_INFINITY;
+				return aVal - bVal;
+			})
+	);
 
 	const keyOf = (studentId: string, skillId: string) => `${studentId}:${skillId}`;
 
-	let scores: Record<string, string> = Object.fromEntries(
-		data.scores.map((s) => [keyOf(s.student_id, s.skill_id), String(s.score)])
+	let scores = $state<Record<string, string>>(
+		Object.fromEntries(
+			// svelte-ignore state_referenced_locally
+						data.scores.map((scoreRow: ScoreRow) => [
+				keyOf(scoreRow.student_id, scoreRow.skill_id),
+				String(scoreRow.score)
+			])
+		)
 	);
 
-	let status: Record<string, 'idle' | 'saving' | 'saved' | 'error'> = {};
-	let errorMsg: Record<string, string> = {};
+	let status = $state<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({});
+	let errorMsg = $state<Record<string, string>>({});
 
 	const formRefs: Record<string, HTMLFormElement | null> = {};
 	const inputRefs: Record<string, HTMLInputElement | null> = {};
 
 	const getScore = (studentId: string, skillId: string) => scores[keyOf(studentId, skillId)] ?? '';
 
-	const setStatus = (k: string, s: 'idle' | 'saving' | 'saved' | 'error', msg = '') => {
+	const setStatus = (
+		k: string,
+		s: 'idle' | 'saving' | 'saved' | 'error',
+		msg = ''
+	): void => {
 		status = { ...status, [k]: s };
 
 		if (msg) {
@@ -159,7 +194,8 @@
 			}
 
 			const msg =
-				(result.type === 'failure' && (result as { data?: { message?: string } }).data?.message) ||
+				(result.type === 'failure' &&
+					(result as { data?: { message?: string } }).data?.message) ||
 				(result.type === 'error' && result.error?.message) ||
 				'Erro ao salvar.';
 
@@ -169,7 +205,7 @@
 	};
 
 	const effectiveScale = (skillId: string) => {
-		const sk = data.skills.find((x) => x.id === skillId);
+		const sk = data.skills.find((skill: Skill) => skill.id === skillId);
 		const cls = data.class;
 
 		return {
@@ -227,7 +263,7 @@
 		return Math.round(ratio * 100);
 	};
 
-	const cellTone = (skillId: string, raw: string) => {
+	const cellTone = (skillId: string, raw: string): Tone => {
 		if (!raw.trim()) return 'empty';
 
 		const ratio = ratioFor(skillId, raw);
@@ -238,56 +274,63 @@
 		return 'good';
 	};
 
-	const allSkills = () => data.skills;
+	const allSkills = (): Skill[] => data.skills;
 
-	let activeTab: TabKey = 'overview';
-	let focusMode = false;
-	let studentSearch = '';
-	let statusFilter: LaunchStatusFilter = 'all';
-	let sortMode: LaunchSortMode = 'alpha';
-	let selectedSkillId: string | null = null;
+	let activeTab = $state<TabKey>('overview');
+	let focusMode = $state(false);
+	let studentSearch = $state('');
+	let statusFilter = $state<LaunchStatusFilter>('all');
+	let sortMode = $state<LaunchSortMode>('alpha');
+	let selectedSkillId = $state('');
 
-	$: visibleSkills =
-		selectedSkillId && data.skills.some((skill) => skill.id === selectedSkillId)
-			? data.skills.filter((skill) => skill.id === selectedSkillId)
-			: data.skills;
+	const visibleSkills = $derived.by(
+		(): Skill[] =>
+			selectedSkillId && data.skills.some((skill: Skill) => skill.id === selectedSkillId)
+				? data.skills.filter((skill: Skill) => skill.id === selectedSkillId)
+				: data.skills
+	);
 
-	const getStudentSkillEntries = (studentId: string, skillsList = visibleSkills) =>
-		skillsList.map((skill) => ({
+	const getStudentSkillEntries = (
+		studentId: string,
+		skillsList: Skill[] = visibleSkills
+	): StudentSkillEntry[] =>
+		skillsList.map((skill: Skill) => ({
 			skill,
 			raw: getScore(studentId, skill.id),
 			numeric: toNumber(getScore(studentId, skill.id)),
 			percent: scorePercentFor(skill.id, getScore(studentId, skill.id))
 		}));
 
-	const studentAverageRaw = (studentId: string, skillsList = visibleSkills) => {
+	const studentAverageRaw = (studentId: string, skillsList: Skill[] = visibleSkills) => {
 		const values = getStudentSkillEntries(studentId, skillsList)
-			.map((entry) => entry.numeric)
-			.filter((v): v is number => v !== null);
+			.map((entry: StudentSkillEntry) => entry.numeric)
+			.filter((v: number | null): v is number => v !== null);
 
 		if (values.length === 0) return null;
 
 		const decimals = data.class?.score_decimals ?? 0;
-		const avg = values.reduce((a, b) => a + b, 0) / values.length;
+		const avg = values.reduce((a: number, b: number) => a + b, 0) / values.length;
 		return Number(avg.toFixed(decimals));
 	};
 
-	const studentAveragePercent = (studentId: string, skillsList = visibleSkills) => {
+	const studentAveragePercent = (studentId: string, skillsList: Skill[] = visibleSkills) => {
 		const values = getStudentSkillEntries(studentId, skillsList)
-			.map((entry) => entry.percent)
-			.filter((v): v is number => typeof v === 'number');
+			.map((entry: StudentSkillEntry) => entry.percent)
+			.filter((v: number | null): v is number => typeof v === 'number');
 
 		if (values.length === 0) return null;
 
-		return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+		return Math.round(values.reduce((a: number, b: number) => a + b, 0) / values.length);
 	};
 
-	const studentHasPending = (studentId: string, skillsList = visibleSkills) =>
-		getStudentSkillEntries(studentId, skillsList).some((entry) => entry.raw.trim().length === 0);
+	const studentHasPending = (studentId: string, skillsList: Skill[] = visibleSkills) =>
+		getStudentSkillEntries(studentId, skillsList).some(
+			(entry: StudentSkillEntry) => entry.raw.trim().length === 0
+		);
 
 	const studentHealth = (
 		studentId: string,
-		skillsList = visibleSkills
+		skillsList: Skill[] = visibleSkills
 	): 'risk' | 'attention' | 'good' | 'pending' => {
 		const avgPercent = studentAveragePercent(studentId, skillsList);
 		const hasPending = studentHasPending(studentId, skillsList);
@@ -309,16 +352,16 @@
 	const matchesSearch = (student: Student) =>
 		student.name.toLowerCase().includes(studentSearch.trim().toLowerCase());
 
-	const sortStudents = (students: Student[]) => {
+	const sortStudents = (students: Student[]): Student[] => {
 		const next = [...students];
 
 		if (sortMode === 'alpha') {
-			next.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+			next.sort((a: Student, b: Student) => a.name.localeCompare(b.name, 'pt-BR'));
 			return next;
 		}
 
 		if (sortMode === 'lowest') {
-			next.sort((a, b) => {
+			next.sort((a: Student, b: Student) => {
 				const aAvg = studentAveragePercent(a.id, visibleSkills);
 				const bAvg = studentAveragePercent(b.id, visibleSkills);
 
@@ -332,7 +375,7 @@
 			return next;
 		}
 
-		next.sort((a, b) => {
+		next.sort((a: Student, b: Student) => {
 			const severity = (studentId: string) => {
 				const health = studentHealth(studentId, visibleSkills);
 				if (health === 'risk') return 0;
@@ -360,35 +403,43 @@
 		return next;
 	};
 
-	$: filteredStudents = sortStudents(
-		data.students.filter((student) => matchesSearch(student) && matchesStatusFilter(student.id))
+	const filteredStudents = $derived.by(
+		(): Student[] =>
+			sortStudents(
+				data.students.filter(
+					(student: Student) => matchesSearch(student) && matchesStatusFilter(student.id)
+				)
+			)
 	);
 
-	const averageBySkill = (skillId: string, studentsList = filteredStudents) => {
+	const averageBySkill = (skillId: string, studentsList: Student[] = filteredStudents) => {
 		const values = studentsList
-			.map((student) => toNumber(getScore(student.id, skillId)))
-			.filter((v): v is number => v !== null);
+			.map((student: Student) => toNumber(getScore(student.id, skillId)))
+			.filter((v: number | null): v is number => v !== null);
 
 		if (values.length === 0) return '-';
 
 		const sc = effectiveScale(skillId);
-		const avg = values.reduce((a, b) => a + b, 0) / values.length;
+		const avg = values.reduce((a: number, b: number) => a + b, 0) / values.length;
 		return avg.toFixed(sc.decimals);
 	};
 
-	const averageTone = (skillId: string, studentsList = filteredStudents) => {
+	const averageTone = (skillId: string, studentsList: Student[] = filteredStudents): Tone => {
 		const avg = averageBySkill(skillId, studentsList);
 		if (avg === '-') return 'empty';
 		return cellTone(skillId, avg);
 	};
 
-	const averageByStudentLabel = (studentId: string, skillsList = visibleSkills) => {
+	const averageByStudentLabel = (studentId: string, skillsList: Skill[] = visibleSkills) => {
 		const avg = studentAverageRaw(studentId, skillsList);
 		if (avg === null) return '-';
 		return avg.toFixed(data.class?.score_decimals ?? 0);
 	};
 
-	const averageToneByStudent = (studentId: string, skillsList = visibleSkills) => {
+	const averageToneByStudent = (
+		studentId: string,
+		skillsList: Skill[] = visibleSkills
+	): Tone => {
 		const health = studentHealth(studentId, skillsList);
 		if (health === 'risk') return 'risk';
 		if (health === 'attention') return 'warn';
@@ -396,79 +447,110 @@
 		return 'empty';
 	};
 
-	const overallGridAverage = (studentsList = filteredStudents, skillsList = visibleSkills) => {
-		const values = studentsList
-			.flatMap((student) =>
-				skillsList
-					.map((skill) => toNumber(getScore(student.id, skill.id)))
-					.filter((v): v is number => v !== null)
-			);
+	const overallGridAverage = (
+		studentsList: Student[] = filteredStudents,
+		skillsList: Skill[] = visibleSkills
+	) => {
+		const values = studentsList.flatMap((student: Student) =>
+			skillsList
+				.map((skill: Skill) => toNumber(getScore(student.id, skill.id)))
+				.filter((v: number | null): v is number => v !== null)
+		);
 
 		if (values.length === 0) return '—';
 
 		const decimals = data.class?.score_decimals ?? 0;
-		const avg = values.reduce((a, b) => a + b, 0) / values.length;
+		const avg = values.reduce((a: number, b: number) => a + b, 0) / values.length;
 		return avg.toFixed(decimals);
 	};
 
-	$: totalGridCells = data.students.length * data.skills.length;
-	$: filledGridCells = Object.values(scores).filter((value) => toNumber(value) !== null).length;
-	$: gridCoverage = totalGridCells > 0 ? Math.round((filledGridCells / totalGridCells) * 100) : 0;
+	const totalGridCells = $derived.by((): number => data.students.length * data.skills.length);
 
-	$: filteredGridCells = filteredStudents.length * visibleSkills.length;
-	$: filteredFilledGridCells = filteredStudents.reduce((sum, student) => {
-		return (
-			sum +
-			visibleSkills.filter((skill) => {
-				const numeric = toNumber(getScore(student.id, skill.id));
-				return numeric !== null;
-			}).length
-		);
-	}, 0);
+	const filledGridCells = $derived.by(
+		(): number => Object.values(scores).filter((value: string) => toNumber(value) !== null).length
+	);
 
-	$: filteredCoverage =
-		filteredGridCells > 0 ? Math.round((filteredFilledGridCells / filteredGridCells) * 100) : 0;
+	const gridCoverage = $derived.by(
+		(): number => (totalGridCells > 0 ? Math.round((filledGridCells / totalGridCells) * 100) : 0)
+	);
 
-	$: launchRiskStudentsCount = data.students.filter(
-		(student) => studentHealth(student.id, allSkills()) === 'risk'
-	).length;
+	const filteredGridCells = $derived.by(
+		(): number => filteredStudents.length * visibleSkills.length
+	);
 
-	$: launchPendingStudentsCount = data.students.filter((student) =>
-		studentHasPending(student.id, allSkills())
-	).length;
+	const filteredFilledGridCells = $derived.by(
+		(): number =>
+			filteredStudents.reduce((sum: number, student: Student) => {
+				return (
+					sum +
+					visibleSkills.filter((skill: Skill) => {
+						const numeric = toNumber(getScore(student.id, skill.id));
+						return numeric !== null;
+					}).length
+				);
+			}, 0)
+	);
 
-	$: latestSnapshotDate =
-		insightRows
-			.map((row) => row.latest_date)
-			.filter((value): value is string => typeof value === 'string')
-			.sort((a, b) => a.localeCompare(b))
-			.at(-1) ?? null;
+	const filteredCoverage = $derived.by(
+		(): number =>
+			filteredGridCells > 0
+				? Math.round((filteredFilledGridCells / filteredGridCells) * 100)
+				: 0
+	);
 
-	$: nextBestAction = !data.hasTodaySnapshot
-		? {
-				title: 'Gerar snapshot da turma',
-				description: 'Você ainda não gerou o snapshot de hoje. Isso mantém a evolução auditável.',
-				cta: 'Gerar snapshot'
-			}
-		: launchPendingStudentsCount > 0
-			? {
-					title: 'Completar lançamentos pendentes',
-					description: `${launchPendingStudentsCount} aluno(s) ainda têm células em aberto no grid.`,
-					cta: 'Ir para lançamento'
-				}
-			: weakestRows.length > 0
+	const launchRiskStudentsCount = $derived.by(
+		(): number =>
+			data.students.filter(
+				(student: Student) => studentHealth(student.id, allSkills()) === 'risk'
+			).length
+	);
+
+	const launchPendingStudentsCount = $derived.by(
+		(): number =>
+			data.students.filter((student: Student) => studentHasPending(student.id, allSkills()))
+				.length
+	);
+
+	const latestSnapshotDate = $derived.by(
+		(): string | null =>
+			insightRows
+				.map((row: InsightRow) => row.latest_date)
+				.filter((value: string | null): value is string => typeof value === 'string')
+				.sort((a: string, b: string) => a.localeCompare(b))
+				.at(-1) ?? null
+	);
+
+	const nextBestAction = $derived.by(
+		(): NextBestAction =>
+			!data.hasTodaySnapshot
 				? {
-						title: `Revisar ${weakestRows[0].skill_name}`,
-						description: 'Esta skill aparece como a lacuna mais crítica da turma neste momento.',
-						cta: 'Ver no grid'
+						title: 'Gerar snapshot da turma',
+						description:
+							'Você ainda não gerou o snapshot de hoje. Isso mantém a evolução auditável.',
+						cta: 'snapshot'
 					}
-				: {
-						title: 'Turma está estável',
-						description: 'Sem alerta crítico imediato. Você pode seguir com novas avaliações.',
-						cta: 'Abrir lançamento'
-					};
+				: launchPendingStudentsCount > 0
+					? {
+							title: 'Completar lançamentos pendentes',
+							description: `${launchPendingStudentsCount} aluno(s) ainda têm células em aberto no grid.`,
+							cta: 'launch'
+						}
+					: weakestRows.length > 0
+						? {
+								title: `Revisar ${weakestRows[0].skill_name}`,
+								description:
+									'Esta skill aparece como a lacuna mais crítica da turma neste momento.',
+								cta: 'weakest'
+							}
+						: {
+								title: 'Turma está estável',
+								description:
+									'Sem alerta crítico imediato. Você pode seguir com novas avaliações.',
+								cta: 'launch'
+							}
+	);
 
-	let editingScale: Record<string, boolean> = {};
+	let editingScale = $state<Record<string, boolean>>({});
 
 	const toggleEditingScale = (skillId: string) => {
 		editingScale = { ...editingScale, [skillId]: !editingScale[skillId] };
@@ -480,8 +562,8 @@
 		}
 	};
 
-	let snapshotStatus: 'idle' | 'saving' | 'saved' | 'error' = 'idle';
-	let snapshotError = '';
+	let snapshotStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let snapshotError = $state('');
 
 	const enhanceSnapshot: SubmitFunction = () => {
 		snapshotStatus = 'saving';
@@ -497,18 +579,21 @@
 			}
 
 			const msg =
-				(result.type === 'failure' && (result as { data?: { message?: string } }).data?.message) ||
+				(result.type === 'failure' &&
+					(result as { data?: { message?: string } }).data?.message) ||
 				(result.type === 'error' && result.error?.message) ||
 				'Erro ao gerar snapshot.';
 
 			snapshotStatus = 'error';
 			snapshotError = msg;
-			setTimeout(() => (snapshotStatus = 'idle'), 2400);
+			setTimeout(() => {
+				snapshotStatus = 'idle';
+			}, 2400);
 		};
 	};
 
-	let autoSnapshot = false;
-	let copiedInviteCode: string | null = null;
+	let autoSnapshot = $state(false);
+	let copiedInviteCode = $state<string | null>(null);
 
 	onMount(() => {
 		try {
@@ -522,7 +607,9 @@
 		autoSnapshot = v;
 		try {
 			localStorage.setItem('autoSnapshot', v ? '1' : '0');
-		} catch {}
+		} catch {
+			// noop
+		}
 	};
 
 	onMount(() => {
@@ -572,8 +659,11 @@
 		}
 	}
 
-	const studentIndexOf = (studentId: string) => filteredStudents.findIndex((s) => s.id === studentId);
-	const skillIndexOf = (skillId: string) => visibleSkills.findIndex((s) => s.id === skillId);
+	const studentIndexOf = (studentId: string) =>
+		filteredStudents.findIndex((student: Student) => student.id === studentId);
+
+	const skillIndexOf = (skillId: string) =>
+		visibleSkills.findIndex((skill: Skill) => skill.id === skillId);
 
 	const focusCellAt = (studentIndex: number, skillIndex: number) => {
 		if (studentIndex < 0 || skillIndex < 0) return;
@@ -655,8 +745,8 @@
 		const matrix = raw
 			.replace(/\r/g, '')
 			.split('\n')
-			.filter((line) => line.length > 0)
-			.map((line) => line.split('\t'));
+			.filter((line: string) => line.length > 0)
+			.map((line: string) => line.split('\t'));
 
 		const nextScores = { ...scores };
 		const submitQueue: Array<{ studentId: string; skillId: string }> = [];
@@ -697,7 +787,7 @@
 		studentSearch = '';
 		statusFilter = 'all';
 		sortMode = 'alpha';
-		selectedSkillId = null;
+		selectedSkillId = '';
 	};
 
 	const selectOnlyPending = () => {
@@ -708,18 +798,63 @@
 		statusFilter = 'risk';
 	};
 
-	$: savingCount = Object.values(status).filter((value) => value === 'saving').length;
-	$: errorCount = Object.values(status).filter((value) => value === 'error').length;
-	$: savedCount = Object.values(status).filter((value) => value === 'saved').length;
+	const savingCount = $derived.by(
+		(): number => Object.values(status).filter((value) => value === 'saving').length
+	);
 
-	$: launchFeedbackLabel =
-		savingCount > 0
-			? `Salvando ${savingCount} célula(s)...`
-			: errorCount > 0
-				? `${errorCount} célula(s) com erro`
-				: savedCount > 0
-					? 'Tudo salvo'
-					: 'Sem alterações recentes';
+	const errorCount = $derived.by(
+		(): number => Object.values(status).filter((value) => value === 'error').length
+	);
+
+	const savedCount = $derived.by(
+		(): number => Object.values(status).filter((value) => value === 'saved').length
+	);
+
+	const launchFeedbackLabel = $derived.by((): string => {
+		if (savingCount > 0) return `Salvando ${savingCount} célula(s)...`;
+		if (errorCount > 0) return `${errorCount} célula(s) com erro`;
+		if (savedCount > 0) return 'Tudo salvo';
+		return 'Sem alterações recentes';
+	});
+
+	function healthBadgeClass(health: 'risk' | 'attention' | 'good' | 'pending') {
+		if (health === 'risk') return 'border-red-200 bg-red-50 text-red-700';
+		if (health === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
+		if (health === 'good') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+		return 'border-slate-200 bg-slate-100 text-slate-600';
+	}
+
+	function toneCellClass(tone: Tone) {
+		if (tone === 'risk') return 'bg-red-50';
+		if (tone === 'warn') return 'bg-amber-50';
+		if (tone === 'good') return 'bg-emerald-50';
+		return 'bg-white';
+	}
+
+	function toneTextClass(tone: Tone) {
+		if (tone === 'risk') return 'text-red-700';
+		if (tone === 'warn') return 'text-amber-700';
+		if (tone === 'good') return 'text-emerald-700';
+		return 'text-slate-500';
+	}
+
+	function snapshotChipClass() {
+		return data.hasTodaySnapshot
+			? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+			: 'border-amber-200 bg-amber-50 text-amber-700';
+	}
+
+	function tabClass(tab: TabKey) {
+		return activeTab === tab
+			? 'border-sky-200 bg-sky-50 text-sky-700'
+			: 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900';
+	}
+
+	function statusFilterClass(filter: LaunchStatusFilter) {
+		return statusFilter === filter
+			? 'border-slate-300 bg-slate-100 text-slate-900'
+			: 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900';
+	}
 </script>
 
 <svelte:head>
@@ -727,1732 +862,970 @@
 </svelte:head>
 
 {#if !data.class}
-	<section class="empty-page">
-		<h1>Turma não encontrada</h1>
-		<p>Volte para o dashboard e selecione uma turma válida.</p>
-		<a href="/teacher" class="primary-button">Voltar ao dashboard</a>
+	<section class="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+		<h1 class="text-3xl font-black tracking-tight text-slate-950">Turma não encontrada</h1>
+		<p class="mt-3 text-base leading-8 text-slate-600">
+			Volte para o dashboard e selecione uma turma válida.
+		</p>
+		<a href="/teacher" class="mt-6 inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800">
+			Voltar ao dashboard
+		</a>
 	</section>
 {:else}
-	<section class="hero">
-		<div class="hero-copy">
-			<div class="eyebrow">Turma</div>
-			<h1>{data.class.name}</h1>
-			<p>
-				Escala padrão da turma:
-				<strong>{data.class.score_min}–{data.class.score_max}</strong>
-				(decimais: <strong>{data.class.score_decimals}</strong>)
-			</p>
+	<div class="space-y-6">
+		<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+			<div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+				<div class="max-w-3xl">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">Turma</p>
+					<h1 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+						{data.class.name}
+					</h1>
 
-			<div class="hero-inline-meta">
-				<span class={`snapshot-chip ${data.hasTodaySnapshot ? 'ok' : 'warn'}`}>
-					{data.hasTodaySnapshot ? 'Snapshot de hoje: sim' : 'Snapshot de hoje: não'}
-				</span>
-
-				{#if latestSnapshotDate}
-					<span class="meta-chip">Último snapshot: {latestSnapshotDate}</span>
-				{/if}
-
-				<span class="meta-chip">Cobertura geral: {gridCoverage}%</span>
-			</div>
-		</div>
-
-		<div class="hero-actions">
-			<form method="POST" action="?/generateSnapshot" use:enhance={enhanceSnapshot}>
-				<button type="submit" id="autoSnapshotSubmit" class="primary-button">
-					{#if snapshotStatus === 'saving'}
-						Gerando snapshot…
-					{:else}
-						Gerar snapshot
-					{/if}
-				</button>
-			</form>
-
-			<a href={`/teacher/import?classId=${data.class.id}`} class="secondary-button">
-				Importar notas
-			</a>
-
-			<button
-				type="button"
-				class="secondary-button"
-				onclick={() => {
-					activeTab = 'launch';
-					focusMode = !focusMode;
-				}}
-			>
-				{focusMode ? 'Sair do focus mode' : 'Focus mode do grid'}
-			</button>
-
-			<label class="toggle-card">
-				<input
-					type="checkbox"
-					checked={autoSnapshot}
-					onchange={(e) => saveAutoSnapshot((e.target as HTMLInputElement).checked)}
-				/>
-				<span>Auto snapshot ao abrir a turma</span>
-			</label>
-		</div>
-	</section>
-
-	{#if snapshotStatus === 'error'}
-		<div class="feedback error">{snapshotError}</div>
-	{:else if snapshotStatus === 'saved'}
-		<div class="feedback success">Snapshot gerado com sucesso.</div>
-	{/if}
-
-	<section class="tabs-panel">
-		<div class="tabs">
-			<button
-				type="button"
-				class:active={activeTab === 'overview'}
-				onclick={() => {
-					activeTab = 'overview';
-					focusMode = false;
-				}}
-			>
-				Visão geral
-			</button>
-
-			<button
-				type="button"
-				class:active={activeTab === 'launch'}
-				onclick={() => (activeTab = 'launch')}
-			>
-				Lançamento
-			</button>
-
-			<button
-				type="button"
-				class:active={activeTab === 'manage'}
-				onclick={() => {
-					activeTab = 'manage';
-					focusMode = false;
-				}}
-			>
-				Cadastros
-			</button>
-		</div>
-	</section>
-
-	{#if activeTab === 'overview'}
-		<section class="section-stack">
-			<section class="panel">
-				<div class="panel-head">
-					<div>
-						<div class="section-kicker">Saúde da turma</div>
-						<h2>Leitura executiva</h2>
-					</div>
-					<p>
-						Esta área responde rapidamente como a turma está, onde estão as lacunas e qual é a
-						próxima melhor ação.
+					<p class="mt-3 text-base leading-8 text-slate-600">
+						Escala padrão:
+						<strong class="text-slate-950">{data.class.score_min}–{data.class.score_max}</strong>
+						• dec <strong class="text-slate-950">{data.class.score_decimals}</strong>
 					</p>
+
+					<div class="mt-4 flex flex-wrap gap-2">
+						<span class={`rounded-full border px-3 py-1.5 text-sm font-bold ${snapshotChipClass()}`}>
+							{data.hasTodaySnapshot ? 'Snapshot do dia gerado' : 'Snapshot do dia pendente'}
+						</span>
+
+						<span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700">
+							Último snapshot: {latestSnapshotDate ? latestSnapshotDate : 'Nunca'}
+						</span>
+
+						<span class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-semibold text-slate-700">
+							Cobertura geral: {gridCoverage}%
+						</span>
+					</div>
 				</div>
 
-				<div class="stats-grid">
-					<article class="stat-card">
-						<div class="stat-label">Média da turma</div>
-						<div class="stat-value">
-							{#if insightKpis.classAvg !== null}
-								{insightKpis.classAvg.toFixed(2)}
+				<div class="flex w-full flex-col gap-3 xl:w-90">
+					<form method="POST" action="?/generateSnapshot" use:enhance={enhanceSnapshot}>
+						<button type="submit" id="autoSnapshotSubmit" class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800">
+							{#if snapshotStatus === 'saving'}
+								Gerando snapshot...
 							{:else}
-								—
+								Gerar snapshot
+							{/if}
+						</button>
+					</form>
+
+					<a
+						href={`/teacher/import?classId=${data.class.id}`}
+						class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+					>
+						Importar notas
+					</a>
+
+					<button
+						type="button"
+						class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+						onclick={() => {
+							activeTab = 'launch';
+							focusMode = !focusMode;
+						}}
+					>
+						{focusMode ? 'Sair do focus mode' : 'Focus mode do grid'}
+					</button>
+
+					<label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+						<input
+							type="checkbox"
+							class="h-4 w-4 rounded border-slate-300"
+							checked={autoSnapshot}
+							onchange={(e) => saveAutoSnapshot((e.target as HTMLInputElement).checked)}
+						/>
+						<span class="font-medium">Auto snapshot ao abrir a turma</span>
+					</label>
+				</div>
+			</div>
+		</section>
+
+		{#if snapshotStatus === 'error'}
+			<div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+				{snapshotError}
+			</div>
+		{:else if snapshotStatus === 'saved'}
+			<div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+				Snapshot gerado com sucesso.
+			</div>
+		{/if}
+
+		<section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+			<div class="flex flex-wrap gap-2">
+				<button
+					type="button"
+					class={`inline-flex h-11 items-center justify-center rounded-2xl border px-4 text-sm font-bold transition ${tabClass('overview')}`}
+					onclick={() => {
+						activeTab = 'overview';
+						focusMode = false;
+					}}
+				>
+					Visão geral
+				</button>
+
+				<button
+					type="button"
+					class={`inline-flex h-11 items-center justify-center rounded-2xl border px-4 text-sm font-bold transition ${tabClass('launch')}`}
+					onclick={() => (activeTab = 'launch')}
+				>
+					Lançamento
+				</button>
+
+				<button
+					type="button"
+					class={`inline-flex h-11 items-center justify-center rounded-2xl border px-4 text-sm font-bold transition ${tabClass('manage')}`}
+					onclick={() => {
+						activeTab = 'manage';
+						focusMode = false;
+					}}
+				>
+					Cadastros
+				</button>
+			</div>
+		</section>
+
+		{#if activeTab === 'overview'}
+			<div class="space-y-6">
+				<section class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<div class="flex items-start justify-between gap-4">
+							<div>
+								<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+									Saúde da turma
+								</p>
+								<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+									Leitura executiva
+								</h2>
+							</div>
+
+							<div class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
+								Hoje: {data.today}
+							</div>
+						</div>
+
+						<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+							<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+								<p class="text-xs font-black uppercase tracking-widest text-slate-500">Média</p>
+								<p class="mt-2 text-3xl font-black text-slate-950">
+									{#if insightKpis.classAvg !== null}
+										{insightKpis.classAvg.toFixed(2)}
+									{:else}
+										—
+									{/if}
+								</p>
+								<p class="mt-2 text-sm text-slate-600">Snapshot mais recente</p>
+							</div>
+
+							<div class="rounded-2xl border border-red-200 bg-red-50 p-4">
+								<p class="text-xs font-black uppercase tracking-widest text-red-700">Risco</p>
+								<p class="mt-2 text-3xl font-black text-slate-950">{launchRiskStudentsCount}</p>
+								<p class="mt-2 text-sm text-slate-600">Alunos em risco</p>
+							</div>
+
+							<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+								<p class="text-xs font-black uppercase tracking-widest text-sky-700">Cobertura</p>
+								<p class="mt-2 text-3xl font-black text-slate-950">{gridCoverage}%</p>
+								<p class="mt-2 text-sm text-slate-600">
+									{filledGridCells} de {totalGridCells} células
+								</p>
+							</div>
+
+							<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+								<p class="text-xs font-black uppercase tracking-widest text-slate-500">Snapshot</p>
+								<p class="mt-2 text-lg font-black text-slate-950">
+									{latestSnapshotDate ?? 'Nunca'}
+								</p>
+								<p class="mt-2 text-sm text-slate-600">
+									{data.hasTodaySnapshot ? 'Em dia' : 'Ainda pendente hoje'}
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Próxima melhor ação
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							{nextBestAction.title}
+						</h2>
+						<p class="mt-3 text-sm leading-7 text-slate-600">{nextBestAction.description}</p>
+
+						<div class="mt-5">
+							{#if nextBestAction.cta === 'snapshot'}
+								<form method="POST" action="?/generateSnapshot" use:enhance={enhanceSnapshot}>
+									<button type="submit" class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800">
+										Gerar snapshot
+									</button>
+								</form>
+							{:else if nextBestAction.cta === 'weakest'}
+								<button
+									type="button"
+									class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+									onclick={() =>
+										weakestRows[0] ? openLaunchForSkill(weakestRows[0].skill_id) : (activeTab = 'launch')}
+								>
+									Ver no grid
+								</button>
+							{:else}
+								<button
+									type="button"
+									class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+									onclick={() => (activeTab = 'launch')}
+								>
+									Ir para lançamento
+								</button>
 							{/if}
 						</div>
-						<div class="stat-foot">Baseada no snapshot mais recente por skill</div>
-					</article>
+					</section>
+				</section>
 
-					<article class="stat-card">
-						<div class="stat-label">Alunos em risco</div>
-						<div class="stat-value">{launchRiskStudentsCount}</div>
-						<div class="stat-foot">Considerando a média percentual geral da turma</div>
-					</article>
+				<section class="grid gap-6 xl:grid-cols-2">
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Top lacunas
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Onde agir primeiro
+						</h2>
 
-					<article class="stat-card">
-						<div class="stat-label">Cobertura de lançamento</div>
-						<div class="stat-value">{gridCoverage}%</div>
-						<div class="stat-foot">{filledGridCells} de {totalGridCells} células preenchidas</div>
-					</article>
+						{#if weakestRows.length > 0}
+							<div class="mt-5 space-y-3">
+								{#each weakestRows as row}
+									<button
+										type="button"
+										class="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-300 hover:bg-white"
+										onclick={() => openLaunchForSkill(row.skill_id)}
+									>
+										<div class="min-w-0">
+											<p class="text-base font-black text-slate-950">{row.skill_name}</p>
+											<p class="mt-1 text-sm text-slate-600">
+												Média atual {formatMaybe(row.latest_avg, 2)} • clique para ver no grid
+											</p>
+										</div>
+										<span class="text-xl font-black text-slate-950">
+											{formatMaybe(row.latest_avg, 2)}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-600">
+								Ainda não há dados suficientes para apontar lacunas.
+							</div>
+						{/if}
+					</section>
 
-					<article class="stat-card">
-						<div class="stat-label">Último snapshot</div>
-						<div class="stat-value small">{latestSnapshotDate ?? 'Nunca'}</div>
-						<div class="stat-foot">
-							{data.hasTodaySnapshot ? 'Snapshot do dia já gerado' : 'Ainda não gerado hoje'}
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Top forças
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							O que está indo bem
+						</h2>
+
+						{#if strongestRows.length > 0}
+							<div class="mt-5 space-y-3">
+								{#each strongestRows as row}
+									<button
+										type="button"
+										class="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-300 hover:bg-white"
+										onclick={() => openLaunchForSkill(row.skill_id)}
+									>
+										<div class="min-w-0">
+											<p class="text-base font-black text-slate-950">{row.skill_name}</p>
+											<p class="mt-1 text-sm text-slate-600">
+												Média atual {formatMaybe(row.latest_avg, 2)} • clique para ver no grid
+											</p>
+										</div>
+										<span class="text-xl font-black text-slate-950">
+											{formatMaybe(row.latest_avg, 2)}
+										</span>
+									</button>
+								{/each}
+							</div>
+						{:else}
+							<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-600">
+								Ainda não há dados suficientes para apontar forças.
+							</div>
+						{/if}
+					</section>
+				</section>
+
+				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+					<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+						<div>
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								Evolução por skill
+							</p>
+							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+								Baseline vs latest
+							</h2>
 						</div>
-					</article>
-				</div>
-			</section>
 
-			<section class="panel next-action-panel">
-				<div class="panel-head compact">
-					<div>
-						<div class="section-kicker">Próxima melhor ação</div>
-						<h2>{nextBestAction.title}</h2>
+						<p class="max-w-xl text-sm leading-7 text-slate-600">
+							Use esta tabela para ler tendência, priorizar revisão e identificar quais skills
+							pedem intervenção.
+						</p>
 					</div>
-				</div>
 
-				<div class="next-action-box">
-					<p>{nextBestAction.description}</p>
+					{#if insightRows.length > 0}
+						<div class="mt-5 overflow-auto rounded-2xl border border-slate-200">
+							<table class="min-w-full border-separate border-spacing-0">
+								<thead>
+									<tr class="bg-slate-50 text-left">
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											Skill
+										</th>
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											Baseline
+										</th>
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											Latest
+										</th>
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											Δ
+										</th>
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											N latest
+										</th>
+										<th class="border-b border-slate-200 px-4 py-3 text-xs font-black uppercase tracking-widest text-slate-500">
+											Ação
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each orderedInsightRows as r}
+										<tr class="bg-white">
+											<td class="border-b border-slate-200 px-4 py-4 font-bold text-slate-950">
+												{r.skill_name}
+											</td>
+											<td class="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
+												{#if r.baseline_date}
+													<div>{r.baseline_date}</div>
+													<div class="mt-1 text-xs text-slate-500">
+														avg {formatMaybe(r.baseline_avg, 2)}
+													</div>
+												{:else}
+													—
+												{/if}
+											</td>
+											<td class="border-b border-slate-200 px-4 py-4 text-sm text-slate-700">
+												{#if r.latest_date}
+													<div>{r.latest_date}</div>
+													<div class="mt-1 text-xs text-slate-500">
+														avg {formatMaybe(r.latest_avg, 2)}
+													</div>
+												{:else}
+													—
+												{/if}
+											</td>
+											<td class="border-b border-slate-200 px-4 py-4">
+												<span
+													class={`font-bold ${
+														typeof r.latest_avg === 'number' &&
+														typeof r.baseline_avg === 'number' &&
+														r.latest_avg - r.baseline_avg >= 0
+															? 'text-emerald-700'
+															: typeof r.latest_avg === 'number' &&
+																  typeof r.baseline_avg === 'number' &&
+																  r.latest_avg - r.baseline_avg < 0
+																? 'text-red-700'
+																: 'text-slate-500'
+													}`}
+												>
+													{deltaLabel(r)}
+												</span>
+											</td>
+											<td class="border-b border-slate-200 px-4 py-4 text-sm font-semibold text-slate-700">
+												{r.latest_n ?? '—'}
+											</td>
+											<td class="border-b border-slate-200 px-4 py-4">
+												<button
+													type="button"
+													class="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+													onclick={() => openLaunchForSkill(r.skill_id)}
+												>
+													Ver no grid
+												</button>
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{:else}
+						<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+							<h3 class="text-lg font-black text-slate-950">Nenhum snapshot ainda</h3>
+							<p class="mt-2 text-sm leading-7 text-slate-600">
+								Gere o primeiro snapshot para começar a comparar evolução por skill.
+							</p>
+						</div>
+					{/if}
+				</section>
+			</div>
+		{/if}
 
-					{#if nextBestAction.cta === 'Gerar snapshot'}
-						<form method="POST" action="?/generateSnapshot" use:enhance={enhanceSnapshot}>
-							<button type="submit" class="primary-button">Gerar snapshot</button>
-						</form>
-					{:else if nextBestAction.cta === 'Ver no grid'}
+		{#if activeTab === 'launch'}
+			<div class="space-y-6">
+				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+					<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+						<div>
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								Lançamento
+							</p>
+							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+								{#if selectedSkillId}
+									Grid filtrado por skill
+								{:else}
+									Grid de notas
+								{/if}
+							</h2>
+						</div>
+
+						<div
+							class={`rounded-full border px-4 py-2 text-sm font-bold ${
+								errorCount > 0
+									? 'border-red-200 bg-red-50 text-red-700'
+									: savingCount > 0
+										? 'border-sky-200 bg-sky-50 text-sky-700'
+										: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+							}`}
+						>
+							{launchFeedbackLabel}
+						</div>
+					</div>
+
+					<div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+						<div class="space-y-2">
+							<label for="studentSearch" class="block text-sm font-bold text-slate-700">
+								Buscar aluno
+							</label>
+							<input
+								id="studentSearch"
+								type="text"
+								placeholder="Digite um nome..."
+								bind:value={studentSearch}
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							/>
+						</div>
+
+						<div class="space-y-2">
+							<label for="skillFilter" class="block text-sm font-bold text-slate-700">
+								Filtrar skill
+							</label>
+							<select
+								id="skillFilter"
+								bind:value={selectedSkillId}
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							>
+								<option value="">Todas as skills</option>
+								{#each data.skills as skill}
+									<option value={skill.id}>{skill.name}</option>
+								{/each}
+							</select>
+						</div>
+
+						<div class="space-y-2">
+							<label for="statusFilter" class="block text-sm font-bold text-slate-700">
+								Status
+							</label>
+							<select
+								id="statusFilter"
+								bind:value={statusFilter}
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							>
+								<option value="all">Todos</option>
+								<option value="risk">Em risco</option>
+								<option value="attention">Atenção</option>
+								<option value="good">Bom</option>
+								<option value="pending">Com pendência</option>
+							</select>
+						</div>
+
+						<div class="space-y-2">
+							<label for="sortMode" class="block text-sm font-bold text-slate-700">
+								Ordenar por
+							</label>
+							<select
+								id="sortMode"
+								bind:value={sortMode}
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							>
+								<option value="alpha">Ordem alfabética</option>
+								<option value="lowest">Menor média</option>
+								<option value="highest-risk">Maior risco</option>
+							</select>
+						</div>
+					</div>
+
+					<div class="mt-4 flex flex-wrap gap-2">
 						<button
 							type="button"
-							class="primary-button"
-							onclick={() =>
-								weakestRows[0] ? openLaunchForSkill(weakestRows[0].skill_id) : (activeTab = 'launch')}
+							class={`rounded-2xl border px-4 py-2 text-sm font-bold transition ${statusFilterClass('pending')}`}
+							onclick={selectOnlyPending}
 						>
-							Ver no grid
+							Ver só pendências
 						</button>
-					{:else}
-						<button type="button" class="primary-button" onclick={() => (activeTab = 'launch')}>
-							Ir para lançamento
-						</button>
-					{/if}
-				</div>
-			</section>
 
-			<section class="overview-two-col">
-				<section class="panel">
-					<div class="panel-head compact">
-						<div>
-							<div class="section-kicker">Top lacunas</div>
-							<h2>Onde agir primeiro</h2>
+						<button
+							type="button"
+							class={`rounded-2xl border px-4 py-2 text-sm font-bold transition ${statusFilterClass('risk')}`}
+							onclick={selectOnlyRisk}
+						>
+							Ver só alunos em risco
+						</button>
+
+						<button
+							type="button"
+							class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+							onclick={() => (focusMode = !focusMode)}
+						>
+							{focusMode ? 'Sair do focus mode' : 'Expandir grid'}
+						</button>
+
+						<button
+							type="button"
+							class="rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+							onclick={clearLaunchFilters}
+						>
+							Resetar filtros
+						</button>
+					</div>
+
+					<div class="mt-4 flex flex-wrap gap-2">
+						<div class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
+							Enter / Shift+Enter navega na coluna
+						</div>
+						<div class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
+							Setas navegam entre células
+						</div>
+						<div class="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
+							Cole blocos com tab + quebra de linha
 						</div>
 					</div>
 
-					{#if weakestRows.length > 0}
-						<div class="bucket-list">
-							{#each weakestRows as row}
-								<button type="button" class="bucket-item action-row" onclick={() => openLaunchForSkill(row.skill_id)}>
-									<div>
-										<strong>{row.skill_name}</strong>
-										<p>Latest avg {formatMaybe(row.latest_avg, 2)} • Clique para ver no grid</p>
-									</div>
-									<span>{formatMaybe(row.latest_avg, 2)}</span>
-								</button>
-							{/each}
+					<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Alunos visíveis</p>
+							<p class="mt-2 text-2xl font-black text-slate-950">{filteredStudents.length}</p>
 						</div>
-					{:else}
-						<div class="empty-state compact">
-							<p>Ainda não há dados suficientes para apontar lacunas.</p>
+
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Skills visíveis</p>
+							<p class="mt-2 text-2xl font-black text-slate-950">{visibleSkills.length}</p>
 						</div>
-					{/if}
+
+						<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-sky-700">Cobertura filtrada</p>
+							<p class="mt-2 text-2xl font-black text-slate-950">{filteredCoverage}%</p>
+						</div>
+
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Média filtrada</p>
+							<p class="mt-2 text-2xl font-black text-slate-950">
+								{overallGridAverage(filteredStudents, visibleSkills)}
+							</p>
+						</div>
+					</div>
 				</section>
 
-				<section class="panel">
-					<div class="panel-head compact">
+				<section class={`rounded-3xl border border-slate-200 bg-white p-6 shadow-sm ${focusMode ? 'ring-2 ring-sky-100' : ''}`}>
+					<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 						<div>
-							<div class="section-kicker">Top forças</div>
-							<h2>O que está indo bem</h2>
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								Operação
+							</p>
+							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+								{selectedSkillId
+									? `Lançamento focado em ${visibleSkills[0]?.name ?? 'skill'}`
+									: 'Lançamento por skill'}
+							</h2>
+						</div>
+
+						<div class="flex flex-wrap gap-3">
+							<span class="inline-flex items-center gap-2 text-sm text-slate-600">
+								<i class="h-3 w-3 rounded-full bg-red-200"></i> risco
+							</span>
+							<span class="inline-flex items-center gap-2 text-sm text-slate-600">
+								<i class="h-3 w-3 rounded-full bg-amber-200"></i> atenção
+							</span>
+							<span class="inline-flex items-center gap-2 text-sm text-slate-600">
+								<i class="h-3 w-3 rounded-full bg-emerald-200"></i> bom
+							</span>
+							<span class="inline-flex items-center gap-2 text-sm text-slate-600">
+								<i class="h-3 w-3 rounded-full bg-slate-200"></i> sem dado
+							</span>
 						</div>
 					</div>
 
-					{#if strongestRows.length > 0}
-						<div class="bucket-list">
-							{#each strongestRows as row}
-								<button type="button" class="bucket-item action-row" onclick={() => openLaunchForSkill(row.skill_id)}>
-									<div>
-										<strong>{row.skill_name}</strong>
-										<p>Latest avg {formatMaybe(row.latest_avg, 2)} • Clique para ver no grid</p>
-									</div>
-									<span>{formatMaybe(row.latest_avg, 2)}</span>
-								</button>
-							{/each}
+					{#if filteredStudents.length === 0 || visibleSkills.length === 0}
+						<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+							<h3 class="text-lg font-black text-slate-950">Nada para mostrar com o filtro atual</h3>
+							<p class="mt-2 text-sm leading-7 text-slate-600">
+								Ajuste a busca, o filtro de skill ou o status para voltar a ver o grid.
+							</p>
 						</div>
 					{:else}
-						<div class="empty-state compact">
-							<p>Ainda não há dados suficientes para apontar forças.</p>
-						</div>
-					{/if}
-				</section>
-			</section>
-
-			<section class="panel">
-				<div class="panel-head">
-					<div>
-						<div class="section-kicker">Evolução por skill</div>
-						<h2>Baseline vs latest</h2>
-					</div>
-					<p>
-						Use esta tabela para ler tendência, priorizar revisão e identificar quais skills
-						precisam de intervenção.
-					</p>
-				</div>
-
-				{#if insightRows.length > 0}
-					<div class="table-shell">
-						<table class="insight-table">
-							<thead>
-								<tr>
-									<th>Skill</th>
-									<th>Baseline</th>
-									<th>Latest</th>
-									<th>Δ</th>
-									<th>N latest</th>
-									<th>Ação</th>
-								</tr>
-							</thead>
-							<tbody>
-								{#each orderedInsightRows as r}
+						<div class="mt-5 overflow-auto rounded-2xl border border-slate-200">
+							<table class="min-w-full border-separate border-spacing-0">
+								<thead>
 									<tr>
-										<td class="skill-name-cell">{r.skill_name}</td>
-										<td>
-											{#if r.baseline_date}
-												<div>{r.baseline_date}</div>
-												<div class="subtle">avg {formatMaybe(r.baseline_avg, 2)}</div>
-											{:else}
-												—
-											{/if}
-										</td>
-										<td>
-											{#if r.latest_date}
-												<div>{r.latest_date}</div>
-												<div class="subtle">avg {formatMaybe(r.latest_avg, 2)}</div>
-											{:else}
-												—
-											{/if}
-										</td>
-										<td>
-											<span
-												class:positive={
-													typeof r.latest_avg === 'number' &&
-													typeof r.baseline_avg === 'number' &&
-													r.latest_avg - r.baseline_avg >= 0
-												}
-												class:negative={
-													typeof r.latest_avg === 'number' &&
-													typeof r.baseline_avg === 'number' &&
-													r.latest_avg - r.baseline_avg < 0
-												}
-											>
-												{deltaLabel(r)}
-											</span>
-										</td>
-										<td>{r.latest_n ?? '—'}</td>
-										<td>
-											<button type="button" class="table-action" onclick={() => openLaunchForSkill(r.skill_id)}>
-												Ver no grid
-											</button>
-										</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					</div>
-				{:else}
-					<div class="empty-state">
-						<h3>Nenhum snapshot ainda</h3>
-						<p>Gere o primeiro snapshot para começar a comparar evolução por skill.</p>
-					</div>
-				{/if}
-			</section>
-		</section>
-	{/if}
-
-	{#if activeTab === 'launch'}
-		<section class="section-stack">
-			<section class="panel launch-toolbar-panel">
-				<div class="panel-head">
-					<div>
-						<div class="section-kicker">Lançamento</div>
-						<h2>
-							{#if selectedSkillId}
-								Grid filtrado por skill
-							{:else}
-								Grid de notas
-							{/if}
-						</h2>
-					</div>
-
-					<div class={`save-feedback ${errorCount > 0 ? 'error' : savingCount > 0 ? 'saving' : 'ok'}`}>
-						{launchFeedbackLabel}
-					</div>
-				</div>
-
-				<div class="toolbar-grid">
-					<div class="field">
-						<label for="studentSearch">Buscar aluno</label>
-						<input
-							id="studentSearch"
-							type="text"
-							placeholder="Digite um nome..."
-							bind:value={studentSearch}
-						/>
-					</div>
-
-					<div class="field">
-						<label for="skillFilter">Filtrar skill</label>
-						<select
-							id="skillFilter"
-							bind:value={selectedSkillId}
-						>
-							<option value={null}>Todas as skills</option>
-							{#each data.skills as skill}
-								<option value={skill.id}>{skill.name}</option>
-							{/each}
-						</select>
-					</div>
-
-					<div class="field">
-						<label for="statusFilter">Status</label>
-						<select id="statusFilter" bind:value={statusFilter}>
-							<option value="all">Todos</option>
-							<option value="risk">Em risco</option>
-							<option value="attention">Atenção</option>
-							<option value="good">Bom</option>
-							<option value="pending">Com pendência</option>
-						</select>
-					</div>
-
-					<div class="field">
-						<label for="sortMode">Ordenar por</label>
-						<select id="sortMode" bind:value={sortMode}>
-							<option value="alpha">Ordem alfabética</option>
-							<option value="lowest">Menor média</option>
-							<option value="highest-risk">Maior risco</option>
-						</select>
-					</div>
-				</div>
-
-				<div class="launch-chips">
-					<button type="button" class="chip-button" onclick={selectOnlyPending}>
-						Ver só pendências
-					</button>
-
-					<button type="button" class="chip-button" onclick={selectOnlyRisk}>
-						Ver só alunos em risco
-					</button>
-
-					<button type="button" class="chip-button" onclick={() => (focusMode = !focusMode)}>
-						{focusMode ? 'Sair do focus mode' : 'Expandir grid'}
-					</button>
-
-					<button type="button" class="chip-button" onclick={clearLaunchFilters}>
-						Resetar filtros
-					</button>
-				</div>
-
-				<div class="grid-helper">
-					<div class="helper-chip">Enter / Shift+Enter navega na coluna</div>
-					<div class="helper-chip">Setas navegam entre células</div>
-					<div class="helper-chip">Cole blocos com tab + quebra de linha</div>
-				</div>
-
-				<div class="launch-summary-row">
-					<div class="launch-summary-box">
-						<span>Alunos visíveis</span>
-						<strong>{filteredStudents.length}</strong>
-					</div>
-
-					<div class="launch-summary-box">
-						<span>Skills visíveis</span>
-						<strong>{visibleSkills.length}</strong>
-					</div>
-
-					<div class="launch-summary-box">
-						<span>Cobertura filtrada</span>
-						<strong>{filteredCoverage}%</strong>
-					</div>
-
-					<div class="launch-summary-box">
-						<span>Média filtrada</span>
-						<strong>{overallGridAverage(filteredStudents, visibleSkills)}</strong>
-					</div>
-				</div>
-			</section>
-
-			<section class={`panel grid-panel ${focusMode ? 'focus' : ''}`}>
-				<div class="panel-head">
-					<div>
-						<div class="section-kicker">Operação</div>
-						<h2>
-							{selectedSkillId
-								? `Lançamento focado em ${visibleSkills[0]?.name ?? 'skill'}`
-								: 'Lançamento por skill'}
-						</h2>
-					</div>
-
-					<div class="legend">
-						<span class="legend-item"><i class="tone risk"></i> risco</span>
-						<span class="legend-item"><i class="tone warn"></i> atenção</span>
-						<span class="legend-item"><i class="tone good"></i> bom</span>
-						<span class="legend-item"><i class="tone empty"></i> sem dado</span>
-					</div>
-				</div>
-
-				{#if filteredStudents.length === 0 || visibleSkills.length === 0}
-					<div class="empty-state">
-						<h3>Nada para mostrar com o filtro atual</h3>
-						<p>Ajuste a busca, o filtro de skill ou o status para voltar a ver o grid.</p>
-					</div>
-				{:else}
-					<div class="grid-shell">
-						<table class="score-grid">
-							<thead>
-								<tr>
-									<th class="sticky-col sticky-header student-col">Aluno</th>
-									{#each visibleSkills as sk}
-										<th class="sticky-header skill-col">
-											<div class="col-head">{sk.name}</div>
-											<div class="col-subtle">
-												{effectiveScale(sk.id).min}–{effectiveScale(sk.id).max} • dec
-												{effectiveScale(sk.id).decimals}
-											</div>
+										<th class="sticky left-0 top-0 z-20 min-w-60 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-500">
+											Aluno
 										</th>
-									{/each}
-									<th class="sticky-header avg-col">Média aluno</th>
-								</tr>
-							</thead>
 
-							<tbody>
-								{#each filteredStudents as st}
-									<tr>
-										<td class="sticky-col student-cell">
-											<div class="student-main">
-												<strong>{st.name}</strong>
-												<span class={`student-state ${studentHealth(st.id, visibleSkills)}`}>
-													{studentHealth(st.id, visibleSkills)}
-												</span>
-											</div>
+										{#each visibleSkills as sk}
+											<th class="sticky top-0 z-10 min-w-42.5 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left">
+												<div class="text-sm font-black text-slate-950">{sk.name}</div>
+												<div class="mt-1 text-xs text-slate-500">
+													{effectiveScale(sk.id).min}–{effectiveScale(sk.id).max} • dec
+													{effectiveScale(sk.id).decimals}
+												</div>
+											</th>
+										{/each}
+
+										<th class="sticky top-0 z-10 min-w-35 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-xs font-black uppercase tracking-widest text-slate-500">
+											Média aluno
+										</th>
+									</tr>
+								</thead>
+
+								<tbody>
+									{#each filteredStudents as st}
+										<tr>
+											<td class="sticky left-0 z-10 border-b border-slate-200 bg-white px-4 py-4">
+												<div class="flex items-center justify-between gap-3">
+													<strong class="text-sm text-slate-950">{st.name}</strong>
+													<span class={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase tracking-widest ${healthBadgeClass(studentHealth(st.id, visibleSkills))}`}>
+														{studentHealth(st.id, visibleSkills)}
+													</span>
+												</div>
+											</td>
+
+											{#each visibleSkills as sk}
+												<td class={`border-b border-slate-200 px-4 py-4 align-top ${toneCellClass(cellTone(sk.id, getScore(st.id, sk.id)))}`}>
+													<form
+														method="POST"
+														action="?/upsertScore"
+														use:enhance={enhanceScore}
+														use:registerForm={keyOf(st.id, sk.id)}
+														class="flex items-center gap-2"
+													>
+														<input type="hidden" name="studentId" value={st.id} />
+														<input type="hidden" name="skillId" value={sk.id} />
+
+														<input
+															name="score"
+															inputmode="decimal"
+															value={getScore(st.id, sk.id)}
+															use:registerInput={keyOf(st.id, sk.id)}
+															class="h-10 w-full min-w-18.5 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+															oninput={(e) =>
+																handleScoreInput(
+																	st.id,
+																	sk.id,
+																	(e.target as HTMLInputElement).value
+																)}
+															onkeydown={(e) => handleGridKeydown(e, st.id, sk.id)}
+															onpaste={(e) => handleGridPaste(e, st.id, sk.id)}
+															onblur={(e) => {
+																const form = (e.target as HTMLInputElement).form;
+																if (form) form.requestSubmit();
+															}}
+															title={`Escala: ${effectiveScale(sk.id).min}–${effectiveScale(sk.id).max} (dec ${effectiveScale(sk.id).decimals})`}
+														/>
+
+														<span class="w-5 shrink-0 text-center text-sm">
+															{#if status[keyOf(st.id, sk.id)] === 'saving'}
+																⏳
+															{:else if status[keyOf(st.id, sk.id)] === 'saved'}
+																✅
+															{:else if status[keyOf(st.id, sk.id)] === 'error'}
+																❌
+															{:else}
+																&nbsp;
+															{/if}
+														</span>
+													</form>
+
+													{#if status[keyOf(st.id, sk.id)] === 'error'}
+														<div class="mt-2 text-xs text-red-700">
+															{errorMsg[keyOf(st.id, sk.id)]}
+														</div>
+													{/if}
+												</td>
+											{/each}
+
+											<td class={`border-b border-slate-200 px-4 py-4 font-black ${toneTextClass(averageToneByStudent(st.id, visibleSkills))}`}>
+												{averageByStudentLabel(st.id, visibleSkills)}
+											</td>
+										</tr>
+									{/each}
+
+									<tr class="bg-slate-50">
+										<td class="sticky left-0 z-10 border-b border-slate-200 bg-slate-50 px-4 py-4 font-black text-slate-950">
+											Média
 										</td>
 
 										{#each visibleSkills as sk}
-											<td class={`score-cell tone-${cellTone(sk.id, getScore(st.id, sk.id))}`}>
-												<form
-													method="POST"
-													action="?/upsertScore"
-													use:enhance={enhanceScore}
-													use:registerForm={keyOf(st.id, sk.id)}
-													class="score-form"
-												>
-													<input type="hidden" name="studentId" value={st.id} />
-													<input type="hidden" name="skillId" value={sk.id} />
-
-													<input
-														name="score"
-														inputmode="decimal"
-														value={getScore(st.id, sk.id)}
-														use:registerInput={keyOf(st.id, sk.id)}
-														class="score-input"
-														oninput={(e) =>
-															handleScoreInput(
-																st.id,
-																sk.id,
-																(e.target as HTMLInputElement).value
-															)}
-														onkeydown={(e) => handleGridKeydown(e, st.id, sk.id)}
-														onpaste={(e) => handleGridPaste(e, st.id, sk.id)}
-														onblur={(e) => {
-															const form = (e.target as HTMLInputElement).form;
-															if (form) form.requestSubmit();
-														}}
-														title={`Escala: ${effectiveScale(sk.id).min}–${effectiveScale(sk.id).max} (dec ${effectiveScale(sk.id).decimals})`}
-													/>
-
-													<span class="status-chip" aria-live="polite">
-														{#if status[keyOf(st.id, sk.id)] === 'saving'}
-															⏳
-														{:else if status[keyOf(st.id, sk.id)] === 'saved'}
-															✅
-														{:else if status[keyOf(st.id, sk.id)] === 'error'}
-															❌
-														{:else}
-															&nbsp;
-														{/if}
-													</span>
-												</form>
-
-												{#if status[keyOf(st.id, sk.id)] === 'error'}
-													<div class="cell-error">{errorMsg[keyOf(st.id, sk.id)]}</div>
-												{/if}
+											<td class={`border-b border-slate-200 px-4 py-4 font-black ${toneTextClass(averageTone(sk.id, filteredStudents))}`}>
+												{averageBySkill(sk.id, filteredStudents)}
 											</td>
 										{/each}
 
-										<td class={`student-average tone-${averageToneByStudent(st.id, visibleSkills)}`}>
-											{averageByStudentLabel(st.id, visibleSkills)}
+										<td class="border-b border-slate-200 px-4 py-4 font-black text-slate-950">
+											{overallGridAverage(filteredStudents, visibleSkills)}
 										</td>
 									</tr>
+								</tbody>
+							</table>
+						</div>
+					{/if}
+				</section>
+			</div>
+		{/if}
+
+		{#if activeTab === 'manage'}
+			<div class="space-y-6">
+				<section class="grid gap-6 xl:grid-cols-2">
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Alunos
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Cadastro e acessos
+						</h2>
+
+						<form method="POST" action="?/createStudent" class="mt-5 space-y-3">
+							<input
+								name="name"
+								placeholder="Nome do aluno"
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							/>
+							<button type="submit" class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800">
+								Adicionar aluno
+							</button>
+						</form>
+
+						<p class="mt-4 text-sm leading-7 text-slate-600">
+							Cada aluno recebe um <strong class="text-slate-950">código de convite</strong> para
+							criar a própria conta no portal.
+						</p>
+
+						{#if data.students.length > 0}
+							<div class="mt-5 space-y-3">
+								{#each data.students as s}
+									<article class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+										<div class="min-w-0">
+											<p class="text-base font-black text-slate-950">{s.name}</p>
+											<div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+												<span class="text-[11px] font-black uppercase tracking-widest text-slate-500">
+													Invite code
+												</span>
+												<code class="rounded-lg bg-white px-2 py-1 font-bold text-slate-900">
+													{s.invite_code ?? '—'}
+												</code>
+											</div>
+										</div>
+
+										<button
+											type="button"
+											class="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+											disabled={!s.invite_code}
+											onclick={() => copyInviteCode(s.invite_code)}
+										>
+											{copiedInviteCode === s.invite_code && s.invite_code ? 'Copiado!' : 'Copiar'}
+										</button>
+									</article>
 								{/each}
+							</div>
+						{:else}
+							<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+								Nenhum aluno cadastrado ainda.
+							</div>
+						{/if}
+					</section>
 
-								<tr class="average-row">
-									<td class="sticky-col average-label">Média</td>
-									{#each visibleSkills as sk}
-										<td class={`average-cell tone-${averageTone(sk.id, filteredStudents)}`}>
-											{averageBySkill(sk.id, filteredStudents)}
-										</td>
-									{/each}
-									<td class="average-cell overall-average-cell">
-										{overallGridAverage(filteredStudents, visibleSkills)}
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				{/if}
-			</section>
-		</section>
-	{/if}
+					<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Skills
+						</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Catálogo da turma
+						</h2>
 
-	{#if activeTab === 'manage'}
-		<section class="section-stack">
-			<section class="manage-grid">
-				<section class="panel">
-					<div class="panel-head compact">
-						<div>
-							<div class="section-kicker">Alunos</div>
-							<h2>Cadastro e acessos</h2>
-						</div>
-					</div>
+						<form method="POST" action="?/createSkill" class="mt-5 space-y-3">
+							<input
+								name="name"
+								placeholder="Nome da skill"
+								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+							/>
+							<button type="submit" class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800">
+								Criar skill
+							</button>
+						</form>
 
-					<form method="POST" action="?/createStudent" class="stack-form">
-						<input name="name" placeholder="Nome do aluno" />
-						<button type="submit" class="primary-button">Adicionar aluno</button>
-					</form>
+						{#if data.skills.length === 0}
+							<div class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+								Nenhuma skill ainda.
+							</div>
+						{:else}
+							<div class="mt-5 space-y-3">
+								{#each data.skills as sk}
+									<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+										<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+											<div class="min-w-0">
+												<p class="text-base font-black text-slate-950">{sk.name}</p>
+												<p class="mt-1 text-sm leading-6 text-slate-600">
+													{formatScaleLabel(sk)}
+												</p>
+											</div>
 
-					<p class="invite-help">
-						Cada aluno recebe um <strong>código de convite</strong> para criar a própria conta no
-						portal.
-					</p>
-
-					{#if data.students.length > 0}
-						<div class="compact-list">
-							{#each data.students as s}
-								<article class="compact-item">
-									<div class="compact-item-main">
-										<strong>{s.name}</strong>
-										<div class="compact-subline">
-											<span class="invite-label-inline">Invite code</span>
-											<code>{s.invite_code ?? '—'}</code>
-										</div>
-									</div>
-
-									<button
-										type="button"
-										class="secondary-button compact-copy"
-										disabled={!s.invite_code}
-										onclick={() => copyInviteCode(s.invite_code)}
-									>
-										{copiedInviteCode === s.invite_code && s.invite_code ? 'Copiado!' : 'Copiar'}
-									</button>
-								</article>
-							{/each}
-						</div>
-					{:else}
-						<p class="subtle-text">Nenhum aluno cadastrado ainda.</p>
-					{/if}
-				</section>
-
-				<section class="panel">
-					<div class="panel-head compact">
-						<div>
-							<div class="section-kicker">Skills</div>
-							<h2>Catálogo da turma</h2>
-						</div>
-					</div>
-
-					<form method="POST" action="?/createSkill" class="stack-form">
-						<input name="name" placeholder="Nome da skill" />
-						<button type="submit" class="primary-button">Criar skill</button>
-					</form>
-
-					{#if data.skills.length === 0}
-						<p class="subtle-text">Nenhuma skill ainda.</p>
-					{:else}
-						<div class="compact-list skills-list">
-							{#each data.skills as sk}
-								<article class="skill-manage-item">
-									<div class="skill-manage-head">
-										<div>
-											<strong>{sk.name}</strong>
-											<p>{formatScaleLabel(sk)}</p>
-										</div>
-
-										<div class="skill-manage-actions">
-											<button
-												type="button"
-												class="secondary-button compact-action"
-												onclick={() => toggleEditingScale(sk.id)}
-											>
-												{editingScale[sk.id] ? 'Fechar' : 'Editar escala'}
-											</button>
-
-											<form method="POST" action="?/deleteSkill">
-												<input type="hidden" name="skillId" value={sk.id} />
-												<button type="submit" class="danger-button compact-action" onclick={confirmDeleteSkill}>
-													Deletar
+											<div class="flex flex-wrap gap-2">
+												<button
+													type="button"
+													class="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+													onclick={() => toggleEditingScale(sk.id)}
+												>
+													{editingScale[sk.id] ? 'Fechar' : 'Editar escala'}
 												</button>
-											</form>
+
+												<form method="POST" action="?/deleteSkill">
+													<input type="hidden" name="skillId" value={sk.id} />
+													<button
+														type="submit"
+														class="inline-flex h-11 items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 transition hover:bg-red-100"
+														onclick={confirmDeleteSkill}
+													>
+														Deletar
+													</button>
+												</form>
+											</div>
 										</div>
-									</div>
 
-									{#if editingScale[sk.id]}
-										<div class="scale-box">
-											<form method="POST" action="?/updateSkillScale" class="scale-form">
-												<input type="hidden" name="skillId" value={sk.id} />
+										{#if editingScale[sk.id]}
+											<div class="mt-4 border-t border-slate-200 pt-4">
+												<form method="POST" action="?/updateSkillScale" class="space-y-4">
+													<input type="hidden" name="skillId" value={sk.id} />
 
-												<div class="radio-row">
-													<label>
-														<input
-															type="radio"
-															name="mode"
-															value="inherit"
-															checked={sk.score_min === null}
-														/>
-														Herdar da turma
-													</label>
+													<div class="flex flex-wrap gap-4 text-sm text-slate-700">
+														<label class="inline-flex items-center gap-2">
+															<input
+																type="radio"
+																name="mode"
+																value="inherit"
+																checked={sk.score_min === null}
+															/>
+															Herdar da turma
+														</label>
 
-													<label>
-														<input
-															type="radio"
-															name="mode"
-															value="custom"
-															checked={sk.score_min !== null}
-														/>
-														Customizar
-													</label>
-												</div>
+														<label class="inline-flex items-center gap-2">
+															<input
+																type="radio"
+																name="mode"
+																value="custom"
+																checked={sk.score_min !== null}
+															/>
+															Customizar
+														</label>
+													</div>
 
-												<div class="scale-fields">
-													<label>
-														<span>Min</span>
-														<input
-															name="score_min"
-															type="number"
-															step="any"
-															value={sk.score_min ?? data.class.score_min}
-														/>
-													</label>
+													<div class="grid gap-3 sm:grid-cols-3">
+														<label class="space-y-2 text-sm font-bold text-slate-700">
+															<span>Min</span>
+															<input
+																name="score_min"
+																type="number"
+																step="any"
+																value={sk.score_min ?? data.class.score_min}
+																class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+															/>
+														</label>
 
-													<label>
-														<span>Max</span>
-														<input
-															name="score_max"
-															type="number"
-															step="any"
-															value={sk.score_max ?? data.class.score_max}
-														/>
-													</label>
+														<label class="space-y-2 text-sm font-bold text-slate-700">
+															<span>Max</span>
+															<input
+																name="score_max"
+																type="number"
+																step="any"
+																value={sk.score_max ?? data.class.score_max}
+																class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+															/>
+														</label>
 
-													<label>
-														<span>Dec</span>
-														<input
-															name="score_decimals"
-															type="number"
-															min="0"
-															max="6"
-															value={sk.score_decimals ?? data.class.score_decimals}
-														/>
-													</label>
-												</div>
+														<label class="space-y-2 text-sm font-bold text-slate-700">
+															<span>Dec</span>
+															<input
+																name="score_decimals"
+																type="number"
+																min="0"
+																max="6"
+																value={sk.score_decimals ?? data.class.score_decimals}
+																class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+															/>
+														</label>
+													</div>
 
-												<button type="submit" class="primary-button">Salvar escala</button>
-											</form>
-										</div>
-									{/if}
-								</article>
-							{/each}
-						</div>
-					{/if}
+													<button
+														type="submit"
+														class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+													>
+														Salvar escala
+													</button>
+												</form>
+											</div>
+										{/if}
+									</article>
+								{/each}
+							</div>
+						{/if}
+					</section>
 				</section>
-			</section>
 
-			<section class="panel">
-				<div class="panel-head">
-					<div>
-						<div class="section-kicker">Configuração da turma</div>
-						<h2>Ações rápidas</h2>
-					</div>
-					<p>
-						Este bloco concentra ações de manutenção e configurações para não competir com o grid.
+				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Configuração da turma
 					</p>
-				</div>
+					<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+						Ações rápidas
+					</h2>
 
-				<div class="manage-actions-grid">
-					<div class="mini-action-card">
-						<span>Status do snapshot</span>
-						<strong>{data.hasTodaySnapshot ? 'Em dia' : 'Pendente hoje'}</strong>
-					</div>
+					<div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								Status do snapshot
+							</p>
+							<p class="mt-2 text-xl font-black text-slate-950">
+								{data.hasTodaySnapshot ? 'Em dia' : 'Pendente hoje'}
+							</p>
+						</div>
 
-					<div class="mini-action-card">
-						<span>Auto snapshot</span>
-						<strong>{autoSnapshot ? 'Ativado' : 'Desativado'}</strong>
-					</div>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+								Auto snapshot
+							</p>
+							<p class="mt-2 text-xl font-black text-slate-950">
+								{autoSnapshot ? 'Ativado' : 'Desativado'}
+							</p>
+						</div>
 
-					<div class="mini-action-card">
-						<span>Alunos</span>
-						<strong>{data.students.length}</strong>
-					</div>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Alunos</p>
+							<p class="mt-2 text-xl font-black text-slate-950">{data.students.length}</p>
+						</div>
 
-					<div class="mini-action-card">
-						<span>Skills</span>
-						<strong>{data.skills.length}</strong>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Skills</p>
+							<p class="mt-2 text-xl font-black text-slate-950">{data.skills.length}</p>
+						</div>
 					</div>
-				</div>
-			</section>
-		</section>
-	{/if}
+				</section>
+			</div>
+		{/if}
+	</div>
 {/if}
-
-<style>
-	.hero,
-	.tabs-panel,
-	.panel,
-	.stat-card,
-	.bucket-item,
-	.action-item,
-	.mini-action-card,
-	.compact-item,
-	.skill-manage-item {
-		background: rgba(255, 255, 255, 0.94);
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-		border-radius: 1.3rem;
-	}
-
-	.empty-page,
-	.empty-state {
-		background: rgba(255, 255, 255, 0.94);
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-		border-radius: 1.3rem;
-	}
-
-	.hero,
-	.panel,
-	.tabs-panel,
-	.empty-page {
-		padding: 1.25rem;
-		margin-bottom: 1rem;
-	}
-
-	.section-stack {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.hero {
-		display: grid;
-		grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
-		gap: 1rem;
-		align-items: stretch;
-	}
-
-	.eyebrow,
-	.section-kicker,
-	.stat-label,
-	.hero-side-label,
-	.focus-label {
-		font-size: 0.78rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #64748b;
-		margin-bottom: 0.35rem;
-	}
-
-	.hero h1,
-	.panel-head h2,
-	.empty-page h1,
-	.empty-state h3 {
-		margin: 0;
-		line-height: 1.08;
-		color: #0f172a;
-	}
-
-	.hero h1 {
-		font-size: clamp(1.8rem, 3vw, 2.5rem);
-		letter-spacing: -0.04em;
-	}
-
-	.hero p,
-	.panel-head p,
-	.empty-page p,
-	.empty-state p,
-	.invite-help,
-	.subtle-text,
-	.compact-item p,
-	.skill-manage-item p {
-		color: #475569;
-		line-height: 1.7;
-	}
-
-	.hero-inline-meta {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.65rem;
-		margin-top: 1rem;
-	}
-
-	.snapshot-chip,
-	.meta-chip,
-	.helper-chip,
-	.chip-button {
-		padding: 0.55rem 0.8rem;
-		border-radius: 999px;
-		font-size: 0.84rem;
-		font-weight: 700;
-		border: 1px solid #e2e8f0;
-		background: #f8fafc;
-		color: #334155;
-	}
-
-	.snapshot-chip.ok {
-		background: rgba(34, 197, 94, 0.12);
-		border-color: rgba(34, 197, 94, 0.22);
-		color: #166534;
-	}
-
-	.snapshot-chip.warn {
-		background: rgba(245, 158, 11, 0.12);
-		border-color: rgba(245, 158, 11, 0.22);
-		color: #92400e;
-	}
-
-	.hero-actions {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		min-width: 0;
-	}
-
-	.primary-button,
-	.secondary-button,
-	.danger-button,
-	.table-action {
-		height: 2.95rem;
-		padding: 0 1rem;
-		border-radius: 0.95rem;
-		font-weight: 700;
-		font-size: 0.95rem;
-		cursor: pointer;
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		transition:
-			transform 0.16s ease,
-			box-shadow 0.16s ease,
-			background 0.16s ease,
-			border-color 0.16s ease,
-			opacity 0.16s ease;
-	}
-
-	.primary-button {
-		border: 0;
-		background: linear-gradient(135deg, #2563eb, #1d4ed8);
-		color: white;
-		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
-	}
-
-	.secondary-button,
-	.table-action {
-		background: white;
-		color: #0f172a;
-		border: 1px solid #cbd5e1;
-	}
-
-	.danger-button {
-		background: white;
-		color: #b91c1c;
-		border: 1px solid rgba(239, 68, 68, 0.25);
-	}
-
-	.primary-button:hover,
-	.secondary-button:hover,
-	.danger-button:hover,
-	.table-action:hover,
-	.chip-button:hover,
-	.tabs button:hover {
-		transform: translateY(-1px);
-	}
-
-	.primary-button:disabled,
-	.secondary-button:disabled,
-	.danger-button:disabled {
-		opacity: 0.72;
-		cursor: not-allowed;
-		transform: none;
-	}
-
-	.toggle-card {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.65rem;
-		padding: 0.85rem 1rem;
-		border-radius: 1rem;
-		cursor: pointer;
-		background: rgba(248, 250, 252, 0.9);
-		border: 1px solid #e2e8f0;
-	}
-
-	.feedback {
-		margin-bottom: 1rem;
-		padding: 0.95rem 1rem;
-		border-radius: 1rem;
-		font-size: 0.92rem;
-		font-weight: 700;
-	}
-
-	.feedback.success {
-		background: rgba(34, 197, 94, 0.12);
-		border: 1px solid rgba(34, 197, 94, 0.22);
-		color: #166534;
-	}
-
-	.feedback.error {
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.2);
-		color: #991b1b;
-	}
-
-	.tabs {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.tabs button {
-		height: 2.8rem;
-		padding: 0 1rem;
-		border-radius: 0.95rem;
-		border: 1px solid #cbd5e1;
-		background: white;
-		color: #334155;
-		font-size: 0.94rem;
-		font-weight: 800;
-		cursor: pointer;
-		transition:
-			transform 0.16s ease,
-			border-color 0.16s ease,
-			background 0.16s ease,
-			color 0.16s ease;
-	}
-
-	.tabs button.active {
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.12), rgba(37, 99, 235, 0.08));
-		border-color: rgba(96, 165, 250, 0.4);
-		color: #1d4ed8;
-	}
-
-	.panel-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.panel-head.compact {
-		margin-bottom: 0.8rem;
-	}
-
-	.panel-head p {
-		max-width: 460px;
-		margin: 0.15rem 0 0;
-		font-size: 0.94rem;
-	}
-
-	.stats-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.9rem;
-	}
-
-	.stat-card {
-		padding: 1rem;
-	}
-
-	.stat-value {
-		font-size: 1.8rem;
-		font-weight: 900;
-		line-height: 1.05;
-		color: #0f172a;
-	}
-
-	.stat-value.small {
-		font-size: 1.05rem;
-		line-height: 1.25;
-	}
-
-	.stat-foot {
-		margin-top: 0.45rem;
-		font-size: 0.88rem;
-		color: #475569;
-		line-height: 1.5;
-	}
-
-	.next-action-panel .next-action-box {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 1rem;
-		border-radius: 1rem;
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.06), rgba(37, 99, 235, 0.03));
-		border: 1px solid rgba(96, 165, 250, 0.18);
-	}
-
-	.next-action-box p {
-		margin: 0;
-		max-width: 760px;
-	}
-
-	.overview-two-col,
-	.manage-grid {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 1rem;
-	}
-
-	.bucket-list,
-	.compact-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.bucket-item,
-	.action-item,
-	.compact-item {
-		padding: 0.95rem 1rem;
-	}
-
-	.action-row {
-		width: 100%;
-		text-align: left;
-		border: 0;
-		cursor: pointer;
-	}
-
-	.bucket-item,
-	.action-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-
-	.bucket-item strong,
-	.action-item strong,
-	.compact-item strong,
-	.skill-manage-item strong {
-		display: block;
-		color: #0f172a;
-		font-size: 0.98rem;
-		margin-bottom: 0.15rem;
-	}
-
-	.bucket-item p,
-	.action-item p {
-		margin: 0;
-		font-size: 0.88rem;
-		color: #64748b;
-	}
-
-	.bucket-item span {
-		font-size: 1.05rem;
-		font-weight: 900;
-		color: #0f172a;
-		white-space: nowrap;
-	}
-
-	.table-shell,
-	.grid-shell {
-		overflow: auto;
-		border-radius: 1rem;
-		border: 1px solid #e2e8f0;
-		background: white;
-	}
-
-	.insight-table,
-	.score-grid {
-		width: 100%;
-		border-collapse: separate;
-		border-spacing: 0;
-	}
-
-	.insight-table th,
-	.insight-table td,
-	.score-grid th,
-	.score-grid td {
-		padding: 0.85rem 0.9rem;
-		border-bottom: 1px solid #e2e8f0;
-		vertical-align: top;
-	}
-
-	.insight-table th,
-	.score-grid th {
-		background: #f8fafc;
-		font-size: 0.82rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: #475569;
-		text-align: left;
-	}
-
-	.skill-name-cell {
-		font-weight: 700;
-		color: #0f172a;
-	}
-
-	.subtle {
-		font-size: 0.82rem;
-		color: #64748b;
-		margin-top: 0.15rem;
-	}
-
-	.positive {
-		color: #15803d;
-		font-weight: 700;
-	}
-
-	.negative {
-		color: #b91c1c;
-		font-weight: 700;
-	}
-
-	.launch-toolbar-panel .toolbar-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.85rem;
-		margin-bottom: 0.85rem;
-	}
-
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.4rem;
-	}
-
-	.field label {
-		font-size: 0.84rem;
-		font-weight: 800;
-		color: #334155;
-	}
-
-	.field input,
-	.field select,
-	.stack-form input,
-	.scale-form input {
-		height: 2.9rem;
-		padding: 0 0.9rem;
-		border-radius: 0.95rem;
-		border: 1px solid #cbd5e1;
-		background: white;
-		color: #0f172a;
-		font-size: 0.96rem;
-		outline: none;
-		transition:
-			border-color 0.16s ease,
-			box-shadow 0.16s ease,
-			background 0.16s ease;
-	}
-
-	.field input:focus,
-	.field select:focus,
-	.stack-form input:focus,
-	.scale-form input:focus {
-		border-color: #60a5fa;
-		box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
-		background: white;
-	}
-
-	.launch-chips,
-	.grid-helper {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.6rem;
-		margin-bottom: 0.9rem;
-	}
-
-	.chip-button {
-		cursor: pointer;
-		background: #f8fafc;
-	}
-
-	.save-feedback {
-		padding: 0.6rem 0.85rem;
-		border-radius: 999px;
-		font-size: 0.84rem;
-		font-weight: 800;
-		border: 1px solid #e2e8f0;
-		background: #f8fafc;
-		color: #334155;
-		white-space: nowrap;
-	}
-
-	.save-feedback.ok {
-		background: rgba(34, 197, 94, 0.12);
-		border-color: rgba(34, 197, 94, 0.22);
-		color: #166534;
-	}
-
-	.save-feedback.saving {
-		background: rgba(37, 99, 235, 0.08);
-		border-color: rgba(96, 165, 250, 0.25);
-		color: #1d4ed8;
-	}
-
-	.save-feedback.error {
-		background: rgba(239, 68, 68, 0.1);
-		border-color: rgba(239, 68, 68, 0.22);
-		color: #991b1b;
-	}
-
-	.launch-summary-row {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.launch-summary-box {
-		padding: 0.9rem;
-		border-radius: 1rem;
-		background: #f8fafc;
-		border: 1px solid #e2e8f0;
-	}
-
-	.launch-summary-box span,
-	.mini-action-card span {
-		display: block;
-		font-size: 0.78rem;
-		font-weight: 800;
-		letter-spacing: 0.04em;
-		text-transform: uppercase;
-		color: #64748b;
-		margin-bottom: 0.2rem;
-	}
-
-	.launch-summary-box strong,
-	.mini-action-card strong {
-		font-size: 1.05rem;
-		color: #0f172a;
-	}
-
-	.grid-panel.focus {
-		box-shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
-	}
-
-	.legend {
-		display: flex;
-		gap: 0.75rem;
-		flex-wrap: wrap;
-	}
-
-	.legend-item {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.85rem;
-		color: #475569;
-	}
-
-	.tone {
-		display: inline-block;
-		width: 0.85rem;
-		height: 0.85rem;
-		border-radius: 999px;
-	}
-
-	.tone.risk {
-		background: rgba(239, 68, 68, 0.28);
-	}
-
-	.tone.warn {
-		background: rgba(245, 158, 11, 0.26);
-	}
-
-	.tone.good {
-		background: rgba(34, 197, 94, 0.22);
-	}
-
-	.tone.empty {
-		background: rgba(148, 163, 184, 0.18);
-	}
-
-	.sticky-header {
-		position: sticky;
-		top: 0;
-		z-index: 2;
-	}
-
-	.sticky-col {
-		position: sticky;
-		left: 0;
-		z-index: 1;
-		background: white;
-	}
-
-	.student-col {
-		min-width: 240px;
-	}
-
-	.student-cell,
-	.average-label {
-		font-weight: 700;
-		color: #0f172a;
-		background: #fff;
-	}
-
-	.student-main {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-	}
-
-	.student-state {
-		padding: 0.25rem 0.55rem;
-		border-radius: 999px;
-		font-size: 0.72rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		white-space: nowrap;
-	}
-
-	.student-state.risk {
-		background: rgba(239, 68, 68, 0.12);
-		color: #991b1b;
-	}
-
-	.student-state.attention {
-		background: rgba(245, 158, 11, 0.14);
-		color: #92400e;
-	}
-
-	.student-state.good {
-		background: rgba(34, 197, 94, 0.12);
-		color: #166534;
-	}
-
-	.student-state.pending {
-		background: rgba(148, 163, 184, 0.18);
-		color: #475569;
-	}
-
-	.skill-col {
-		min-width: 170px;
-	}
-
-	.avg-col {
-		min-width: 140px;
-	}
-
-	.col-head {
-		font-weight: 800;
-		color: #0f172a;
-		text-transform: none;
-		letter-spacing: normal;
-		font-size: 0.9rem;
-	}
-
-	.col-subtle {
-		margin-top: 0.2rem;
-		font-size: 0.76rem;
-		color: #64748b;
-		text-transform: none;
-		letter-spacing: normal;
-	}
-
-	.score-cell {
-		min-width: 170px;
-		background: white;
-		transition: background 0.16s ease;
-	}
-
-	.score-form {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-	}
-
-	.score-input {
-		width: 100%;
-		min-width: 72px;
-		height: 2.45rem;
-		padding: 0 0.75rem;
-		border-radius: 0.85rem;
-		border: 1px solid rgba(148, 163, 184, 0.35);
-		background: rgba(255, 255, 255, 0.82);
-		color: #0f172a;
-		font-size: 0.95rem;
-		outline: none;
-		transition:
-			border-color 0.16s ease,
-			box-shadow 0.16s ease,
-			background 0.16s ease;
-	}
-
-	.score-input:focus {
-		border-color: #60a5fa;
-		box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
-		background: white;
-	}
-
-	.status-chip {
-		width: 1.2rem;
-		text-align: center;
-		flex-shrink: 0;
-	}
-
-	.cell-error {
-		margin-top: 0.35rem;
-		font-size: 0.78rem;
-		color: #991b1b;
-		line-height: 1.4;
-	}
-
-	.average-row td {
-		font-weight: 800;
-		background: #f8fafc;
-	}
-
-	.average-cell {
-		color: #0f172a;
-	}
-
-	.student-average {
-		font-weight: 800;
-		color: #0f172a;
-	}
-
-	.overall-average-cell {
-		font-weight: 800;
-	}
-
-	.tone-risk {
-		background: rgba(239, 68, 68, 0.08);
-	}
-
-	.tone-warn {
-		background: rgba(245, 158, 11, 0.08);
-	}
-
-	.tone-good {
-		background: rgba(34, 197, 94, 0.08);
-	}
-
-	.tone-empty {
-		background: rgba(248, 250, 252, 0.92);
-	}
-
-	.stack-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.compact-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-	}
-
-	.compact-item-main {
-		min-width: 0;
-	}
-
-	.compact-subline {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.45rem;
-		margin-top: 0.3rem;
-		font-size: 0.86rem;
-		color: #64748b;
-	}
-
-	.invite-label-inline {
-		font-size: 0.72rem;
-		font-weight: 800;
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-		color: #64748b;
-	}
-
-	.compact-subline code {
-		color: #0f172a;
-		font-size: 0.92rem;
-		font-weight: 800;
-		word-break: break-all;
-	}
-
-	.compact-copy,
-	.compact-action {
-		height: 2.55rem;
-		min-width: 112px;
-	}
-
-	.skill-manage-item {
-		padding: 1rem;
-	}
-
-	.skill-manage-head {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 0.9rem;
-	}
-
-	.skill-manage-actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.55rem;
-		justify-content: flex-end;
-	}
-
-	.scale-box {
-		margin-top: 0.95rem;
-		padding-top: 0.95rem;
-		border-top: 1px solid #e2e8f0;
-	}
-
-	.scale-form {
-		display: flex;
-		flex-direction: column;
-		gap: 0.85rem;
-	}
-
-	.radio-row {
-		display: flex;
-		gap: 1rem;
-		flex-wrap: wrap;
-		font-size: 0.9rem;
-		color: #334155;
-	}
-
-	.radio-row label {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.45rem;
-	}
-
-	.scale-fields {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.scale-fields label {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		font-size: 0.84rem;
-		font-weight: 700;
-		color: #334155;
-	}
-
-	.manage-actions-grid {
-		display: grid;
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-		gap: 0.85rem;
-	}
-
-	.mini-action-card {
-		padding: 1rem;
-	}
-
-	.empty-page,
-	.empty-state {
-		padding: 1.2rem;
-		text-align: center;
-	}
-
-	.empty-state.compact {
-		padding: 1rem;
-		box-shadow: none;
-		border-style: dashed;
-	}
-
-	.empty-state h3,
-	.empty-page h1 {
-		margin: 0 0 0.5rem;
-	}
-
-	.empty-state p,
-	.empty-page p {
-		margin: 0;
-	}
-
-	.empty-page {
-		max-width: 640px;
-		margin: 2rem auto 0;
-	}
-
-	.empty-page .primary-button {
-		margin-top: 1rem;
-	}
-
-	@media (max-width: 1180px) {
-		.hero,
-		.stats-grid,
-		.overview-two-col,
-		.manage-grid,
-		.launch-toolbar-panel .toolbar-grid,
-		.launch-summary-row,
-		.manage-actions-grid {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	@media (max-width: 900px) {
-		.panel-head,
-		.next-action-box,
-		.bucket-item,
-		.action-item,
-		.compact-item,
-		.skill-manage-head {
-			flex-direction: column;
-			align-items: flex-start;
-		}
-
-		.card-footer,
-		.hero-actions {
-			width: 100%;
-		}
-	}
-
-	@media (max-width: 640px) {
-	.tabs {
-		display: grid;
-		grid-template-columns: 1fr;
-	}
-
-	.primary-button,
-	.secondary-button,
-	.danger-button,
-	.table-action {
-		width: 100%;
-	}
-
-	.hero-inline-meta,
-	.launch-chips,
-	.grid-helper,
-	.legend {
-		flex-direction: column;
-	}
-
-	.score-cell,
-	.avg-col {
-		min-width: 150px;
-	}
-
-	.scale-fields {
-		grid-template-columns: 1fr;
-	}
-
-	.compact-copy,
-	.compact-action {
-		width: 100%;
-	}
-}
-</style>
