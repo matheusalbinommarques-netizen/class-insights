@@ -28,6 +28,19 @@
 		status: 'draft' | 'published';
 	};
 
+	type EnrollmentItem = {
+		enrollmentId: string;
+		studentId: string;
+		classId: string;
+		teacherId: string;
+		status: 'pending' | 'active' | 'archived';
+		joinedAt: string | null;
+		leftAt: string | null;
+		studentName: string;
+		className: string;
+		isCurrent: boolean;
+	};
+
 	export let data: {
 		authUser: { id: string; email: string | null };
 		journeyPortal: { status: 'pending-link' | 'ready'; message: string };
@@ -51,6 +64,7 @@
 			timeline: TimelinePoint[];
 		} | null;
 		subjects: SubjectItem[];
+		enrollments: EnrollmentItem[];
 	};
 
 	type SubjectFilter = 'all' | string;
@@ -81,6 +95,11 @@
 		if (value === 'declining') return 'declining';
 		if (value === 'stable') return 'stable';
 		return 'insufficient';
+	};
+	const enrollmentStatusLabel = (value: EnrollmentItem['status']) => {
+		if (value === 'active') return 'Ativo';
+		if (value === 'pending') return 'Pendente';
+		return 'Arquivado';
 	};
 
 	$: subjectOptions = data.subjects.map((subject) => ({
@@ -162,6 +181,30 @@
 					Ponto de maior atencao: {data.longitudinal.worst_subject}.
 				{/if}
 			</div>
+		</div>
+	</section>
+
+	<section class="panel">
+		<div class="panel-head">
+			<div>
+				<div class="section-kicker">Vinculos</div>
+				<h2>Turmas ligadas a esta conta</h2>
+			</div>
+			<p>O longitudinal considera a turma ativa, mas sua conta pode carregar mais de um vinculo.</p>
+		</div>
+
+		<div class="enrollment-grid">
+			{#each data.enrollments as enrollment (enrollment.enrollmentId)}
+				<article class={`enrollment-card ${enrollment.isCurrent ? 'current' : ''}`}>
+					<div>
+						<h3>{enrollment.className}</h3>
+						<p>{enrollment.studentName}</p>
+					</div>
+					<span class={`status-badge ${enrollment.status}`}>
+						{enrollmentStatusLabel(enrollment.status)}
+					</span>
+				</article>
+			{/each}
 		</div>
 	</section>
 
@@ -450,7 +493,8 @@
 	}
 	.summary-grid,
 	.subject-grid,
-	.reading-grid {
+	.reading-grid,
+	.enrollment-grid {
 		display: grid;
 		gap: 1rem;
 		margin-bottom: 1rem;
@@ -461,9 +505,13 @@
 	.reading-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
+	.enrollment-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
 	.summary-card,
 	.subject-card,
-	.reading-card {
+	.reading-card,
+	.enrollment-card {
 		padding: 1rem;
 	}
 	.summary-card strong {
@@ -526,6 +574,26 @@
 	}
 	.reading-card p {
 		margin-top: 0.45rem;
+		font-size: 0.92rem;
+	}
+	.enrollment-card {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.8rem;
+		border-radius: 1.1rem;
+		border: 1px solid rgba(148, 163, 184, 0.18);
+		background: rgba(248, 250, 252, 0.9);
+	}
+	.enrollment-card.current {
+		background: rgba(37, 99, 235, 0.08);
+		border-color: rgba(37, 99, 235, 0.2);
+	}
+	.enrollment-card h3 {
+		font-size: 1rem;
+	}
+	.enrollment-card p {
+		margin-top: 0.35rem;
 		font-size: 0.92rem;
 	}
 	.filters {
@@ -639,6 +707,10 @@
 		background: rgba(148, 163, 184, 0.18);
 		color: #475569;
 	}
+	.status-badge.archived {
+		background: rgba(226, 232, 240, 0.9);
+		color: #475569;
+	}
 	.subject-meta {
 		display: grid;
 		grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -703,7 +775,8 @@
 		.hero,
 		.summary-grid,
 		.timeline-card,
-		.reading-grid {
+		.reading-grid,
+		.enrollment-grid {
 			grid-template-columns: 1fr;
 		}
 		.panel-head {

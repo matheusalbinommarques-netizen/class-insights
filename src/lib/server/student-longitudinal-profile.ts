@@ -1,14 +1,35 @@
 import type { StudentLongitudinalSummary } from '$lib/types/academic';
-import { buildStudentLongitudinalSummary } from './longitudinal';
-import { getSupabaseAdminClient } from './supabase-admin';
-import { getOwnedClass } from './teacher';
+import { buildStudentLongitudinalSummary } from './longitudinal.ts';
+import { getSupabaseAdminClient } from './supabase-admin.ts';
+import { getOwnedClass } from './teacher.ts';
 
 type StudentRow = {
 	id: string;
 	name: string;
 	class_id: string | null;
 	user_id: string | null;
-	invite_code: string | null;
+};
+
+type EnrollmentStudentRow = {
+	student_id: string;
+	class_id: string;
+	teacher_id: string;
+	status: 'pending' | 'active' | 'archived';
+	joined_at: string | null;
+	students:
+		| {
+				id: string;
+				name: string;
+				class_id: string | null;
+				user_id: string | null;
+		  }
+		| {
+				id: string;
+				name: string;
+				class_id: string | null;
+				user_id: string | null;
+		  }[]
+		| null;
 };
 
 type ClassRow = {
@@ -313,10 +334,26 @@ export async function loadStudentLongitudinalProfile(
 	if (access.kind === 'student-self') {
 		fallbackDisplayName = access.fallbackDisplayName;
 		const { data, error } = await locals.supabase
-			.from('students')
-			.select('id, name, class_id, user_id, invite_code')
-			.eq('user_id', access.authUserId)
-			.maybeSingle<StudentRow>();
+			.from('enrollments')
+			.select(
+				`
+					student_id,
+					class_id,
+					teacher_id,
+					status,
+					joined_at,
+					students!inner (
+						id,
+						name,
+						class_id,
+						user_id
+					)
+				`
+			)
+			.eq('claimed_by_user_id', access.authUserId)
+			.eq('status', 'active')
+			.order('joined_at', { ascending: false, nullsFirst: false })
+			.limit(1);
 
 		if (error) {
 			return {
@@ -329,7 +366,22 @@ export async function loadStudentLongitudinalProfile(
 			};
 		}
 
-		student = data;
+		const enrollment = ((data ?? []) as EnrollmentStudentRow[])[0] ?? null;
+		const enrollmentStudent = enrollment
+			? Array.isArray(enrollment.students)
+				? enrollment.students[0]
+				: enrollment.students
+			: null;
+
+		student = enrollmentStudent
+			? {
+					id: enrollmentStudent.id,
+					name: enrollmentStudent.name,
+					class_id: enrollmentStudent.class_id,
+					user_id: enrollmentStudent.user_id
+				}
+			: null;
+
 		if (!student) {
 			return {
 				ok: false,
@@ -344,7 +396,7 @@ export async function loadStudentLongitudinalProfile(
 	} else {
 		const { data, error } = await locals.supabase
 			.from('students')
-			.select('id, name, class_id, user_id, invite_code')
+			.select('id, name, class_id, user_id')
 			.eq('id', access.studentId)
 			.maybeSingle<StudentRow>();
 

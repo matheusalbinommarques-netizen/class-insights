@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
+import { getServerEnv } from '$lib/config/env.server';
+
 type AdminClient = ReturnType<typeof createClient>;
 
 let cachedAdminClient: AdminClient | null | undefined;
@@ -9,13 +11,7 @@ export function getSupabaseAdminClient(): AdminClient | null {
 		return cachedAdminClient;
 	}
 
-	const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
-	const serviceRoleKey = import.meta.env.SUPABASE_SERVICE_ROLE_KEY;
-
-	if (!supabaseUrl || !serviceRoleKey) {
-		cachedAdminClient = null;
-		return cachedAdminClient;
-	}
+	const { supabaseUrl, serviceRoleKey } = getServerEnv();
 
 	cachedAdminClient = createClient(supabaseUrl, serviceRoleKey, {
 		auth: {

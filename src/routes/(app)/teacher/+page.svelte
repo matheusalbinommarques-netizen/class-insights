@@ -140,12 +140,12 @@
 			? [
 					'Crie sua primeira turma',
 					'Vincule materias e cadastre alunos',
-					'Abra avaliacoes ou use importacao quando fizer sentido'
+					'Abra avaliacoes e use a importacao legada apenas quando ela realmente reduzir atrito'
 				]
 			: [
 					'Priorize turmas sem materias ou sem avaliacoes',
 					'Feche rascunhos que ja podem virar publicacao',
-					'Use importacao quando ela realmente acelerar a operacao'
+					'Trate a importacao por CSV como apoio operacional, nao como fluxo principal'
 				]
 	);
 
@@ -320,7 +320,7 @@
 						href={resolve('/teacher/import')}
 						class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
 					>
-						<span>Importar notas</span>
+						<span>Import legado</span>
 					</a>
 
 					<a
@@ -394,8 +394,9 @@
 					>
 						<h3 class="text-lg font-black text-slate-950">Nenhuma pendencia urgente</h3>
 						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Suas turmas nao tem alertas prioritarios neste momento. Voce pode seguir com
-							importacoes, novas avaliacoes ou criacao de novas turmas.
+							Suas turmas nao tem alertas prioritarios neste momento. Voce pode seguir com novas
+							avaliacoes, materias e criacao de novas turmas. Use a importacao apenas se o CSV
+							realmente ajudar nesta operacao.
 						</p>
 					</div>
 				{:else}
@@ -798,7 +799,7 @@
 										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
 										onclick={() => goToImportForClass(c.id)}
 									>
-										<span>Importar notas</span>
+										<span>Import legado</span>
 									</button>
 								</div>
 							</article>

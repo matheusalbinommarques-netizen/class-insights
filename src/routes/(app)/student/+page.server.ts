@@ -1,5 +1,6 @@
-﻿import type { PageServerLoad } from './$types';
-import { redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { fail, redirect } from '@sveltejs/kit';
+
 import { loadStudentPortalData } from '$lib/server/student-portal';
 
 type ParentData = {
@@ -59,6 +60,58 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 			description: subject.description
 		})),
 		academicSummary: payload.academicSummary,
-		longitudinal: payload.longitudinal
+		longitudinal: payload.longitudinal,
+		enrollments: payload.enrollments
 	};
+};
+
+export const actions: Actions = {
+	claimInviteCode: async ({ request, locals }) => {
+		const form = await request.formData();
+		const inviteCode = String(form.get('inviteCode') ?? '')
+			.trim()
+			.toUpperCase();
+
+		if (!locals.session) {
+			return fail(401, {
+				action: 'claimInviteCode',
+				message: 'Voce precisa estar logado para adicionar um codigo.'
+			});
+		}
+
+		if (!inviteCode) {
+			return fail(400, {
+				action: 'claimInviteCode',
+				message: 'Informe um codigo de convite valido.',
+				inviteCode
+			});
+		}
+
+		const { data, error } = await locals.supabase.rpc('claim_student_by_invite_code', {
+			p_invite_code: inviteCode
+		});
+
+		if (error) {
+			return fail(400, {
+				action: 'claimInviteCode',
+				message: error.message,
+				inviteCode
+			});
+		}
+
+		const rows = (data ?? []) as Array<{ student_id: string }>;
+		if (rows.length === 0) {
+			return fail(404, {
+				action: 'claimInviteCode',
+				message: 'Nao encontramos um vinculo disponivel para esse codigo.',
+				inviteCode
+			});
+		}
+
+		return {
+			action: 'claimInviteCode',
+			success: true,
+			message: 'Vinculo concluido com sucesso.'
+		};
+	}
 };

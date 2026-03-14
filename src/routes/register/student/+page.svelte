@@ -1,21 +1,45 @@
 <script lang="ts">
-	import { supabase } from '$lib/services/supabaseClient';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+
+	import { supabase } from '$lib/services/supabaseClient';
 
 	type ClaimStudentRpcRow = {
 		student_id: string;
 		class_id: string | null;
+		teacher_id?: string | null;
+		status?: string | null;
 		student_name: string;
 	};
 
-	type Tone = 'sky' | 'emerald' | 'amber';
+	type BenefitTone = 'sky' | 'emerald' | 'amber';
 
 	type Benefit = {
 		title: string;
 		text: string;
-		tone: Tone;
+		tone: BenefitTone;
 	};
+
+	const MIN_PASSWORD_LENGTH = 6;
+	const PENDING_STUDENT_INVITE_CODE_KEY = 'pendingStudentInviteCode';
+
+	const benefits: Benefit[] = [
+		{
+			title: 'Conta primeiro',
+			text: 'Voce pode criar sua conta agora, mesmo sem codigo de convite.',
+			tone: 'sky'
+		},
+		{
+			title: 'Vinculo depois',
+			text: 'Quando o codigo chegar, o portal permite concluir o vinculo sem refazer cadastro.',
+			tone: 'emerald'
+		},
+		{
+			title: 'Leitura clara',
+			text: 'Assim que o vinculo for concluido, sua area do aluno mostra progresso e historico.',
+			tone: 'amber'
+		}
+	];
 
 	let name = '';
 	let email = '';
@@ -29,27 +53,6 @@
 	let successMessage = '';
 	let showPassword = false;
 	let showConfirmPassword = false;
-
-	const MIN_PASSWORD_LENGTH = 6;
-	const PENDING_STUDENT_INVITE_CODE_KEY = 'pendingStudentInviteCode';
-
-	const benefits: Benefit[] = [
-		{
-			title: 'Conta vinculada ao aluno certo',
-			text: 'O código de convite conecta seu acesso ao registro acadêmico correto.',
-			tone: 'sky'
-		},
-		{
-			title: 'Progresso mais claro',
-			text: 'Você acompanha histórico, matérias de atenção e evolução recente.',
-			tone: 'emerald'
-		},
-		{
-			title: 'Leitura simples',
-			text: 'Menos dependência de revisão manual e mais clareza sobre seu desempenho.',
-			tone: 'amber'
-		}
-	];
 
 	$: trimmedName = name.trim();
 	$: trimmedEmail = email.trim().toLowerCase();
@@ -93,28 +96,22 @@
 			}
 		}
 
-		return 'Não foi possível concluir o vínculo do aluno.';
-	}
-
-	function toneIconClasses(tone: Tone) {
-		if (tone === 'sky') return 'bg-sky-100 text-sky-700';
-		if (tone === 'emerald') return 'bg-emerald-100 text-emerald-700';
-		return 'bg-amber-100 text-amber-700';
+		return 'Nao foi possivel concluir o cadastro do aluno.';
 	}
 
 	function validateForm() {
 		if (!trimmedName) {
-			errorMessage = 'Nome é obrigatório.';
+			errorMessage = 'Nome e obrigatorio.';
 			return false;
 		}
 
 		if (!trimmedEmail) {
-			errorMessage = 'E-mail é obrigatório.';
+			errorMessage = 'E-mail e obrigatorio.';
 			return false;
 		}
 
 		if (!password) {
-			errorMessage = 'Senha é obrigatória.';
+			errorMessage = 'Senha e obrigatoria.';
 			return false;
 		}
 
@@ -129,12 +126,7 @@
 		}
 
 		if (password !== confirmPassword) {
-			errorMessage = 'A confirmação de senha não confere.';
-			return false;
-		}
-
-		if (!normalizedInviteCode) {
-			errorMessage = 'Código de convite é obrigatório.';
+			errorMessage = 'A confirmacao de senha nao confere.';
 			return false;
 		}
 
@@ -185,7 +177,11 @@
 		loading = true;
 
 		try {
-			savePendingInviteCode(normalizedInviteCode);
+			if (normalizedInviteCode) {
+				savePendingInviteCode(normalizedInviteCode);
+			} else {
+				clearPendingInviteCode();
+			}
 
 			const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
 				email: trimmedEmail,
@@ -194,8 +190,7 @@
 					data: {
 						role: 'student',
 						display_name: trimmedName,
-						name: trimmedName,
-						invite_code: normalizedInviteCode
+						name: trimmedName
 					}
 				}
 			});
@@ -208,28 +203,31 @@
 			const session = signUpData.session;
 
 			if (!user) {
-				throw new Error('Não foi possível criar a conta.');
+				throw new Error('Nao foi possivel criar a conta.');
 			}
 
 			if (session) {
 				await tryCreateStudentProfile(user.id, trimmedName);
 
-				const linked = await tryCompleteStudentLink(normalizedInviteCode);
+				const linked = normalizedInviteCode
+					? await tryCompleteStudentLink(normalizedInviteCode)
+					: false;
 
 				await invalidateAll();
 
-				if (linked) {
+				if (linked || !normalizedInviteCode) {
 					await goto(resolve('/student'));
 					return;
 				}
 
 				successMessage =
-					'Conta criada, mas não foi possível concluir o vínculo com o aluno agora. Faça login novamente ou confira o código de convite.';
+					'Conta criada, mas o vinculo ainda nao foi concluido. Faca login novamente ou confira o codigo informado.';
 				return;
 			}
 
-			successMessage =
-				'Conta criada. Verifique seu e-mail e depois faça login para concluir o vínculo do aluno.';
+			successMessage = normalizedInviteCode
+				? 'Conta criada. Verifique seu e-mail e depois faca login para concluir o vinculo do aluno.'
+				: 'Conta criada. Verifique seu e-mail e depois faca login para acessar o portal e adicionar um codigo quando quiser.';
 		} catch (error) {
 			errorMessage = extractErrorMessage(error);
 		} finally {
@@ -241,7 +239,7 @@
 		resetMessages();
 
 		if (!trimmedEmail) {
-			errorMessage = 'Digite o e-mail para reenviar a verificação.';
+			errorMessage = 'Digite o e-mail para reenviar a verificacao.';
 			return;
 		}
 
@@ -262,26 +260,32 @@
 			}
 
 			successMessage =
-				'Se existir um cadastro pendente para esse e-mail, enviamos um novo link de verificação.';
+				'Se existir um cadastro pendente para esse e-mail, enviamos um novo link de verificacao.';
 		} catch (error) {
 			errorMessage =
-				error instanceof Error ? error.message : 'Não foi possível reenviar a verificação.';
+				error instanceof Error ? error.message : 'Nao foi possivel reenviar a verificacao.';
 		} finally {
 			resending = false;
 		}
 	}
 
-	async function handleSubmit(event: SubmitEvent) {
+	function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		await handleRegister();
+		void handleRegister();
+	}
+
+	function toneClasses(tone: BenefitTone) {
+		if (tone === 'sky') return 'border-sky-200 bg-sky-50 text-sky-900';
+		if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50 text-emerald-900';
+		return 'border-amber-200 bg-amber-50 text-amber-900';
 	}
 </script>
 
 <svelte:head>
-	<title>Cadastro de Aluno • Class Insights</title>
+	<title>Cadastro de aluno - Class Insights</title>
 	<meta
 		name="description"
-		content="Crie sua conta de aluno no Class Insights usando o código de convite enviado pelo professor."
+		content="Crie sua conta de aluno no Class Insights e conclua o vinculo com codigo agora ou depois."
 	/>
 </svelte:head>
 
@@ -296,10 +300,10 @@
 
 	<div class="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 lg:px-8">
 		<div
-			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]"
+			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.05fr_0.95fr]"
 		>
 			<section
-				class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-amber-50 via-white to-emerald-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10"
+				class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-amber-50 via-white to-emerald-50 p-6 lg:order-1 lg:border-t-0 lg:border-r lg:p-10"
 			>
 				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
 					<div
@@ -332,132 +336,54 @@
 					<p class="text-xs font-black uppercase tracking-widest text-emerald-700/80">
 						Cadastro de aluno
 					</p>
-
 					<h1
 						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
 					>
-						Crie sua conta e acompanhe seu progresso com mais clareza.
+						Crie sua conta agora e conclua o vinculo quando precisar.
 					</h1>
-
 					<p class="mt-5 text-base leading-8 text-slate-600">
-						Use o código de convite enviado pelo professor para vincular sua conta ao registro
-						acadêmico correto e acessar sua jornada de aprendizagem.
+						O novo onboarding nao exige codigo no primeiro passo. Se voce ja tiver o convite do
+						professor, podemos tentar concluir o vinculo agora. Se ainda nao tiver, o portal fica
+						pronto para receber esse codigo depois.
 					</p>
 				</div>
 
 				<div class="mt-8 grid gap-3">
 					{#each benefits as benefit (benefit.title)}
-						<div
-							class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-						>
-							<div
-								class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}
-							>
-								{#if benefit.tone === 'sky'}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M7 8h10M7 12h7m-7 4h10"
-										/>
-									</svg>
-								{:else if benefit.tone === 'emerald'}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M3 12h6l3 8 4-16 3 8h2"
-										/>
-									</svg>
-								{:else}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" />
-									</svg>
-								{/if}
-							</div>
-
-							<div>
-								<p class="text-sm font-black text-slate-900">{benefit.title}</p>
-								<p class="mt-1 text-sm leading-6 text-slate-600">{benefit.text}</p>
-							</div>
+						<div class={`rounded-2xl border p-4 shadow-sm ${toneClasses(benefit.tone)}`}>
+							<p class="text-sm font-black">{benefit.title}</p>
+							<p class="mt-1 text-sm leading-6 text-slate-700">{benefit.text}</p>
 						</div>
 					{/each}
 				</div>
 
 				<div class="mt-8 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-					<div class="flex items-center justify-between gap-3">
-						<div>
-							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-								Como funciona
-							</p>
-							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-								Vínculo em 3 passos
-							</h2>
-						</div>
-
-						<div
-							class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 sm:block"
-						>
-							Aluno + código
-						</div>
-					</div>
-
-					<div class="mt-5 grid gap-4 md:grid-cols-3">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">Fluxo</p>
+					<div class="mt-4 grid gap-4 md:grid-cols-3">
 						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-							<p class="text-xs font-black uppercase tracking-widest text-sky-700">1. Receba</p>
-							<p class="mt-2 text-lg font-black text-slate-950">Código de convite</p>
+							<p class="text-xs font-black uppercase tracking-widest text-sky-700">
+								1. Crie a conta
+							</p>
+							<p class="mt-2 text-lg font-black text-slate-950">Nome, e-mail e senha</p>
 							<p class="mt-2 text-sm leading-6 text-slate-600">
-								O professor ou a escola fornece o código que identifica seu vínculo.
+								O acesso do aluno nasce separado do vinculo academico.
 							</p>
 						</div>
-
 						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 							<p class="text-xs font-black uppercase tracking-widest text-emerald-700">
-								2. Cadastre
+								2. Informe o codigo
 							</p>
-							<p class="mt-2 text-lg font-black text-slate-950">Sua conta</p>
+							<p class="mt-2 text-lg font-black text-slate-950">Agora ou depois</p>
 							<p class="mt-2 text-sm leading-6 text-slate-600">
-								Você cria seu acesso com nome, e-mail, senha e o código da turma.
+								Se o convite ja existir, o sistema tenta concluir o claim logo apos o cadastro.
 							</p>
 						</div>
-
 						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-							<p class="text-xs font-black uppercase tracking-widest text-amber-700">
-								3. Acompanhe
-							</p>
-							<p class="mt-2 text-lg font-black text-slate-950">Seu progresso</p>
+							<p class="text-xs font-black uppercase tracking-widest text-amber-700">3. Acesse</p>
+							<p class="mt-2 text-lg font-black text-slate-950">Portal do aluno</p>
 							<p class="mt-2 text-sm leading-6 text-slate-600">
-								O sistema conecta sua conta ao registro correto e libera a área do aluno.
+								Com ou sem vinculo pronto, voce entra no portal e ve o estado correto.
 							</p>
-						</div>
-					</div>
-
-					<div class="mt-5 flex flex-wrap gap-3 text-sm text-slate-600">
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Skills</div>
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">
-							Progresso visual
-						</div>
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Pontos fortes</div>
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">
-							Pontos de atenção
 						</div>
 					</div>
 				</div>
@@ -467,7 +393,7 @@
 				<div class="w-full max-w-md">
 					<div class="mb-8 flex items-center justify-between lg:hidden">
 						<a href={resolve('/')} class="text-sm font-bold text-slate-600 hover:text-slate-900">
-							← Voltar para home
+							Voltar para home
 						</a>
 					</div>
 
@@ -480,117 +406,55 @@
 								Criar conta de aluno
 							</h2>
 							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Use o código de convite enviado pelo professor para vincular sua conta ao registro
-								acadêmico correto.
+								O codigo de convite agora e opcional. Se voce ainda nao recebeu o codigo, pode
+								seguir com o cadastro e concluir o vinculo depois.
 							</p>
 						</div>
 
 						<form class="space-y-5" onsubmit={handleSubmit}>
 							<div class="space-y-2">
-								<label for="name" class="block text-sm font-bold text-slate-700"> Nome </label>
-
-								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M15 19a4 4 0 0 0-8 0m8 0a4 4 0 0 1 4-4m-4 4H9m10-4a4 4 0 0 0-4-4m0 0a4 4 0 1 0-8 0m8 0H9"
-											/>
-										</svg>
-									</div>
-
-									<input
-										id="name"
-										name="name"
-										type="text"
-										bind:value={name}
-										placeholder="Seu nome"
-										autocomplete="name"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-										disabled={loading}
-									/>
-								</div>
+								<label for="name" class="block text-sm font-bold text-slate-700">Nome</label>
+								<input
+									id="name"
+									name="name"
+									type="text"
+									bind:value={name}
+									placeholder="Seu nome"
+									autocomplete="name"
+									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+									disabled={loading}
+								/>
 							</div>
 
 							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700"> E-mail </label>
-
-								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1"
-											/>
-										</svg>
-									</div>
-
-									<input
-										id="email"
-										name="email"
-										type="email"
-										bind:value={email}
-										placeholder="voce@email.com"
-										autocomplete="email"
-										autocapitalize="off"
-										autocorrect="off"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-										disabled={loading}
-									/>
-								</div>
+								<label for="email" class="block text-sm font-bold text-slate-700">E-mail</label>
+								<input
+									id="email"
+									name="email"
+									type="email"
+									bind:value={email}
+									placeholder="voce@email.com"
+									autocomplete="email"
+									autocapitalize="off"
+									autocorrect="off"
+									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+									disabled={loading}
+								/>
 							</div>
 
 							<div class="space-y-2">
-								<label for="password" class="block text-sm font-bold text-slate-700"> Senha </label>
-
+								<label for="password" class="block text-sm font-bold text-slate-700">Senha</label>
 								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
-											/>
-										</svg>
-									</div>
-
 									<input
 										id="password"
 										name="password"
 										type={showPassword ? 'text' : 'password'}
 										bind:value={password}
-										placeholder="••••••••"
+										placeholder="........"
 										autocomplete="new-password"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
 										disabled={loading}
 									/>
-
 									<button
 										type="button"
 										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
@@ -607,45 +471,25 @@
 								<label for="confirmPassword" class="block text-sm font-bold text-slate-700">
 									Confirmar senha
 								</label>
-
 								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
-											/>
-										</svg>
-									</div>
-
 									<input
 										id="confirmPassword"
 										name="confirmPassword"
 										type={showConfirmPassword ? 'text' : 'password'}
 										bind:value={confirmPassword}
-										placeholder="••••••••"
+										placeholder="........"
 										autocomplete="new-password"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
 										disabled={loading}
 									/>
-
 									<button
 										type="button"
 										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
 										onclick={() => (showConfirmPassword = !showConfirmPassword)}
 										disabled={loading}
 										aria-label={showConfirmPassword
-											? 'Ocultar confirmação de senha'
-											: 'Mostrar confirmação de senha'}
+											? 'Ocultar confirmacao de senha'
+											: 'Mostrar confirmacao de senha'}
 									>
 										{showConfirmPassword ? 'Ocultar' : 'Mostrar'}
 									</button>
@@ -654,44 +498,23 @@
 
 							<div class="space-y-2">
 								<label for="inviteCode" class="block text-sm font-bold text-slate-700">
-									Código de convite
+									Codigo de convite <span class="font-medium text-slate-400">(opcional)</span>
 								</label>
-
-								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M9 12h6m-8 4h10m-8-8h10M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"
-											/>
-										</svg>
-									</div>
-
-									<input
-										id="inviteCode"
-										name="inviteCode"
-										type="text"
-										bind:value={inviteCode}
-										placeholder="Ex: 7B60B044657F"
-										autocapitalize="characters"
-										autocorrect="off"
-										spellcheck="false"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base uppercase tracking-wider text-slate-900 outline-none transition placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-										disabled={loading}
-									/>
-								</div>
-
+								<input
+									id="inviteCode"
+									name="inviteCode"
+									type="text"
+									bind:value={inviteCode}
+									placeholder="Ex: 7B60B044657F"
+									autocapitalize="characters"
+									autocorrect="off"
+									spellcheck="false"
+									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base uppercase tracking-wider text-slate-900 outline-none transition placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+									disabled={loading}
+								/>
 								<p class="text-sm leading-6 text-slate-500">
-									Use exatamente o código que foi enviado pelo professor ou pela escola.
+									Se voce ja tiver um codigo, use exatamente o que foi enviado. Se nao tiver, deixe
+									em branco e conclua depois no portal.
 								</p>
 							</div>
 
@@ -705,7 +528,7 @@
 												: 'border-amber-200 bg-amber-50 text-amber-700'
 									}`}
 								>
-									Mínimo de {MIN_PASSWORD_LENGTH} caracteres
+									Minimo de {MIN_PASSWORD_LENGTH} caracteres
 								</div>
 
 								<div
@@ -727,7 +550,9 @@
 											: 'border-sky-200 bg-sky-50 text-sky-700'
 									}`}
 								>
-									Código em maiúsculas
+									{normalizedInviteCode.length === 0
+										? 'Codigo pode ser adicionado depois'
+										: 'Codigo pronto para claim'}
 								</div>
 							</div>
 
@@ -737,24 +562,7 @@
 								class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
 							>
 								{#if loading}
-									<span class="flex items-center gap-3">
-										<svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-											<circle
-												cx="12"
-												cy="12"
-												r="10"
-												class="opacity-25"
-												stroke="currentColor"
-												stroke-width="4"
-											></circle>
-											<path
-												class="opacity-75"
-												fill="currentColor"
-												d="M22 12a10 10 0 0 0-10-10v4a6 6 0 0 1 6 6h4Z"
-											></path>
-										</svg>
-										Criando conta...
-									</span>
+									Criando conta...
 								{:else}
 									Criar conta
 								{/if}
@@ -790,7 +598,7 @@
 								onclick={handleResendVerification}
 								disabled={resending}
 							>
-								{resending ? 'Reenviando...' : 'Reenviar verificação'}
+								{resending ? 'Reenviando...' : 'Reenviar verificacao'}
 							</button>
 
 							<a
@@ -802,8 +610,8 @@
 						</div>
 
 						<p class="mt-6 text-center text-sm leading-6 text-slate-500">
-							Se o projeto exigir confirmação de e-mail, o vínculo final com o aluno será concluído
-							no login usando o código salvo durante o cadastro.
+							Depois do cadastro, o portal do aluno mostra se o acesso ja esta pronto ou se ainda
+							falta concluir o vinculo academico.
 						</p>
 					</div>
 				</div>

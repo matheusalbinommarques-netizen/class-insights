@@ -23,7 +23,7 @@
 		{
 			label: 'Importacao legada',
 			path: '/teacher/import',
-			description: 'CSV por skill, staging e validacao',
+			description: 'Fluxo auxiliar por CSV com staging',
 			match: (pathname) => pathname.startsWith('/teacher/import')
 		},
 		{
@@ -56,7 +56,7 @@
 	function getCurrentSubtitle(path: string) {
 		if (path.startsWith('/teacher/subjects')) return 'Materias formais e vinculo por turma';
 		if (path.startsWith('/teacher/assessments')) return 'Avaliacoes, rascunho e publicacao';
-		if (path.startsWith('/teacher/import')) return 'Fluxo legado por skill com staging';
+		if (path.startsWith('/teacher/import')) return 'Fluxo auxiliar legado por skill com staging';
 		if (path.startsWith('/teacher/')) return 'Area interna';
 		return 'Area interna';
 	}

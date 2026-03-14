@@ -48,6 +48,12 @@ type AssessmentResultRow = {
 	is_excused: boolean;
 };
 
+type InviteCodeRow = {
+	student_id: string;
+	code: string;
+	status: 'active' | 'claimed' | 'archived';
+};
+
 function generateInviteCode(): string {
 	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
 }
@@ -111,17 +117,26 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		};
 	}
 
-	const [{ data: studentsData }, { data: classSubjectsData }, { data: allSubjectsData }] =
-		await Promise.all([
-			locals.supabase
-				.from('students')
-				.select('id, name, invite_code, created_at')
-				.eq('class_id', ownedClass.id)
-				.order('created_at', { ascending: true }),
-			locals.supabase
-				.from('class_subjects')
-				.select(
-					`
+	const [
+		{ data: studentsData },
+		{ data: inviteCodesData },
+		{ data: classSubjectsData },
+		{ data: allSubjectsData }
+	] = await Promise.all([
+		locals.supabase
+			.from('students')
+			.select('id, name, created_at')
+			.eq('class_id', ownedClass.id)
+			.order('created_at', { ascending: true }),
+		locals.supabase
+			.from('teacher_invite_codes')
+			.select('student_id, code, status')
+			.eq('class_id', ownedClass.id)
+			.in('status', ['active', 'claimed']),
+		locals.supabase
+			.from('class_subjects')
+			.select(
+				`
 						class_id,
 						subject_id,
 						teacher_id,
@@ -131,13 +146,21 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 							code
 						)
 					`
-				)
-				.eq('class_id', ownedClass.id)
-				.eq('teacher_id', userId),
-			locals.supabase.from('subjects').select('id, name, code').order('name', { ascending: true })
-		]);
+			)
+			.eq('class_id', ownedClass.id)
+			.eq('teacher_id', userId),
+		locals.supabase.from('subjects').select('id, name, code').order('name', { ascending: true })
+	]);
 
-	const students = (studentsData ?? []) as TeacherClassStudent[];
+	const inviteCodesByStudentId = new Map(
+		((inviteCodesData ?? []) as InviteCodeRow[]).map((row) => [row.student_id, row.code])
+	);
+	const students = ((studentsData ?? []) as Array<Omit<TeacherClassStudent, 'invite_code'>>).map(
+		(student) => ({
+			...student,
+			invite_code: inviteCodesByStudentId.get(student.id) ?? null
+		})
+	);
 	const classSubjects = ((classSubjectsData ?? []) as ClassSubjectRow[])
 		.map((item) => {
 			const subject = Array.isArray(item.subjects) ? item.subjects[0] : item.subjects;
@@ -289,14 +312,33 @@ export const actions: Actions = {
 			return fail(404, { action: 'createStudent', message: 'Turma nao encontrada.' });
 		}
 
-		const { error } = await locals.supabase.from('students').insert({
-			name,
+		const inviteCode = generateInviteCode();
+		const { data: createdStudent, error: studentError } = await locals.supabase
+			.from('students')
+			.insert({
+				name,
+				class_id: ownedClass.id
+			})
+			.select('id')
+			.single<{ id: string }>();
+
+		if (studentError || !createdStudent) {
+			return fail(400, {
+				action: 'createStudent',
+				message: studentError?.message ?? 'Nao foi possivel criar o aluno.'
+			});
+		}
+
+		const { error: inviteCodeError } = await locals.supabase.from('teacher_invite_codes').insert({
+			code: inviteCode,
+			student_id: createdStudent.id,
 			class_id: ownedClass.id,
-			invite_code: generateInviteCode()
+			teacher_id: userId,
+			status: 'active'
 		});
 
-		if (error) {
-			return fail(400, { action: 'createStudent', message: error.message });
+		if (inviteCodeError) {
+			return fail(400, { action: 'createStudent', message: inviteCodeError.message });
 		}
 
 		return { success: true, action: 'createStudent', message: 'Aluno criado com sucesso.' };

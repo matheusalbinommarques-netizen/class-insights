@@ -31,6 +31,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 		prioritySubject: payload.prioritySubject,
 		academicSummary: payload.academicSummary,
 		longitudinal: payload.longitudinal,
-		subjects: payload.subjects
+		subjects: payload.subjects,
+		enrollments: payload.enrollments
 	};
 };

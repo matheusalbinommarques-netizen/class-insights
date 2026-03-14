@@ -1,15 +1,10 @@
 import { createServerClient } from '@supabase/ssr';
 import type { Handle } from '@sveltejs/kit';
 
-export const handle: Handle = async ({ event, resolve }) => {
-	const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
-	const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY;
+import { getPublicEnv } from '$lib/config/env';
 
-	if (!supabaseUrl || !supabaseAnonKey) {
-		throw new Error(
-			'Missing VITE_PUBLIC_SUPABASE_URL or VITE_PUBLIC_SUPABASE_ANON_KEY in environment variables.'
-		);
-	}
+export const handle: Handle = async ({ event, resolve }) => {
+	const { supabaseUrl, supabaseAnonKey } = getPublicEnv();
 
 	event.locals.supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
 		cookies: {

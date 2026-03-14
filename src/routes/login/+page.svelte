@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/stores';
+
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type ProfileRole = 'teacher' | 'student' | 'coord';
@@ -11,12 +12,6 @@
 		id: string;
 		role: ProfileRole;
 		display_name: string;
-	};
-
-	type ClaimStudentRpcRow = {
-		student_id: string;
-		class_id: string | null;
-		student_name: string;
 	};
 
 	type AuthUserLike = {
@@ -39,28 +34,22 @@
 		items: string[];
 	};
 
-	let email = '';
-	let password = '';
-	let errorMessage = '';
-	let loading = false;
-	let showPassword = false;
-
 	const PENDING_STUDENT_INVITE_CODE_KEY = 'pendingStudentInviteCode';
 
 	const benefits: Benefit[] = [
 		{
-			title: 'Entrada sem confusão',
-			text: 'O sistema reconhece seu perfil e envia você para a área correta.',
+			title: 'Entrada sem confusao',
+			text: 'O sistema reconhece seu perfil e envia voce para a area correta.',
 			tone: 'sky'
 		},
 		{
 			title: 'Leitura com contexto',
-			text: 'Professor, coordenação e aluno acessam a mesma base com visões diferentes.',
+			text: 'Professor, coordenacao e aluno acessam a mesma base com visoes diferentes.',
 			tone: 'emerald'
 		},
 		{
-			title: 'Produto orientado a ação',
-			text: 'Menos planilha solta. Mais acompanhamento real e histórico longitudinal.',
+			title: 'Produto orientado a acao',
+			text: 'Menos planilha solta. Mais acompanhamento real e historico longitudinal.',
 			tone: 'amber'
 		}
 	];
@@ -68,26 +57,32 @@
 	const roleCards: RoleCard[] = [
 		{
 			title: 'Professor',
-			label: 'Núcleo operacional',
-			text: 'Foco em rotina pedagógica e decisão rápida.',
+			label: 'Nucleo operacional',
+			text: 'Foco em rotina pedagogica e decisao rapida.',
 			tone: 'sky',
-			items: ['turmas e matérias', 'avaliações e notas', 'prioridades da turma']
+			items: ['turmas e materias', 'avaliacoes e notas', 'prioridades da turma']
 		},
 		{
-			title: 'Coordenação',
-			label: 'Núcleo analítico',
-			text: 'Foco em padrões e leitura institucional.',
+			title: 'Coordenacao',
+			label: 'Nucleo analitico',
+			text: 'Foco em padroes e leitura institucional.',
 			tone: 'emerald',
-			items: ['comparação entre turmas', 'visão por matéria', 'prioridades macro']
+			items: ['comparacao entre turmas', 'visao por materia', 'prioridades macro']
 		},
 		{
 			title: 'Aluno',
-			label: 'Núcleo de valor',
+			label: 'Nucleo de valor',
 			text: 'Foco em progresso claro e simples.',
 			tone: 'amber',
-			items: ['histórico recente', 'melhor e pior matéria', 'evolução ao longo do tempo']
+			items: ['historico recente', 'melhor e pior materia', 'evolucao ao longo do tempo']
 		}
 	];
+
+	let email = '';
+	let password = '';
+	let errorMessage = '';
+	let loading = false;
+	let showPassword = false;
 
 	$: redirectToParam = $page.url.searchParams.get('redirectTo');
 
@@ -121,14 +116,6 @@
 		}
 	}
 
-	function getInviteCodeFromUserMetadata(user: AuthUserLike): string | null {
-		const raw = user.user_metadata?.invite_code;
-		if (typeof raw !== 'string') return null;
-
-		const normalized = raw.trim().toUpperCase();
-		return normalized || null;
-	}
-
 	function getRoleFromUserMetadata(user: AuthUserLike): ProfileRole | null {
 		const raw = user.user_metadata?.role;
 		if (raw === 'teacher' || raw === 'student' || raw === 'coord') {
@@ -158,7 +145,7 @@
 		const fromEmail = user.email?.split('@')[0]?.trim();
 		if (fromEmail) return fromEmail;
 
-		return 'Usuário';
+		return 'Usuario';
 	}
 
 	function extractErrorMessage(error: unknown): string {
@@ -171,7 +158,7 @@
 			}
 		}
 
-		return 'Não foi possível concluir a autenticação.';
+		return 'Nao foi possivel concluir a autenticacao.';
 	}
 
 	function toneIconClasses(tone: Tone) {
@@ -192,12 +179,9 @@
 		return 'text-amber-700';
 	}
 
-	async function tryCompleteStudentLink(user: AuthUserLike) {
-		const metadataInviteCode = getInviteCodeFromUserMetadata(user);
-		const pendingInviteCode = getPendingInviteCodeFromStorage();
-		const inviteCode = metadataInviteCode ?? pendingInviteCode;
-
-		if (!inviteCode) {
+	async function tryCompleteStudentLink(inviteCode: string) {
+		const normalizedInviteCode = inviteCode.trim().toUpperCase();
+		if (!normalizedInviteCode) {
 			return {
 				attempted: false,
 				linked: false
@@ -205,14 +189,14 @@
 		}
 
 		const { data, error } = await supabase.rpc('claim_student_by_invite_code', {
-			p_invite_code: inviteCode
+			p_invite_code: normalizedInviteCode
 		});
 
 		if (error) {
 			throw error;
 		}
 
-		const rows = (data ?? []) as ClaimStudentRpcRow[];
+		const rows = (data ?? []) as Array<{ student_id: string }>;
 
 		if (rows.length > 0) {
 			clearPendingInviteCodeFromStorage();
@@ -251,7 +235,7 @@
 		const role = getRoleFromUserMetadata(user);
 		if (!role) {
 			throw new Error(
-				'Perfil não encontrado e o role do usuário não está disponível. Verifique a configuração do cadastro.'
+				'Perfil nao encontrado e o role do usuario nao esta disponivel. Verifique a configuracao do cadastro.'
 			);
 		}
 
@@ -274,7 +258,7 @@
 
 		const createdProfile = await getExistingProfile(user.id);
 		if (!createdProfile) {
-			throw new Error('Não foi possível carregar o perfil após o upsert.');
+			throw new Error('Nao foi possivel carregar o perfil apos o upsert.');
 		}
 
 		return createdProfile;
@@ -286,12 +270,12 @@
 		const trimmedEmail = email.trim().toLowerCase();
 
 		if (!trimmedEmail) {
-			errorMessage = 'E-mail é obrigatório.';
+			errorMessage = 'E-mail e obrigatorio.';
 			return;
 		}
 
 		if (!password) {
-			errorMessage = 'Senha é obrigatória.';
+			errorMessage = 'Senha e obrigatoria.';
 			return;
 		}
 
@@ -309,17 +293,15 @@
 
 			const user = signInData.user;
 			if (!user) {
-				throw new Error('Não foi possível identificar o usuário após o login.');
-			}
-
-			const metadataRole = getRoleFromUserMetadata(user);
-			const pendingInviteCode = getPendingInviteCodeFromStorage();
-
-			if (metadataRole === 'student' || pendingInviteCode) {
-				await tryCompleteStudentLink(user);
+				throw new Error('Nao foi possivel identificar o usuario apos o login.');
 			}
 
 			const profile = await ensureProfileForAuthenticatedUser(user);
+			const pendingInviteCode = getPendingInviteCodeFromStorage();
+
+			if (profile.role === 'student' && pendingInviteCode) {
+				await tryCompleteStudentLink(pendingInviteCode);
+			}
 
 			await invalidateAll();
 
@@ -335,17 +317,17 @@
 		}
 	}
 
-	async function handleSubmit(event: SubmitEvent) {
+	function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		await handleLogin();
+		void handleLogin();
 	}
 </script>
 
 <svelte:head>
-	<title>Login • Class Insights</title>
+	<title>Login - Class Insights</title>
 	<meta
 		name="description"
-		content="Entre no Class Insights para acessar sua área de professor, coordenação ou aluno."
+		content="Entre no Class Insights para acessar sua area de professor, coordenacao ou aluno."
 	/>
 </svelte:head>
 
@@ -396,16 +378,14 @@
 					<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
 						Acesso inteligente
 					</p>
-
 					<h1
 						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
 					>
 						Entre e continue de onde parou.
 					</h1>
-
 					<p class="mt-5 text-base leading-8 text-slate-600">
-						O Class Insights identifica seu perfil e leva você direto para a experiência certa:
-						professor, coordenação ou aluno.
+						O Class Insights identifica seu perfil e leva voce direto para a experiencia certa:
+						professor, coordenacao ou aluno.
 					</p>
 				</div>
 
@@ -473,14 +453,14 @@
 								Como o produto se organiza
 							</p>
 							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-								Um sistema, três leituras
+								Um sistema, tres leituras
 							</h2>
 						</div>
 
 						<div
 							class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600 sm:block"
 						>
-							histórico longitudinal
+							historico longitudinal
 						</div>
 					</div>
 
@@ -509,25 +489,13 @@
 						{/each}
 					</div>
 				</div>
-
-				<div class="mt-6 flex flex-wrap gap-3 text-sm text-slate-600">
-					<div class="rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-						Importação segura
-					</div>
-					<div class="rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-						BI prescritivo
-					</div>
-					<div class="rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm">
-						Histórico longitudinal
-					</div>
-				</div>
 			</section>
 
 			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
 				<div class="w-full max-w-md">
 					<div class="mb-8 flex items-center justify-between lg:hidden">
 						<a href={resolve('/')} class="text-sm font-bold text-slate-600 hover:text-slate-900">
-							← Voltar para home
+							Voltar para home
 						</a>
 					</div>
 
@@ -540,8 +508,8 @@
 								Bem-vindo de volta
 							</h2>
 							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Entre com seu e-mail para acessar sua área. O sistema direciona você automaticamente
-								para professor, coordenação ou aluno.
+								Entre com seu e-mail para acessar sua area. O sistema direciona voce automaticamente
+								para professor, coordenacao ou aluno.
 							</p>
 						</div>
 
@@ -549,48 +517,28 @@
 							<div
 								class="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
 							>
-								Você será redirecionado para a página solicitada após o login.
+								Voce sera redirecionado para a pagina solicitada apos o login.
 							</div>
 						{/if}
 
 						<form class="space-y-5" onsubmit={handleSubmit}>
 							<div class="space-y-2">
 								<label for="email" class="block text-sm font-bold text-slate-700">
-									Usuário ou e-mail
+									Usuario ou e-mail
 								</label>
 
-								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1"
-											/>
-										</svg>
-									</div>
-
-									<input
-										id="email"
-										name="email"
-										type="email"
-										bind:value={email}
-										placeholder="voce@email.com"
-										autocomplete="email"
-										autocapitalize="off"
-										autocorrect="off"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-										disabled={loading}
-									/>
-								</div>
+								<input
+									id="email"
+									name="email"
+									type="email"
+									bind:value={email}
+									placeholder="voce@email.com"
+									autocomplete="email"
+									autocapitalize="off"
+									autocorrect="off"
+									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+									disabled={loading}
+								/>
 							</div>
 
 							<div class="space-y-2">
@@ -608,32 +556,14 @@
 								</div>
 
 								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
-											/>
-										</svg>
-									</div>
-
 									<input
 										id="password"
 										name="password"
 										type={showPassword ? 'text' : 'password'}
 										bind:value={password}
-										placeholder="••••••••"
+										placeholder="........"
 										autocomplete="current-password"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
 										disabled={loading}
 									/>
 
@@ -701,7 +631,7 @@
 							>
 								<p class="text-sm font-black text-slate-900">Cadastro de professor</p>
 								<p class="mt-1 text-sm leading-6 text-slate-600">
-									Criar acesso para turmas, avaliações e acompanhamento pedagógico.
+									Criar acesso para turmas, avaliacoes e acompanhamento pedagogico.
 								</p>
 							</a>
 
@@ -711,13 +641,13 @@
 							>
 								<p class="text-sm font-black text-slate-900">Cadastro de aluno</p>
 								<p class="mt-1 text-sm leading-6 text-slate-600">
-									Entrar com seu vínculo e acompanhar progresso e histórico.
+									Entrar com ou sem vinculo inicial e acompanhar progresso e historico.
 								</p>
 							</a>
 						</div>
 
 						<p class="mt-6 text-center text-sm leading-6 text-slate-500">
-							Seu perfil define automaticamente a área de destino após o login.
+							Seu perfil define automaticamente a area de destino apos o login.
 						</p>
 					</div>
 				</div>

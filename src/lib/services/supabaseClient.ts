@@ -1,6 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr';
 
-export const supabase = createBrowserClient(
-	import.meta.env.VITE_PUBLIC_SUPABASE_URL,
-	import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY
-);
+import { getPublicEnv } from '$lib/config/env';
+
+const { supabaseUrl, supabaseAnonKey } = getPublicEnv();
+
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);

@@ -83,4 +83,26 @@ src/
 ## Documentos novos da V1
 
 - `docs/adr/0002-modelo-academico-v1.md`: contrato do dominio alvo da V1
+- `docs/adr/0003-vinculos-e-onboarding-v1.md`: separacao entre identidade, entidade academica e vinculos
+- `docs/adr/0004-import-legado-v1.md`: papel do import legado como fluxo auxiliar na V1
 - `docs/backlog-tecnico-v1.md`: backlog tecnico executavel por blocos
+
+## Modelo oficial da V1
+
+O modelo oficial do produto na V1 passa por:
+
+- `subject`
+- `assessment`
+- `assessment_result`
+
+Esse e o caminho principal de leitura e evolucao para professor, coordenacao e aluno.
+
+## Papel do import legado
+
+O fluxo de `/teacher/import` continua existindo para reduzir atrito operacional de quem chega com CSV, mas ele deve ser entendido como:
+
+- auxiliar
+- legado
+- fora do caminho principal do dominio
+
+Nenhuma tela central nova deve depender diretamente de `student_skill_scores`.

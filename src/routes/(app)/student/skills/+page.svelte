@@ -16,6 +16,19 @@
 		latestAssessmentDate: string | null;
 	};
 
+	type EnrollmentItem = {
+		enrollmentId: string;
+		studentId: string;
+		classId: string;
+		teacherId: string;
+		status: 'pending' | 'active' | 'archived';
+		joinedAt: string | null;
+		leftAt: string | null;
+		studentName: string;
+		className: string;
+		isCurrent: boolean;
+	};
+
 	export let data: {
 		authUser: { id: string; email: string | null };
 		subjectsPortal: { status: 'pending-link' | 'ready'; message: string };
@@ -34,6 +47,7 @@
 		subjects: SubjectItem[];
 		academicSummary: { title: string; description: string };
 		longitudinal: { recent_trend: Trend } | null;
+		enrollments: EnrollmentItem[];
 	};
 
 	type FilterKey = 'all' | 'good' | 'attention' | 'pending';
@@ -67,6 +81,11 @@
 		const date = new Date(`${value}T00:00:00`);
 		if (Number.isNaN(date.getTime())) return value;
 		return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' }).format(date);
+	};
+	const enrollmentStatusLabel = (status: EnrollmentItem['status']) => {
+		if (status === 'active') return 'Ativo';
+		if (status === 'pending') return 'Pendente';
+		return 'Arquivado';
 	};
 
 	$: filteredSubjects =
@@ -164,6 +183,30 @@
 					</div>
 				</div>
 			{/if}
+		</div>
+	</section>
+
+	<section class="panel">
+		<div class="panel-head">
+			<div>
+				<div class="section-kicker">Vinculos</div>
+				<h2>Turmas ligadas a esta conta</h2>
+			</div>
+			<p>As materias abaixo usam a turma ativa, mas o portal ja reconhece mais de um vinculo.</p>
+		</div>
+
+		<div class="enrollment-grid">
+			{#each data.enrollments as enrollment (enrollment.enrollmentId)}
+				<article class={`enrollment-card ${enrollment.isCurrent ? 'current' : ''}`}>
+					<div>
+						<h3>{enrollment.className}</h3>
+						<p>{enrollment.studentName}</p>
+					</div>
+					<span class={`status-badge ${enrollment.status}`}>
+						{enrollmentStatusLabel(enrollment.status)}
+					</span>
+				</article>
+			{/each}
 		</div>
 	</section>
 
@@ -435,7 +478,8 @@
 	}
 	.summary-grid,
 	.subjects-grid,
-	.insight-grid {
+	.insight-grid,
+	.enrollment-grid {
 		display: grid;
 		gap: 1rem;
 		margin-bottom: 1rem;
@@ -446,12 +490,16 @@
 	.insight-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
+	.enrollment-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
 	.subjects-grid {
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 	}
 	.metric-card,
 	.insight-card,
-	.subject-card {
+	.subject-card,
+	.enrollment-card {
 		padding: 1rem;
 	}
 	.metric-card strong {
@@ -497,6 +545,28 @@
 	}
 	.insight-card p {
 		margin: 0.45rem 0 0;
+		font-size: 0.92rem;
+	}
+	.enrollment-card {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.8rem;
+		border-radius: 1.1rem;
+		border: 1px solid rgba(148, 163, 184, 0.18);
+		background: rgba(248, 250, 252, 0.9);
+	}
+	.enrollment-card.current {
+		background: rgba(37, 99, 235, 0.08);
+		border-color: rgba(37, 99, 235, 0.2);
+	}
+	.enrollment-card h3 {
+		margin: 0;
+		font-size: 1rem;
+		color: #0f172a;
+	}
+	.enrollment-card p {
+		margin: 0.35rem 0 0;
 		font-size: 0.92rem;
 	}
 	.filters {
@@ -555,6 +625,10 @@
 	}
 	.status-badge.pending {
 		background: rgba(148, 163, 184, 0.18);
+		color: #475569;
+	}
+	.status-badge.archived {
+		background: rgba(226, 232, 240, 0.9);
 		color: #475569;
 	}
 	.meta-row {
@@ -659,7 +733,8 @@
 	@media (max-width: 980px) {
 		.hero,
 		.summary-grid,
-		.insight-grid {
+		.insight-grid,
+		.enrollment-grid {
 			grid-template-columns: 1fr;
 		}
 		.panel-head {

@@ -1,6 +1,6 @@
 # Backlog tecnico V1 priorizado
 
-Atualizado em 2026-03-14 para refletir o progresso real executado no repo apos a rodada de aluno, coordenacao, teacher e hardening inicial.
+Atualizado em 2026-03-14 para refletir a ordem recomendada de execucao antes do piloto controlado.
 
 ## Regra central da V1
 
@@ -10,264 +10,316 @@ Atualizado em 2026-03-14 para refletir o progresso real executado no repo apos a
 - apenas resultado publicado entra em leitura de professor, coordenacao e aluno
 - `skill` continua existindo apenas como legado auxiliar
 
-## O que ja esta consolidado
+## Ordem executiva
 
-Estas frentes ja existem e nao sao mais o centro do backlog:
+1. PR 0 - quick wins antes do bloco grande
+2. PR 1 - onboarding e vinculos como verdade nova do dominio
+3. PR 2 - decidir de vez o papel da importacao legada
+4. PR 3 - hardening real para piloto
+5. PR 4 - exportacao minima e baseline de piloto
+6. PR 5 - checagem final contra DoD e piloto controlado
 
-- autenticacao com Supabase
-- separacao por perfil `teacher`, `student` e `coord`
-- guards por role
-- criacao de turma, materia e avaliacao
-- lancamento por avaliacao no modelo novo
-- publicacao por avaliacao com bloqueio pos-publicacao
-- fluxo oficial de correcao por novo rascunho apos publicacao
-- dashboard teacher e tela da turma no fluxo novo
-- portal do aluno lendo dados reais publicados
-- contrato longitudinal compartilhado entre `teacher` e `student`
-- primeira camada de analytics teacher orientados a decisao
-- ergonomia principal do fluxo teacher `turma -> materia -> avaliacao`
-- coordenacao com entrada propria em `/coord`
-- vinculo `coord -> class` por codigo de turma
-- dashboard institucional inicial com escopo por turma
-- drill-down institucional da coordenacao para o perfil longitudinal do aluno
-- import legado funcionando como fluxo auxiliar
-
-## Status executivo
-
-### Feito nesta rodada
-
-1. fechar o contrato do dado publicado
-2. transformar longitudinal em contrato central compartilhado
-3. iniciar a tomada de decisao do professor em cima desse contrato
-4. colocar coordenacao para funcionar no modelo novo basico
-5. consolidar a experiencia central do aluno no contrato longitudinal
-6. abrir o drill-down institucional da coordenacao para o aluno
-7. refinar analytics e ergonomia principal do teacher
-8. iniciar hardening com testes server, build e limpeza parcial de lint
-
-### Agora e o foco real
-
-1. atacar onboarding e vinculos novos
-2. decidir o lugar definitivo do legado de importacao
-3. endurecer o produto para piloto ate fechar o DoD real
-
-## P0
-
-### 1. Experiencia central do aluno em volta do longitudinal
+## PR 0 - quick wins antes do bloco grande
 
 Status:
-`feito`
 
-O que ja foi feito:
+`concluido`
 
-- existe contrato server unico do perfil longitudinal
-- `teacher` e `student` ja consomem a mesma base de leitura
-- timeline, gaps, tendencia e resumo por materia ja estao unificados no backend
-- navegacao `Inicio -> Trajetoria -> Materias` foi consolidada
-- home, trajetoria e materias agora leem o mesmo contrato longitudinal
-- narrativa visual de melhora, queda, estabilidade e prioridades por materia foi reforcada
-- estados de `pending-link` e leitura por materia foram alinhados ao fluxo real do portal
+Faz primeiro duas correcoes pequenas porque elas limpam ruido e evitam retrabalho:
 
-O que falta:
+- trocar o `lang="en"` de `src/app.html` para `pt-BR`
+- criar uma camada unica de leitura e validacao de env para nao depender de leitura solta em `src/hooks.server.ts`
 
-- manter consistencia visual e de copy conforme o portal evoluir
-- cobrir o fluxo do aluno em automacao no hardening
+Hoje o HTML esta em ingles e o servidor quebra direto se faltar `VITE_PUBLIC_SUPABASE_URL` ou `VITE_PUBLIC_SUPABASE_ANON_KEY`. Isso funciona, mas ainda esta cru para piloto.
 
-Criterio de pronto:
+Arquivos alvo:
 
-- o aluno entende rapidamente onde esta bem, onde caiu e o que foi publicado
-- a trajetoria vira o centro do portal
-- a leitura por materia fica coerente com a leitura longitudinal
+- `src/app.html`
+- `src/lib/config/env.ts`
+- `src/hooks.server.ts`
+- `src/lib/services/supabaseClient.ts` se for necessario centralizar o bootstrap do cliente
 
-## P1
+Objetivo:
 
-### 2. Completar analytics teacher como fluxo de decisao
+- ter um unico ponto de verdade para env
+- deixar SSR e browser mais previsiveis
 
-Status:
-`feito no nucleo`
+Progresso ja executado:
 
-O que ja foi feito:
+- `lang="pt-BR"` aplicado em `src/app.html`
+- camada unica de env criada em `src/lib/config/env.ts` e `src/lib/config/env.server.ts`
+- `src/hooks.server.ts`, `src/lib/services/supabaseClient.ts` e `src/lib/server/supabase-admin.ts` passaram a usar a nova camada centralizada
+- `npm run check`, `npm run lint` e `npm run build` passaram depois da troca
 
-- dashboard teacher agora separa sinal operacional e pedagogico
-- filas de acao ja apontam para turma, avaliacao ou aluno
-- risco individual, gap contra a turma e queda recente por materia ja entram no dashboard
-- thresholds e sinais principais foram consolidados em helpers compartilhados
-- comparativos por materia dentro da turma passaram a aparecer no dashboard
-- teacher agora consegue sair de insight para turma, aluno e avaliacao com menos friccao
-
-O que falta:
-
-- revisar consistencia fina dos pontos de entrada restantes durante o hardening
-- cobrir com mais testes os sinais criticos do dashboard
-
-Criterio de pronto:
-
-- professor entende o que fazer agora
-- cada insight aponta para o proximo drill-down correto
-- comparativos por materia ficam consistentes
-
-### 3. Refinar a ergonomia do fluxo operacional do professor
+## PR 1 - onboarding e vinculos como verdade nova do dominio
 
 Status:
-`em andamento avancado`
 
-O que ja foi feito:
-
-- fluxo principal turma -> materia -> avaliacao -> resultado -> publicacao funciona
-- dashboard e tela de avaliacao ja ajudam com estados operacionais relevantes
-- a tela da turma ganhou proximo passo operacional e atalhos diretos
-- materias sem avaliacao passaram a empurrar o professor para o CTA correto
-- edge cases como turma sem alunos e materia sem avaliacao receberam tratamento melhor
-- o caminho `turma -> materia -> avaliacao` foi encurtado
-
-O que falta:
-
-- fechar detalhes de operacao em lote no lancamento da avaliacao
-- revisar acabamentos de UX e lint nas telas teacher ainda antigas
-- cobrir melhor os fluxos principais em testes manuais e automatizados
-
-Criterio de pronto:
-
-- um professor consegue sair de turma vazia ate avaliacao publicada sem ambiguidade
-- o detalhe da avaliacao suporta lancamento rapido de turma inteira
-
-## P2
-
-### 4. Completar coordenacao no modelo novo
-
-Status:
 `em andamento`
 
-O que ja foi feito:
+Esse e o bloco mais importante. Os docs do repo ja deixam claro que a V1 nao deve mais depender da ideia de aluno preso a um unico professor, e que onboarding precisa suportar:
 
-- existe modelo explicito de vinculo `coord -> class`
-- existe codigo de turma para coordenacao
-- RLS de leitura institucional foi fechada para escopo por turma administrada
-- `/coord` agora carrega dashboard institucional real
-- coordenacao ja le turmas, materias, professores e alunos apenas no proprio escopo
-- a tela do aluno ja pode ser aberta a partir do dashboard institucional
-- o drill-down institucional reaproveita o mesmo contrato longitudinal de `teacher` e `student`
+- conta sem vinculo inicial
+- vinculo posterior
+- multi-vinculo
 
-O que falta:
+O ADR do modelo academico tambem ja define que identidade da conta nao pode se confundir com vinculo academico.
 
-- aprofundar as queries institucionais para decisao, nao apenas leitura macro
-- evoluir filtros e comparativos institucionais por turma, materia e professor
+### Diretriz de implementacao
 
-Criterio de pronto:
+Fazer de forma aditiva, nao destrutiva. Em vez de reinventar `profiles`, `students` e tudo de uma vez, criar uma camada nova de vinculo pedagogico como fonte futura de verdade.
 
-- coordenacao enxerga apenas seu escopo
-- existe leitura macro de turmas, materias, professores e alunos
-- a tela do aluno pode ser aberta a partir do dashboard institucional
+### O que implementar
 
-### 5. Modelo novo de vinculo e onboarding
+1. Criar um novo ADR, por exemplo `docs/adr/0003-vinculos-e-onboarding-v1.md`, formalizando:
+   - `profiles` = identidade e autenticacao
+   - `students` = entidade academica do aluno
+   - `enrollments` = vinculo pedagogico do aluno com turma e professor
+   - vinculo de coordenacao continua separado do vinculo pedagogico
+2. Criar uma migration nova para introduzir `enrollments` como centro do vinculo, com no minimo:
+   - `id`
+   - `student_id`
+   - `class_id`
+   - `teacher_id`
+   - `status` (`pending`, `active`, `archived`)
+   - `claimed_by_user_id` ou equivalente
+   - `joined_at`
+   - `left_at`
+3. Criar uma tabela de convites ou codigos, como `teacher_invite_codes` ou `class_invite_codes`, para suportar professor distribuindo codigo e aluno entrando depois.
+4. Fazer backfill minimo da estrutura atual para a nova:
+   - o que hoje estiver em `students.class_id` e `students.user_id` vira um `enrollment` inicial
+   - esse backfill e a ponte para nao quebrar o fluxo atual de `teacher` e `student`
+5. Criar ou ajustar RPCs e RLS para:
+   - `claim invite code`
+   - leitura de "meus vinculos"
+   - definicao de vinculo ativo, se a UX precisar destacar uma turma principal
+
+### Progresso ja executado
+
+- ADR criado em `docs/adr/0003-vinculos-e-onboarding-v1.md`
+- migration aditiva criada em `supabase/migrations/20260314210000_student_enrollments_and_invite_codes.sql`
+- `enrollments` e `teacher_invite_codes` modelados com backfill, trigger de sync, RPC de claim e RLS inicial
+- migration aplicada no banco remoto com `npx supabase db push`
+- cadastro de aluno atualizado para permitir conta sem codigo em `src/routes/register/student/+page.svelte`
+- portal do aluno atualizado para aceitar claim posterior do codigo em `src/routes/(app)/student/+page.server.ts` e `src/routes/(app)/student/+page.svelte`
+- leitura longitudinal do aluno passou a preferir `enrollments` em `src/lib/server/student-longitudinal-profile.ts`
+- leituras teacher de convites passaram a usar `teacher_invite_codes` em `src/routes/(app)/teacher/[classId]/+page.server.ts` e `src/routes/(app)/teacher/assessments/[assessmentId]/+page.server.ts`
+- fluxo de login do aluno foi ajustado em `src/routes/login/+page.svelte` para usar codigo pendente em storage e nao depender de metadata para concluir claim
+- criacao de aluno pelo professor passou a gravar o convite diretamente em `teacher_invite_codes`, sem usar `students.invite_code` como caminho principal de escrita
+- portal do aluno agora lista os vinculos encontrados na conta e destaca a turma ativa, deixando o multi-vinculo visivel na UX
+- rotas `student/journey` e `student/skills` agora tambem recebem e exibem os vinculos da conta, mantendo a leitura de multi-vinculo consistente nas telas principais do aluno
+- leitura longitudinal principal removeu `students.invite_code` do caminho `student-self`, reforcando `enrollments` como fonte principal
+- `npm run check`, `npm run lint` e `npm run build` seguem passando com as mudancas atuais
+
+### O que ainda falta neste PR
+
+- revisar e remover os pontos restantes de compatibilidade que ainda carregam `students.invite_code` fora da camada legada
+- aprofundar a escolha explicita de vinculo ativo se a UX passar a permitir alternancia entre turmas
+- revisar `src/lib/server/auth.ts` e `src/routes/(app)/student/+layout.server.ts` se surgirem needs de guard mais especifico para multi-vinculo
+
+### Arquivos provaveis depois da migration
+
+- `src/routes/register/student/+page.svelte`
+- `src/routes/login/+page.svelte`
+- `src/lib/server/auth.ts`
+- `src/routes/(app)/student/+layout.server.ts`
+- `src/routes/(app)/student/+page.server.ts`
+- `src/lib/server/student-portal.ts`
+- `src/lib/server/student-longitudinal-profile.ts`
+
+### Criterio de pronto
+
+Esse PR so fecha quando:
+
+- aluno consegue criar conta sem codigo
+- aluno consegue entrar no portal com estado `pending-link`
+- aluno consegue adicionar vinculo depois
+- aluno consegue manter mais de um vinculo sem quebrar leitura
+- teacher continua convidando sem depender de gambiarra em metadata
+
+## PR 2 - decidir de vez o papel da importacao legada
 
 Status:
-`nao iniciado`
 
-O que falta:
+`quase concluido`
 
-- aluno poder existir sem vinculo academico inicial
-- aluno poder acumular mais de um vinculo de professor
-- professor poder convidar alunos sem prender a conta a um unico fluxo
-- separar identidade da conta, vinculo institucional e vinculo pedagogico
+O backlog e os docs ja sao claros em dois pontos:
 
-Criterio de pronto:
+- falta decidir se o import legado e transicao, apoio permanente ou futura migracao para `assessment_results`
+- falta impedir que `skill` volte para o centro da V1
 
-- onboarding suporta estados sem vinculo e vinculacao posterior
-- o dominio nao depende mais de suposicoes de vinculo unico
+Pelo modelo academico novo, a unidade operacional central e `subject` / `assessment` / `assessment_result`, e `skill` fica como legado auxiliar.
 
-## P3
+### Recomendacao
 
-### 6. Decidir o destino da importacao legada
+Na V1, o import fica como ponte operacional, nao como fluxo principal nem como fonte conceitual do produto. Ele existe para reduzir atrito de professor que vem de CSV, mas o happy path do sistema passa pelo modelo novo.
+
+### O que fazer
+
+1. Criar um ADR curto, por exemplo `docs/adr/0004-import-legado-v1.md`.
+2. Atualizar `README.md` e este backlog deixando claro:
+   - import e auxiliar
+   - nao e o caminho principal
+   - nenhuma tela central nova deve depender de `student_skill_scores`
+3. Ajustar a UX de `/teacher/import` para deixar isso visualmente claro:
+   - badge "Fluxo auxiliar/legado"
+   - copy dizendo quando usar
+   - CTA principal do professor apontando para materia e avaliacao, nao para import
+4. Criar uma regra de engenharia:
+   - nenhuma pagina nova de `teacher`, `coord` ou `student` deve ler diretamente o legado
+   - se ainda precisar ler, isso deve ficar encapsulado em server/service com comentario de transicao
+
+### Progresso ja executado
+
+- ADR criado em `docs/adr/0004-import-legado-v1.md`
+- `README.md` atualizado para deixar explicito que o modelo oficial da V1 e `subject` / `assessment` / `assessment_result`
+- `README.md` tambem passou a registrar que `/teacher/import` e fluxo auxiliar e legado
+- UX de `src/routes/(app)/teacher/import/+page.svelte` foi endurecida com badge de fluxo auxiliar e CTAs principais apontando para materias e avaliacoes
+- dashboard teacher em `src/routes/(app)/teacher/+page.svelte` passou a tratar import como apoio operacional, com CTA rebaixado para `Import legado` e copy alinhada ao fluxo principal de materias e avaliacoes
+- navegacao teacher em `src/routes/(app)/teacher/+layout.svelte` tambem passou a descrever o import como fluxo auxiliar legado
+- `npm run check`, `npm run lint` e `npm run build` passaram apos as mudancas desta rodada
+
+### O que ainda falta neste PR
+
+- reforcar a regra de engenharia sobre encapsulamento do legado onde ainda houver dependencia residual de `student_skill_scores`
+
+### Criterio de pronto
+
+Esse bloco fecha quando alguem novo entrando no projeto entende, sem duvida, que:
+
+- o modelo oficial e o novo
+- o legado existe
+- o legado nao manda mais no dominio
+
+## PR 3 - hardening real para piloto
 
 Status:
-`nao iniciado de produto`
 
-O que falta:
+`em andamento`
 
-- decidir se o import fica como transicao, apoio permanente ou migracao futura para `assessment_results`
-- manter UX e documentacao deixando claro que nao e fluxo principal
-- impedir regressao que recoloque `skill` no centro da V1
+Aqui o foco e fechar o gap entre "funciona" e "done". O repo ja indica progresso recente em `test`, `build` e `check`, mas ainda faltam os itens que o DoD cobra para piloto.
 
-Criterio de pronto:
+### Ordem interna
 
-- o lugar do import dentro da V1 esta claro
-- nenhuma tela central volta a depender do modelo legado
+1. Zerar `lint`.
+2. Ampliar testes automatizados por camada:
+   - unitarios em `src/lib/server/*.test.ts`
+   - integracao por perfil para `teacher`, `student` e `coord`
+   - smoke E2E do fluxo principal
+3. Fechar observabilidade e erros:
+   - helper central de erro
+   - logs com contexto de rota, usuario e acao
+   - mensagens menos ambiguas
+   - IDs ou codigos de erro para troubleshooting
+4. Revisar acessibilidade e responsividade:
+   - overflow horizontal
+   - estados vazios, loading e erro nas rotas principais
+   - teclado e foco em formularios criticos
+   - contraste e hierarquia no portal do aluno
+   - densidade e usabilidade desktop-first no teacher
+5. Revisar performance e paginacao onde necessario
 
-### 7. Hardening para piloto
+### Progresso ja executado
 
-Status:
-`em andamento inicial`
+- baseline atual validada com `npm run check`, `npm run lint`, `npm test` e `npm run build`
+- suite atual de testes passou com 23 testes verdes, cobrindo validacoes de assessments, scoring, subjects, publication helpers, longitudinal e teacher analytics
+- novos testes adicionados em `src/lib/server/auth.test.ts` e `src/lib/server/publication.test.ts`
+- suite atual passou a 30 testes verdes, agora cobrindo tambem helpers de auth/session e bordas de publication
+- novos testes adicionados em `src/lib/server/teacher.test.ts` para ownership de turma, aluno, avaliacao e vinculo de materia no escopo do professor
+- suite atual passou a 34 testes verdes, elevando a cobertura dos guards/helpers server-side mais proximos do fluxo teacher
+- helpers puros do portal do aluno foram extraidos para `src/lib/server/student-portal.helpers.ts`, reduzindo acoplamento e melhorando a testabilidade do fluxo student
+- novos testes adicionados em `src/lib/server/student-portal.test.ts` para estado `pending-link` e marcacao correta do vinculo ativo no conjunto de enrollments
+- suite atual passou a 36 testes verdes, ampliando a cobertura do portal do aluno no modelo novo de onboarding e multi-vinculo
 
-O que ja foi feito:
+### Fluxos minimos em automacao
 
-- testes unitarios server foram ampliados para analytics teacher
-- `npm test`, `npm run build` e `npm run check` ja passaram nas rodadas recentes
-- formatacao do repo foi estabilizada no baseline atual
-- parte relevante do lint nas telas novas de student, coord e teacher ja foi limpa
+Teacher:
 
-O que falta:
+- cria turma
+- cria ou vincula materia
+- cria avaliacao
+- lanca notas
+- publica
 
-- ampliar testes unitarios
-- criar testes de integracao por perfil
-- criar smoke tests ponta a ponta
-- melhorar observabilidade
-- revisar acessibilidade
-- revisar performance e paginacao
-- fechar exportacao minima necessaria
-- alinhar o repo ao proprio DoD, incluindo `lint`
+Student:
 
-Criterio de pronto:
+- entra com ou sem vinculo
+- ve home
+- ve trajetoria
+- ve materias e publicado
 
-- fluxo principal passa em automacao
+Coord:
+
+- entra no `/coord`
+- ve apenas escopo permitido
+- abre drill-down do aluno
+
+### Criterio de pronto
+
+- `npm run check`, `npm run lint`, `npm test` e `npm run build` passam
+- fluxo principal por persona passa em automacao
 - erros principais sao observaveis
 - app aguenta piloto sem verificacao manual constante
 
-## Ordem pratica recomendada a partir de agora
+## PR 4 - exportacao minima e baseline de piloto
 
-### Etapa 1
+O backlog ja fala em "fechar exportacao minima necessaria", mas ainda sem definir exatamente qual. Para manter a V1 enxuta, a recomendacao e limitar a dois exports uteis:
 
-1. fechar o bloco de onboarding e vinculos
-2. modelar aluno sem vinculo inicial
-3. abrir caminho para multi-vinculo com professor
+- export de resultados publicados por avaliacao e turma
+- export resumido longitudinal por aluno e materia
 
-### Etapa 2
+### Diretriz
 
-1. decidir o destino da importacao legada
-2. ajustar UX e documentacao para deixar claro que o import nao e o fluxo principal
-3. impedir regressao de dependencia no modelo legado
+Implementar como server action ou endpoint protegido, perto do nucleo `teacher` e `coord`, sem misturar com legado.
 
-### Etapa 3
+### Criterio de pronto
 
-1. zerar `lint`
-2. cobrir fluxos principais com integracao e smoke tests
-3. atacar observabilidade, acessibilidade e performance
+- existe export util para operacao do professor e da coordenacao
+- o export usa o modelo novo
+- o export nao reabre dependencia conceitual do legado
 
-### Etapa 4
+## PR 5 - checagem final contra DoD e piloto controlado
 
-1. fechar exportacao minima necessaria
-2. validar conformidade final com DoD
-3. preparar baseline de piloto sem dependencia de verificacao manual constante
+Esse bloco nao e feature; e fechamento. O gate final precisa ser tratado como criterio real de merge e deploy.
+
+### Checklist de piloto
+
+Tecnico:
+
+- `npm run check`
+- `npm run lint`
+- `npm test`
+- `npm run build`
+
+Produto:
+
+- fluxos principais por persona validados
+
+Seguranca:
+
+- guards revisados
+- RLS revisada em tudo que mudou
+
+### Criterio de pronto
+
+- repo passa no checklist tecnico
+- fluxos principais por persona foram validados
+- nao existe quebra evidente de auth, role, guard ou RLS
+- documentacao relevante foi atualizada
 
 ## Resumo rapido
 
-### Ja entregue
+### Primeiro
 
-- correcao pos-publicacao com novo rascunho
-- contrato longitudinal compartilhado entre teacher e student
-- teacher dashboard com sinais operacionais e pedagogicos
-- coordenacao por codigo de turma com escopo real
-- portal do aluno consolidado em home, trajetoria e materias
-- drill-down institucional da coordenacao para o aluno
-- ergonomia principal do fluxo teacher
-- hardening inicial com testes server e build/check consistentes
+- PR 0: `lang`, env e bootstrap mais robusto
 
-### Proximo bloco
+### Bloco principal
 
-- onboarding e vinculos multi-escopo
-- definicao do papel da importacao legada
-- hardening para piloto ate fechar o DoD tecnico
+- PR 1: novo modelo de vinculo e onboarding com migration aditiva, RLS, RPC e ajustes de login/register/student
+- PR 2: decisao formal do legado com UX e documentacao do import
 
-### Depois
+### Fechamento
 
-- observabilidade, acessibilidade, performance e exportacao minima
+- PR 3: lint zero, integracao, smoke, observabilidade, acessibilidade e performance
+- PR 4: exportacao minima
+- PR 5: validacao final contra DoD e piloto controlado

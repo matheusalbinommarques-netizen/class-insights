@@ -1,17 +1,18 @@
 import type { StudentLongitudinalSummary } from '$lib/types/academic';
-import { loadStudentLongitudinalProfile } from './student-longitudinal-profile';
+import { loadStudentLongitudinalProfile } from './student-longitudinal-profile.ts';
+import {
+	buildPendingStudentPortalPayload,
+	mapStudentPortalEnrollments,
+	type StudentPortalEnrollment,
+	type StudentPortalParentData
+} from './student-portal.helpers.ts';
 
-type ParentData = {
-	authUser: {
-		id: string;
-		email: string | null;
-	};
-	profile: {
-		id: string;
-		role: 'teacher' | 'student' | 'coord';
-		display_name: string;
-	};
-};
+export {
+	buildPendingStudentPortalPayload,
+	mapStudentPortalEnrollments,
+	type StudentPortalEnrollment,
+	type StudentPortalParentData
+} from './student-portal.helpers.ts';
 
 export type StudentSubjectStatus = 'good' | 'attention' | 'pending';
 
@@ -29,7 +30,7 @@ export type StudentPortalSubject = {
 };
 
 export type StudentPortalPayload = {
-	authUser: ParentData['authUser'];
+	authUser: StudentPortalParentData['authUser'];
 	portal: {
 		status: 'pending-link' | 'ready';
 		message: string;
@@ -55,47 +56,37 @@ export type StudentPortalPayload = {
 		description: string;
 	};
 	longitudinal: StudentLongitudinalSummary | null;
+	enrollments: StudentPortalEnrollment[];
 };
 
-function buildPendingPayload(
-	parentData: ParentData,
-	message: string,
-	title: string,
-	description: string
-): StudentPortalPayload {
-	return {
-		authUser: parentData.authUser,
-		portal: {
-			status: 'pending-link',
-			message
-		},
-		student: {
-			displayName: parentData.profile.display_name,
-			className: null
-		},
-		summary: {
-			totalSubjects: 0,
-			subjectsWithScore: 0,
-			goodSubjects: 0,
-			attentionSubjects: 0,
-			pendingSubjects: 0,
-			generalAverage: null,
-			generalPercent: null
-		},
-		bestSubject: null,
-		prioritySubject: null,
-		subjects: [],
-		academicSummary: {
-			title,
-			description
-		},
-		longitudinal: null
-	};
+type EnrollmentRpcRow = {
+	enrollment_id: string;
+	student_id: string;
+	class_id: string;
+	teacher_id: string;
+	status: 'pending' | 'active' | 'archived';
+	joined_at: string | null;
+	left_at: string | null;
+	student_name: string;
+	class_name: string;
+};
+
+async function loadStudentEnrollments(
+	locals: App.Locals,
+	currentClassId: string | null
+): Promise<StudentPortalEnrollment[]> {
+	const { data, error } = await locals.supabase.rpc('get_my_student_enrollments');
+
+	if (error) {
+		return [];
+	}
+
+	return mapStudentPortalEnrollments((data ?? []) as EnrollmentRpcRow[], currentClassId);
 }
 
 export async function loadStudentPortalData(
 	locals: App.Locals,
-	parentData: ParentData
+	parentData: StudentPortalParentData
 ): Promise<StudentPortalPayload> {
 	const authUser = parentData.authUser;
 	const result = await loadStudentLongitudinalProfile(locals, {
@@ -105,10 +96,18 @@ export async function loadStudentPortalData(
 	});
 
 	if (!result.ok) {
-		return buildPendingPayload(parentData, result.message, result.title, result.description);
+		const enrollments = await loadStudentEnrollments(locals, null);
+		return buildPendingStudentPortalPayload(
+			parentData,
+			enrollments,
+			result.message,
+			result.title,
+			result.description
+		);
 	}
 
 	const profile = result.profile;
+	const enrollments = await loadStudentEnrollments(locals, profile.student.classId);
 	const subjects: StudentPortalSubject[] = profile.subjects.map((subject) => ({
 		id: subject.id,
 		name: subject.name,
@@ -145,6 +144,7 @@ export async function loadStudentPortalData(
 		prioritySubject: subjects.find((subject) => subject.id === profile.prioritySubject?.id) ?? null,
 		subjects,
 		academicSummary: profile.academicSummary,
-		longitudinal: profile.longitudinal
+		longitudinal: profile.longitudinal,
+		enrollments
 	};
 }

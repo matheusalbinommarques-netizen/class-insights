@@ -1,8 +1,14 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import { resolve } from '$app/paths';
 
 	type SubjectStatus = 'good' | 'attention' | 'pending';
 	type Trend = 'improving' | 'declining' | 'stable' | 'insufficient_data';
+	type ActionForm = {
+		action?: 'claimInviteCode';
+		message?: string;
+		inviteCode?: string;
+		success?: boolean;
+	} | null;
 
 	type SubjectCard = {
 		subjectId: string;
@@ -11,6 +17,19 @@
 		progress: number | null;
 		status: SubjectStatus;
 		description: string;
+	};
+
+	type EnrollmentCard = {
+		enrollmentId: string;
+		studentId: string;
+		classId: string;
+		teacherId: string;
+		status: 'pending' | 'active' | 'archived';
+		joinedAt: string | null;
+		leftAt: string | null;
+		studentName: string;
+		className: string;
+		isCurrent: boolean;
 	};
 
 	export let data: {
@@ -36,7 +55,10 @@
 			worst_subject: string | null;
 			recent_trend: Trend;
 		} | null;
+		enrollments: EnrollmentCard[];
 	};
+
+	export let form: ActionForm;
 
 	const averageLabel = (value: number | null) =>
 		typeof value === 'number' ? value.toFixed(1) : '--';
@@ -54,6 +76,11 @@
 		return 'Sem publicacao';
 	};
 	const statusClass = (value: SubjectStatus) => value;
+	const enrollmentStatusLabel = (value: EnrollmentCard['status']) => {
+		if (value === 'active') return 'Ativo';
+		if (value === 'pending') return 'Pendente';
+		return 'Arquivado';
+	};
 
 	$: heroLine =
 		data.portal.status === 'ready'
@@ -90,12 +117,83 @@
 				Seu portal ja esta pronto, mas ainda precisamos concluir o vinculo da sua conta com os dados
 				academicos.
 			</p>
+			<p class="hero-subline">
+				Se voce ja recebeu um codigo do professor, pode concluir esse passo agora sem sair da area
+				do aluno.
+			</p>
 		</div>
 		<div class="hero-metric waiting">
 			<div class="metric-label">Status</div>
 			<div class="metric-value small">Aguardando vinculo</div>
 			<div class="metric-foot">{data.portal.message}</div>
 		</div>
+	</section>
+
+	<section class="panel">
+		<div class="panel-head">
+			<div>
+				<div class="section-kicker">Concluir vinculo</div>
+				<h2>Adicionar codigo de convite</h2>
+			</div>
+		</div>
+
+		<div class="claim-panel">
+			<form method="POST" action="?/claimInviteCode" class="claim-form">
+				<div class="claim-field">
+					<label for="inviteCode">Codigo de convite</label>
+					<input
+						id="inviteCode"
+						name="inviteCode"
+						type="text"
+						placeholder="Ex: 7B60B044657F"
+						value={form?.inviteCode ?? ''}
+						autocapitalize="characters"
+						autocorrect="off"
+						spellcheck="false"
+					/>
+				</div>
+				<button type="submit" class="primary-link">Concluir vinculo</button>
+			</form>
+
+			{#if form?.action === 'claimInviteCode' && form?.message}
+				<div
+					class:success-banner={form.success}
+					class:error-banner={!form.success}
+					class="claim-feedback"
+				>
+					{form.message}
+				</div>
+			{/if}
+		</div>
+	</section>
+
+	<section class="panel">
+		<div class="panel-head">
+			<div>
+				<div class="section-kicker">Seus vinculos</div>
+				<h2>Turmas encontradas para esta conta</h2>
+			</div>
+		</div>
+
+		{#if data.enrollments.length > 0}
+			<div class="enrollment-list">
+				{#each data.enrollments as enrollment (enrollment.enrollmentId)}
+					<article class={`enrollment-card ${enrollment.isCurrent ? 'current' : ''}`}>
+						<div>
+							<h3>{enrollment.className}</h3>
+							<p>{enrollment.studentName}</p>
+						</div>
+						<span class={`status-badge ${enrollment.status}`}>
+							{enrollmentStatusLabel(enrollment.status)}
+						</span>
+					</article>
+				{/each}
+			</div>
+		{:else}
+			<div class="empty-state compact">
+				<p>Nenhum vinculo academico foi encontrado para esta conta ainda.</p>
+			</div>
+		{/if}
 	</section>
 
 	<section class="panel">
@@ -265,6 +363,32 @@
 	<section class="panel summary-panel">
 		<div class="panel-head">
 			<div>
+				<div class="section-kicker">Seus vinculos</div>
+				<h2>Leitura por turma</h2>
+			</div>
+			<p>O portal destaca a turma ativa, mas sua conta pode manter mais de um vinculo.</p>
+		</div>
+
+		{#if data.enrollments.length > 0}
+			<div class="enrollment-list">
+				{#each data.enrollments as enrollment (enrollment.enrollmentId)}
+					<article class={`enrollment-card ${enrollment.isCurrent ? 'current' : ''}`}>
+						<div>
+							<h3>{enrollment.className}</h3>
+							<p>{enrollment.studentName}</p>
+						</div>
+						<span class={`status-badge ${enrollment.status}`}>
+							{enrollmentStatusLabel(enrollment.status)}
+						</span>
+					</article>
+				{/each}
+			</div>
+		{/if}
+	</section>
+
+	<section class="panel summary-panel">
+		<div class="panel-head">
+			<div>
 				<div class="section-kicker">Resumo academico</div>
 				<h2>{data.academicSummary.title}</h2>
 			</div>
@@ -328,13 +452,17 @@
 	.subject-card p,
 	.metric-foot,
 	.empty-state p,
-	.summary-highlight p {
+	.summary-highlight p,
+	.claim-panel p {
 		color: #475569;
 		line-height: 1.65;
 	}
 	.hero p {
 		margin: 0.75rem 0 0;
 		max-width: 720px;
+	}
+	.hero-subline {
+		margin-top: 0.55rem;
 	}
 	.hero-actions,
 	.action-meta {
@@ -402,7 +530,8 @@
 	}
 	.stats-row,
 	.action-grid,
-	.subject-grid {
+	.subject-grid,
+	.enrollment-list {
 		display: grid;
 		gap: 1rem;
 		margin-bottom: 1rem;
@@ -416,9 +545,13 @@
 	.subject-grid {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
+	.enrollment-list {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
 	.mini-stat,
 	.action-card,
-	.subject-card {
+	.subject-card,
+	.enrollment-card {
 		padding: 1rem;
 	}
 	.mini-stat-value {
@@ -443,6 +576,49 @@
 		margin: 0.15rem 0 0;
 		max-width: 460px;
 		font-size: 0.94rem;
+	}
+	.claim-panel {
+		display: grid;
+		gap: 1rem;
+	}
+	.claim-form {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.75rem;
+		align-items: end;
+	}
+	.claim-field label {
+		display: block;
+		font-size: 0.82rem;
+		font-weight: 800;
+		color: #334155;
+		margin-bottom: 0.35rem;
+	}
+	.claim-field input {
+		width: 100%;
+		height: 3rem;
+		border-radius: 0.95rem;
+		border: 1px solid #cbd5e1;
+		padding: 0 1rem;
+		font-size: 0.95rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+	}
+	.claim-feedback {
+		padding: 0.9rem 1rem;
+		border-radius: 1rem;
+		font-size: 0.92rem;
+		font-weight: 700;
+	}
+	.success-banner {
+		background: rgba(34, 197, 94, 0.1);
+		border: 1px solid rgba(34, 197, 94, 0.2);
+		color: #166534;
+	}
+	.error-banner {
+		background: rgba(239, 68, 68, 0.08);
+		border: 1px solid rgba(239, 68, 68, 0.18);
+		color: #b91c1c;
 	}
 	.action-card.good {
 		background: rgba(34, 197, 94, 0.1);
@@ -482,6 +658,29 @@
 	.subject-card h3 {
 		font-size: 1rem;
 	}
+	.enrollment-card {
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.8rem;
+		border-radius: 1rem;
+		border: 1px solid rgba(148, 163, 184, 0.2);
+		background: rgba(248, 250, 252, 0.92);
+	}
+	.enrollment-card.current {
+		background: rgba(37, 99, 235, 0.08);
+		border-color: rgba(37, 99, 235, 0.18);
+	}
+	.enrollment-card h3 {
+		margin: 0;
+		font-size: 1rem;
+		color: #0f172a;
+	}
+	.enrollment-card p {
+		margin: 0.35rem 0 0;
+		font-size: 0.92rem;
+		color: #475569;
+	}
 	.subject-card p {
 		margin: 0.42rem 0 0;
 		font-size: 0.92rem;
@@ -503,6 +702,10 @@
 	}
 	.status-badge.pending {
 		background: rgba(148, 163, 184, 0.18);
+		color: #475569;
+	}
+	.status-badge.archived {
+		background: rgba(226, 232, 240, 0.9);
 		color: #475569;
 	}
 	.subject-meta {
@@ -577,20 +780,10 @@
 		padding: 0 1rem;
 		border-radius: 0.92rem;
 		font-size: 0.95rem;
-	}
-	.primary-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		text-decoration: none;
-		font-weight: 700;
-		height: 2.9rem;
-		padding: 0 1rem;
-		border-radius: 0.92rem;
-		font-size: 0.95rem;
 		background: linear-gradient(135deg, #2563eb, #1d4ed8);
 		color: white;
 		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+		border: none;
 	}
 	.secondary-link,
 	.ghost-link {
@@ -620,10 +813,13 @@
 		.hero,
 		.stats-row,
 		.action-grid,
-		.subject-grid {
+		.subject-grid,
+		.enrollment-list {
 			grid-template-columns: 1fr;
 		}
-		.panel-head {
+		.panel-head,
+		.claim-form {
+			grid-template-columns: 1fr;
 			flex-direction: column;
 		}
 	}

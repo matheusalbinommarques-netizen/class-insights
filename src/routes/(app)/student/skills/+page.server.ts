@@ -59,6 +59,7 @@ export const load: PageServerLoad = async ({ locals, parent }) => {
 			latestAssessmentDate: subject.latestAssessmentDate
 		})),
 		academicSummary: payload.academicSummary,
-		longitudinal: payload.longitudinal
+		longitudinal: payload.longitudinal,
+		enrollments: payload.enrollments
 	};
 };

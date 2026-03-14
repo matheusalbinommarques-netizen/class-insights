@@ -17,6 +17,12 @@ type StudentRow = {
 	invite_code: string | null;
 };
 
+type InviteCodeRow = {
+	student_id: string;
+	code: string;
+	status: 'active' | 'claimed' | 'archived';
+};
+
 type AssessmentResultRow = {
 	id: string;
 	assessment_id: string;
@@ -110,12 +116,22 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		};
 	}
 
-	const [{ data: studentsData }, { data: resultsData }, { data: auditData }] = await Promise.all([
+	const [
+		{ data: studentsData },
+		{ data: inviteCodesData },
+		{ data: resultsData },
+		{ data: auditData }
+	] = await Promise.all([
 		locals.supabase
 			.from('students')
-			.select('id, name, invite_code')
+			.select('id, name')
 			.eq('class_id', assessment.class_id)
 			.order('name', { ascending: true }),
+		locals.supabase
+			.from('teacher_invite_codes')
+			.select('student_id, code, status')
+			.eq('class_id', assessment.class_id)
+			.in('status', ['active', 'claimed']),
 		locals.supabase
 			.from('assessment_results')
 			.select(
@@ -132,9 +148,15 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.limit(80)
 	]);
 
-	const students = ((studentsData ?? []) as StudentRow[]).sort((a, b) =>
-		a.name.localeCompare(b.name, 'pt-BR')
+	const inviteCodesByStudentId = new Map(
+		((inviteCodesData ?? []) as InviteCodeRow[]).map((row) => [row.student_id, row.code])
 	);
+	const students = ((studentsData ?? []) as Array<Omit<StudentRow, 'invite_code'>>)
+		.map((student) => ({
+			...student,
+			invite_code: inviteCodesByStudentId.get(student.id) ?? null
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 	const results = (resultsData ?? []) as AssessmentResultRow[];
 	const auditRows = (auditData ?? []) as AuditRow[];
 

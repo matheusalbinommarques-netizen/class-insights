@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 
@@ -323,12 +324,17 @@
 <section class="page-header">
 	<div>
 		<div class="eyebrow">Importacao legada</div>
+		<div class="legacy-badge">Fluxo auxiliar da V1</div>
 		<h1>CSV por skill com staging seguro</h1>
 		<p>
 			Este fluxo continua disponivel como apoio operacional legado. A V1 academica prioriza
 			materias, avaliacoes, resultados e publicacao; aqui o import ainda funciona por colunas de
 			skill, com preview, validacao e aplicacao atomica.
 		</p>
+		<div class="header-actions">
+			<a href={resolve('/teacher/subjects')} class="secondary-link">Ir para materias</a>
+			<a href={resolve('/teacher/assessments')} class="primary-link">Ir para avaliacoes</a>
+		</div>
 	</div>
 </section>
 
@@ -821,6 +827,28 @@
 		line-height: 1.5;
 	}
 
+	.legacy-badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.45rem 0.75rem;
+		border-radius: 999px;
+		background: rgba(245, 158, 11, 0.12);
+		border: 1px solid rgba(245, 158, 11, 0.22);
+		color: #92400e;
+		font-size: 0.8rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		margin-bottom: 0.75rem;
+	}
+
+	.header-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+
 	.panel {
 		padding: 1.2rem;
 		margin-bottom: 1rem;
@@ -886,7 +914,9 @@
 	}
 
 	.primary-button,
-	.secondary-button {
+	.secondary-button,
+	.primary-link,
+	.secondary-link {
 		height: 2.9rem;
 		padding: 0 1rem;
 		border-radius: 0.9rem;
@@ -899,17 +929,27 @@
 			opacity 0.16s ease;
 	}
 
-	.primary-button {
+	.primary-button,
+	.primary-link {
 		border: 0;
 		background: linear-gradient(135deg, #2563eb, #1d4ed8);
 		color: white;
 		box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
 	}
 
-	.secondary-button {
+	.secondary-button,
+	.secondary-link {
 		border: 1px solid #cbd5e1;
 		background: white;
 		color: #0f172a;
+	}
+
+	.primary-link,
+	.secondary-link {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		text-decoration: none;
 	}
 
 	.secondary-button.slim {
@@ -919,7 +959,9 @@
 	}
 
 	.primary-button:hover,
-	.secondary-button:hover {
+	.secondary-button:hover,
+	.primary-link:hover,
+	.secondary-link:hover {
 		transform: translateY(-1px);
 	}
 
@@ -1370,7 +1412,9 @@
 		}
 
 		.primary-button,
-		.secondary-button {
+		.secondary-button,
+		.primary-link,
+		.secondary-link {
 			width: 100%;
 		}
 
