@@ -1,4 +1,4 @@
 export const config = {
-  appName: "Class Insights",
-  version: "0.1.0"
+	appName: 'Class Insights',
+	version: '0.1.0'
 };

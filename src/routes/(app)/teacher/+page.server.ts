@@ -1,6 +1,26 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
-import { resolveEffectiveScale } from '$lib/server/scoring';
+import { getAuthenticatedUserId } from '$lib/server/auth';
+import { buildSubjectLongitudinalSummaries } from '$lib/server/longitudinal';
+import {
+	average,
+	buildTrendDelta,
+	classifyRiskLevel,
+	classifyTeacherClassStatus,
+	isBelowAttentionThreshold,
+	isBelowHighRiskThreshold,
+	isSignificantNegativeDelta,
+	normalizeResultPercent
+} from '$lib/server/teacher-analytics';
+import type { LongitudinalPoint } from '$lib/types/academic';
+import type {
+	TeacherActionQueueItem,
+	TeacherAssessmentDropCard,
+	TeacherDashboardClassCard,
+	TeacherDashboardSummary,
+	TeacherRiskStudentCard,
+	TeacherStudentComparisonCard
+} from '$lib/types/teacher';
 
 type ClassRow = {
 	id: string;
@@ -17,63 +37,35 @@ type StudentRow = {
 	class_id: string;
 };
 
-type SkillRow = {
-	id: string;
-	name: string;
+type ClassSubjectRow = {
 	class_id: string;
-	score_min: number | null;
-	score_max: number | null;
-	score_decimals: number | null;
+	subject_id: string;
+	subjects:
+		| {
+				name: string;
+		  }
+		| {
+				name: string;
+		  }[];
 };
 
-type ScoreRow = {
+type AssessmentRow = {
+	id: string;
+	class_id: string;
+	subject_id: string;
+	status: 'draft' | 'published';
+	published_at: string | null;
+	assessment_date: string;
+};
+
+type AssessmentResultSummaryRow = {
+	assessment_id: string;
 	student_id: string;
-	skill_id: string;
-	score: number;
+	raw_score: number | null;
+	score_min: number;
+	score_max: number;
+	is_excused: boolean;
 };
-
-type BaselineLatestSnapshotRow = {
-	skill_id: string;
-	skill_name: string;
-	baseline_date: string | null;
-	baseline_avg: number | null;
-	latest_date: string | null;
-	latest_avg: number | null;
-};
-
-type DashboardClassCard = {
-	id: string;
-	name: string;
-	created_at: string;
-	scaleLabel: string;
-	studentsCount: number;
-	skillsCount: number;
-	filledScoresCount: number;
-	totalExpectedCells: number;
-	pendingCells: number;
-	coveragePercent: number;
-	averagePercent: number | null;
-	riskStudentsCount: number;
-	latestSnapshotDate: string | null;
-	needsSnapshot: boolean;
-	trendDelta: number | null;
-	focusSkills: string[];
-	status: 'setup' | 'healthy' | 'attention' | 'critical';
-};
-
-type ActionQueueItem = {
-	id: string;
-	classId: string;
-	title: string;
-	description: string;
-	ctaLabel: string;
-	href: string;
-	priority: number;
-};
-
-function getAuthenticatedUserId(locals: App.Locals): string | null {
-	return locals.session?.user?.id ?? null;
-}
 
 function parseDecimalInput(raw: FormDataEntryValue | null, fallback: number): number {
 	const normalized = String(raw ?? '')
@@ -92,30 +84,25 @@ function parseIntegerInput(raw: FormDataEntryValue | null, fallback: number): nu
 	return Number(normalized);
 }
 
-function clampPercent(value: number): number {
-	return Math.max(0, Math.min(100, value));
-}
-
-function average(values: number[]): number | null {
-	if (values.length === 0) return null;
-	return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function daysSince(dateIso: string | null): number | null {
-	if (!dateIso) return null;
-
-	const date = new Date(`${dateIso}T00:00:00`);
-	if (Number.isNaN(date.getTime())) return null;
-
-	const now = new Date();
-	const nowUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-	const diffMs = nowUtc.getTime() - date.getTime();
-
-	return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-}
-
 function buildScaleLabel(item: ClassRow): string {
-	return `${item.score_min}–${item.score_max} • dec ${item.score_decimals}`;
+	return `${item.score_min}-${item.score_max} � dec ${item.score_decimals}`;
+}
+
+function buildEmptySummary(displayName: string, message: string): TeacherDashboardSummary {
+	return {
+		displayName,
+		totalClasses: 0,
+		totalStudents: 0,
+		totalDraftAssessments: 0,
+		totalPublishedAssessments: 0,
+		totalPendingPublications: 0,
+		totalRiskStudents: 0,
+		totalPendingCells: 0,
+		classesAtRisk: 0,
+		classesInSetup: 0,
+		healthyClasses: 0,
+		message
+	};
 }
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -123,21 +110,14 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (!userId) {
 		return {
-			classes: [] as DashboardClassCard[],
-			actionQueue: [] as ActionQueueItem[],
-			summary: {
-				displayName: 'Professor',
-				totalClasses: 0,
-				totalStudents: 0,
-				totalRiskStudents: 0,
-				totalPendingCells: 0,
-				classesNeedingSnapshot: 0,
-				classesAtRisk: 0,
-				classesInSetup: 0,
-				healthyClasses: 0,
-				message: 'Sessão inválida. Faça login novamente.'
-			},
-			error: 'Sessão inválida. Faça login novamente.'
+			classes: [] as TeacherDashboardClassCard[],
+			actionQueue: [] as TeacherActionQueueItem[],
+			longitudinalSubjects: [],
+			riskStudents: [] as TeacherRiskStudentCard[],
+			studentComparisons: [] as TeacherStudentComparisonCard[],
+			assessmentDrops: [] as TeacherAssessmentDropCard[],
+			summary: buildEmptySummary('Professor', 'Sessao invalida. Faca login novamente.'),
+			error: 'Sessao invalida. Faca login novamente.'
 		};
 	}
 
@@ -157,20 +137,13 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (classesError) {
 		return {
-			classes: [] as DashboardClassCard[],
-			actionQueue: [] as ActionQueueItem[],
-			summary: {
-				displayName,
-				totalClasses: 0,
-				totalStudents: 0,
-				totalRiskStudents: 0,
-				totalPendingCells: 0,
-				classesNeedingSnapshot: 0,
-				classesAtRisk: 0,
-				classesInSetup: 0,
-				healthyClasses: 0,
-				message: 'Houve erro ao carregar as turmas.'
-			},
+			classes: [] as TeacherDashboardClassCard[],
+			actionQueue: [] as TeacherActionQueueItem[],
+			longitudinalSubjects: [],
+			riskStudents: [] as TeacherRiskStudentCard[],
+			studentComparisons: [] as TeacherStudentComparisonCard[],
+			assessmentDrops: [] as TeacherAssessmentDropCard[],
+			summary: buildEmptySummary(displayName, 'Houve erro ao carregar as turmas.'),
 			error: classesError.message
 		};
 	}
@@ -180,45 +153,72 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (classIds.length === 0) {
 		return {
-			classes: [] as DashboardClassCard[],
-			actionQueue: [] as ActionQueueItem[],
-			summary: {
+			classes: [] as TeacherDashboardClassCard[],
+			actionQueue: [] as TeacherActionQueueItem[],
+			longitudinalSubjects: [],
+			riskStudents: [] as TeacherRiskStudentCard[],
+			studentComparisons: [] as TeacherStudentComparisonCard[],
+			assessmentDrops: [] as TeacherAssessmentDropCard[],
+			summary: buildEmptySummary(
 				displayName,
-				totalClasses: 0,
-				totalStudents: 0,
-				totalRiskStudents: 0,
-				totalPendingCells: 0,
-				classesNeedingSnapshot: 0,
-				classesAtRisk: 0,
-				classesInSetup: 0,
-				healthyClasses: 0,
-				message: 'Pronto para transformar dados em progresso? Crie sua primeira turma.'
-			},
+				'Pronto para transformar dados em progresso? Crie sua primeira turma.'
+			),
 			error: null
 		};
 	}
 
-	const [{ data: studentsData }, { data: skillsData }] = await Promise.all([
+	const [studentsRes, classSubjectsRes, assessmentsRes] = await Promise.all([
 		locals.supabase.from('students').select('id, name, class_id').in('class_id', classIds),
 		locals.supabase
-			.from('skills')
-			.select('id, name, class_id, score_min, score_max, score_decimals')
+			.from('class_subjects')
+			.select(
+				`
+					class_id,
+					subject_id,
+					subjects!inner (
+						name
+					)
+				`
+			)
+			.in('class_id', classIds),
+		locals.supabase
+			.from('assessments')
+			.select('id, class_id, subject_id, status, published_at, assessment_date')
 			.in('class_id', classIds)
 	]);
 
-	const students = (studentsData ?? []) as StudentRow[];
-	const skills = (skillsData ?? []) as SkillRow[];
+	const students = (studentsRes.data ?? []) as StudentRow[];
+	const classSubjects = ((classSubjectsRes.data ?? []) as ClassSubjectRow[])
+		.map((item) => {
+			const subject = Array.isArray(item.subjects) ? item.subjects[0] : item.subjects;
+			if (!subject) return null;
 
-	const studentIds = students.map((student) => student.id);
+			return {
+				class_id: item.class_id,
+				subject_id: item.subject_id,
+				subject_name: subject.name
+			};
+		})
+		.filter(
+			(
+				item
+			): item is {
+				class_id: string;
+				subject_id: string;
+				subject_name: string;
+			} => item !== null
+		);
+	const assessments = (assessmentsRes.data ?? []) as AssessmentRow[];
 
-	let scores: ScoreRow[] = [];
-	if (studentIds.length > 0) {
-		const { data: scoreData } = await locals.supabase
-			.from('student_skill_scores')
-			.select('student_id, skill_id, score')
-			.in('student_id', studentIds);
+	const assessmentIds = assessments.map((assessment) => assessment.id);
+	let assessmentResults: AssessmentResultSummaryRow[] = [];
+	if (assessmentIds.length > 0) {
+		const { data: assessmentResultsData } = await locals.supabase
+			.from('assessment_results')
+			.select('assessment_id, student_id, raw_score, score_min, score_max, is_excused')
+			.in('assessment_id', assessmentIds);
 
-		scores = (scoreData ?? []) as ScoreRow[];
+		assessmentResults = (assessmentResultsData ?? []) as AssessmentResultSummaryRow[];
 	}
 
 	const studentsByClass = new Map<string, StudentRow[]>();
@@ -228,148 +228,182 @@ export const load: PageServerLoad = async ({ locals }) => {
 		studentsByClass.set(student.class_id, current);
 	}
 
-	const skillsByClass = new Map<string, SkillRow[]>();
-	const skillById = new Map<string, SkillRow>();
-	for (const skill of skills) {
-		const current = skillsByClass.get(skill.class_id) ?? [];
-		current.push(skill);
-		skillsByClass.set(skill.class_id, current);
-		skillById.set(skill.id, skill);
+	const subjectsCountByClass = new Map<string, number>();
+	const subjectNameByClassAndId = new Map<string, string>();
+	for (const classSubject of classSubjects) {
+		subjectsCountByClass.set(
+			classSubject.class_id,
+			(subjectsCountByClass.get(classSubject.class_id) ?? 0) + 1
+		);
+		subjectNameByClassAndId.set(
+			`${classSubject.class_id}:${classSubject.subject_id}`,
+			classSubject.subject_name
+		);
 	}
 
-	const scoresByStudent = new Map<string, ScoreRow[]>();
-	for (const score of scores) {
-		const current = scoresByStudent.get(score.student_id) ?? [];
-		current.push(score);
-		scoresByStudent.set(score.student_id, current);
+	const assessmentsByClass = new Map<string, AssessmentRow[]>();
+	for (const assessment of assessments) {
+		const current = assessmentsByClass.get(assessment.class_id) ?? [];
+		current.push(assessment);
+		assessmentsByClass.set(assessment.class_id, current);
 	}
 
-	const snapshotByClass = new Map<
-		string,
-		{
-			latestSnapshotDate: string | null;
-			trendDelta: number | null;
-			focusSkills: string[];
-		}
-	>();
+	const filledAssessmentResultsById = new Map<string, number>();
+	for (const result of assessmentResults) {
+		if (typeof result.raw_score !== 'number' && !result.is_excused) continue;
+		filledAssessmentResultsById.set(
+			result.assessment_id,
+			(filledAssessmentResultsById.get(result.assessment_id) ?? 0) + 1
+		);
+	}
 
-	await Promise.all(
-		classRows.map(async (classRow) => {
-			const { data, error } = await locals.supabase.rpc('get_baseline_latest_snapshots', {
-				p_class_id: classRow.id
-			});
+	const resultsByAssessmentId = new Map<string, AssessmentResultSummaryRow[]>();
+	for (const result of assessmentResults) {
+		const current = resultsByAssessmentId.get(result.assessment_id) ?? [];
+		current.push(result);
+		resultsByAssessmentId.set(result.assessment_id, current);
+	}
 
-			if (error || !data) {
-				snapshotByClass.set(classRow.id, {
-					latestSnapshotDate: null,
-					trendDelta: null,
-					focusSkills: []
-				});
-				return;
-			}
-
-			const rows = (data ?? []) as BaselineLatestSnapshotRow[];
-
-			const latestDates = rows
-				.map((row) => row.latest_date)
-				.filter((value): value is string => typeof value === 'string');
-
-			const latestSnapshotDate =
-				latestDates.length > 0 ? [...latestDates].sort((a, b) => a.localeCompare(b)).at(-1) ?? null : null;
-
-			const deltas = rows
-				.map((row) => {
-					if (typeof row.latest_avg !== 'number' || typeof row.baseline_avg !== 'number') {
-						return null;
-					}
-					return row.latest_avg - row.baseline_avg;
-				})
-				.filter((value): value is number => typeof value === 'number');
-
-			const focusSkills = rows
-				.filter((row) => typeof row.latest_avg === 'number')
-				.sort((a, b) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))
-				.slice(0, 3)
-				.map((row) => row.skill_name);
-
-			snapshotByClass.set(classRow.id, {
-				latestSnapshotDate,
-				trendDelta: average(deltas),
-				focusSkills
-			});
-		})
-	);
-
-	const dashboardCards: DashboardClassCard[] = classRows.map((classRow) => {
+	const dashboardCards: TeacherDashboardClassCard[] = classRows.map((classRow) => {
 		const classStudents = studentsByClass.get(classRow.id) ?? [];
-		const classSkills = skillsByClass.get(classRow.id) ?? [];
-		const classSkillIds = new Set(classSkills.map((skill) => skill.id));
+		const classSubjectsCount = subjectsCountByClass.get(classRow.id) ?? 0;
+		const classAssessments = assessmentsByClass.get(classRow.id) ?? [];
+		const publishedAssessments = classAssessments.filter(
+			(assessment) => assessment.status === 'published'
+		);
+		const draftAssessments = classAssessments.filter((assessment) => assessment.status === 'draft');
+		const publishedAssessmentsCount = publishedAssessments.length;
+		const draftAssessmentsCount = draftAssessments.length;
+		const readyToPublishCount = draftAssessments.filter((assessment) => {
+			return (filledAssessmentResultsById.get(assessment.id) ?? 0) > 0;
+		}).length;
 
-		let filledScoresCount = 0;
-		const normalizedClassScores: number[] = [];
-		const studentAveragePercents: number[] = [];
+		const totalExpectedResults = classStudents.length * classAssessments.length;
+		const totalExpectedDraftResults = classStudents.length * draftAssessments.length;
+		const totalExpectedPublishedResults = classStudents.length * publishedAssessments.length;
+		const filledResultsCount = classAssessments.reduce(
+			(sum, assessment) => sum + (filledAssessmentResultsById.get(assessment.id) ?? 0),
+			0
+		);
+		const filledDraftResultsCount = draftAssessments.reduce(
+			(sum, assessment) => sum + (filledAssessmentResultsById.get(assessment.id) ?? 0),
+			0
+		);
+		const filledPublishedResultsCount = publishedAssessments.reduce(
+			(sum, assessment) => sum + (filledAssessmentResultsById.get(assessment.id) ?? 0),
+			0
+		);
+		const pendingResultsCount = Math.max(0, totalExpectedResults - filledResultsCount);
+		const draftCoveragePercent =
+			totalExpectedDraftResults > 0
+				? Math.round((filledDraftResultsCount / totalExpectedDraftResults) * 100)
+				: 0;
+		const publishedCoveragePercent =
+			totalExpectedPublishedResults > 0
+				? Math.round((filledPublishedResultsCount / totalExpectedPublishedResults) * 100)
+				: 0;
 
-		for (const student of classStudents) {
-			const relevantScores = (scoresByStudent.get(student.id) ?? []).filter((score) =>
-				classSkillIds.has(score.skill_id)
-			);
+		const normalizedPublishedScores = publishedAssessments.flatMap((assessment) =>
+			(resultsByAssessmentId.get(assessment.id) ?? [])
+				.map((result) => normalizeResultPercent(result))
+				.filter((value): value is number => typeof value === 'number')
+		);
+		const averagePercentValue = average(normalizedPublishedScores);
+		const averagePercent = averagePercentValue !== null ? Math.round(averagePercentValue) : null;
 
-			const studentPercents = relevantScores
-				.map((score) => {
-					const skill = skillById.get(score.skill_id);
-					if (!skill) return null;
+		const publishedStudentScores = new Map<string, number[]>();
+		for (const assessment of publishedAssessments) {
+			for (const result of resultsByAssessmentId.get(assessment.id) ?? []) {
+				const normalized = normalizeResultPercent(result);
+				if (normalized === null) continue;
 
-					const scale = resolveEffectiveScale(classRow, skill);
-					const range = scale.max - scale.min;
-					if (range <= 0) return null;
-
-					return clampPercent(((score.score - scale.min) / range) * 100);
-				})
-				.filter((value): value is number => typeof value === 'number');
-
-			filledScoresCount += relevantScores.length;
-			normalizedClassScores.push(...studentPercents);
-
-			const studentAverage = average(studentPercents);
-			if (studentAverage !== null) {
-				studentAveragePercents.push(studentAverage);
+				const current = publishedStudentScores.get(result.student_id) ?? [];
+				current.push(normalized);
+				publishedStudentScores.set(result.student_id, current);
 			}
 		}
 
-		const totalExpectedCells = classStudents.length * classSkills.length;
-		const pendingCells = Math.max(0, totalExpectedCells - filledScoresCount);
-		const coveragePercent =
-			totalExpectedCells > 0 ? Math.round((filledScoresCount / totalExpectedCells) * 100) : 0;
+		const riskStudentsCount = [...publishedStudentScores.values()].filter((scores) => {
+			const studentAverage = average(scores);
+			return studentAverage !== null && isBelowHighRiskThreshold(studentAverage);
+		}).length;
 
-		const averagePercentValue = average(normalizedClassScores);
-		const averagePercent =
-			averagePercentValue !== null ? Math.round(averagePercentValue) : null;
+		const trendSeries = [...publishedAssessments]
+			.sort((a, b) => a.assessment_date.localeCompare(b.assessment_date))
+			.map((assessment) => {
+				const resultPercents = (resultsByAssessmentId.get(assessment.id) ?? [])
+					.map((result) => normalizeResultPercent(result))
+					.filter((value): value is number => typeof value === 'number');
 
-		const riskStudentsCount = studentAveragePercents.filter((value) => value < 40).length;
+				return average(resultPercents);
+			})
+			.filter((value): value is number => typeof value === 'number');
+		const trendDelta = buildTrendDelta(trendSeries);
 
-		const snapshot = snapshotByClass.get(classRow.id) ?? {
-			latestSnapshotDate: null,
-			trendDelta: null,
-			focusSkills: []
-		};
+		const subjectPerformance = new Map<string, number[]>();
+		for (const assessment of publishedAssessments) {
+			for (const result of resultsByAssessmentId.get(assessment.id) ?? []) {
+				const normalized = normalizeResultPercent(result);
+				if (normalized === null) continue;
 
-		const snapshotAgeDays = daysSince(snapshot.latestSnapshotDate);
-		const hasAnyAcademicData = filledScoresCount > 0;
-		const needsSnapshot =
-			hasAnyAcademicData && (snapshot.latestSnapshotDate === null || (snapshotAgeDays ?? 0) >= 7);
-
-		let status: DashboardClassCard['status'] = 'healthy';
-
-		if (classStudents.length === 0 || classSkills.length === 0) {
-			status = 'setup';
-		} else if (
-			riskStudentsCount >= Math.max(2, Math.ceil(classStudents.length * 0.25)) ||
-			coveragePercent < 50
-		) {
-			status = 'critical';
-		} else if (riskStudentsCount > 0 || coveragePercent < 85 || needsSnapshot) {
-			status = 'attention';
+				const current = subjectPerformance.get(assessment.subject_id) ?? [];
+				current.push(normalized);
+				subjectPerformance.set(assessment.subject_id, current);
+			}
 		}
+
+		const focusSubjects = [...subjectPerformance.entries()]
+			.map(([subjectId, scores]) => ({
+				subjectId,
+				avg: average(scores),
+				assessmentsCount: publishedAssessments.filter(
+					(assessment) => assessment.subject_id === subjectId
+				).length
+			}))
+			.filter(
+				(item): item is { subjectId: string; avg: number; assessmentsCount: number } =>
+					typeof item.avg === 'number'
+			)
+			.sort((a, b) => a.avg - b.avg)
+			.slice(0, 3)
+			.map((item) => {
+				const roundedAverage = Math.round(Number(item.avg.toFixed(1)));
+				const gapVsClassAverage =
+					averagePercent === null ? null : Number((roundedAverage - averagePercent).toFixed(1));
+				const tone: TeacherDashboardClassCard['focusSubjects'][number]['tone'] =
+					isBelowHighRiskThreshold(roundedAverage)
+						? 'critical'
+						: isBelowAttentionThreshold(roundedAverage)
+							? 'attention'
+							: 'healthy';
+
+				return {
+					subjectId: item.subjectId,
+					subjectName:
+						subjectNameByClassAndId.get(`${classRow.id}:${item.subjectId}`) ?? 'Materia sem nome',
+					averagePercent: roundedAverage,
+					gapVsClassAverage,
+					assessmentsCount: item.assessmentsCount,
+					tone
+				};
+			});
+
+		const latestPublicationDate =
+			publishedAssessments
+				.map((assessment) => assessment.published_at)
+				.filter((value): value is string => typeof value === 'string')
+				.sort((a, b) => b.localeCompare(a))[0] ?? null;
+
+		const status = classifyTeacherClassStatus({
+			studentsCount: classStudents.length,
+			subjectsCount: classSubjectsCount,
+			assessmentsCount: classAssessments.length,
+			publishedAssessmentsCount,
+			riskStudentsCount,
+			draftCoveragePercent,
+			totalExpectedDraftResults,
+			draftAssessmentsCount
+		});
 
 		return {
 			id: classRow.id,
@@ -377,85 +411,264 @@ export const load: PageServerLoad = async ({ locals }) => {
 			created_at: classRow.created_at,
 			scaleLabel: buildScaleLabel(classRow),
 			studentsCount: classStudents.length,
-			skillsCount: classSkills.length,
-			filledScoresCount,
-			totalExpectedCells,
-			pendingCells,
-			coveragePercent,
+			subjectsCount: classSubjectsCount,
+			assessmentsCount: classAssessments.length,
+			publishedAssessmentsCount,
+			draftAssessmentsCount,
+			readyToPublishCount,
+			totalExpectedResults,
+			filledResultsCount,
+			pendingResultsCount,
+			draftCoveragePercent,
+			publishedCoveragePercent,
 			averagePercent,
 			riskStudentsCount,
-			latestSnapshotDate: snapshot.latestSnapshotDate,
-			needsSnapshot,
-			trendDelta: snapshot.trendDelta,
-			focusSkills: snapshot.focusSkills,
+			latestPublicationDate,
+			trendDelta,
+			focusSubjects,
 			status
 		};
 	});
 
-	const actionQueue: ActionQueueItem[] = dashboardCards
-		.flatMap((item) => {
-			const queue: ActionQueueItem[] = [];
+	const longitudinalTimeline: LongitudinalPoint[] = assessments
+		.filter((assessment) => assessment.status === 'published')
+		.flatMap((assessment) => {
+			const normalizedScores = (resultsByAssessmentId.get(assessment.id) ?? [])
+				.filter((result) => !result.is_excused)
+				.map((result) => normalizeResultPercent(result))
+				.filter((value): value is number => typeof value === 'number');
 
-			if (item.status === 'setup' && item.studentsCount === 0) {
+			const normalizedPercent = average(normalizedScores);
+			if (normalizedPercent === null) return [];
+
+			return [
+				{
+					assessment_id: assessment.id,
+					assessment_title: `Avaliacao ${assessment.assessment_date}`,
+					assessment_date: assessment.assessment_date,
+					subject_id: assessment.subject_id,
+					subject_name:
+						subjectNameByClassAndId.get(`${assessment.class_id}:${assessment.subject_id}`) ??
+						'Materia sem nome',
+					raw_score: null,
+					normalized_percent: Math.round(Number(normalizedPercent.toFixed(2))),
+					status: assessment.status
+				}
+			];
+		});
+
+	const longitudinalSubjects = buildSubjectLongitudinalSummaries(longitudinalTimeline)
+		.sort((a, b) => {
+			const left =
+				typeof a.average_percent === 'number' ? a.average_percent : Number.POSITIVE_INFINITY;
+			const right =
+				typeof b.average_percent === 'number' ? b.average_percent : Number.POSITIVE_INFINITY;
+			if (left !== right) return left - right;
+			return a.subject_name.localeCompare(b.subject_name, 'pt-BR');
+		})
+		.slice(0, 6);
+
+	const riskStudents: TeacherRiskStudentCard[] = students
+		.map((student) => {
+			const normalizedScores = assessments
+				.filter((assessment) => assessment.status === 'published')
+				.flatMap((assessment) =>
+					(resultsByAssessmentId.get(assessment.id) ?? [])
+						.filter((result) => result.student_id === student.id)
+						.map((result) => normalizeResultPercent(result))
+						.filter((value): value is number => typeof value === 'number')
+				);
+
+			const averagePercent = average(normalizedScores);
+			if (averagePercent === null || !isBelowAttentionThreshold(averagePercent)) return null;
+
+			return {
+				studentId: student.id,
+				studentName: student.name,
+				classId: student.class_id,
+				className: classRows.find((item) => item.id === student.class_id)?.name ?? 'Turma',
+				averagePercent: Math.round(Number(averagePercent.toFixed(1))),
+				publishedAssessmentsCount: normalizedScores.length,
+				riskLevel: classifyRiskLevel(averagePercent)
+			};
+		})
+		.filter((item): item is TeacherRiskStudentCard => item !== null)
+		.sort(
+			(a, b) =>
+				a.averagePercent - b.averagePercent || a.studentName.localeCompare(b.studentName, 'pt-BR')
+		)
+		.slice(0, 8);
+
+	const studentComparisons: TeacherStudentComparisonCard[] = students
+		.map((student) => {
+			const classPublishedAssessments = assessments.filter(
+				(assessment) =>
+					assessment.class_id === student.class_id && assessment.status === 'published'
+			);
+			if (classPublishedAssessments.length === 0) return null;
+
+			const classScores = classPublishedAssessments.flatMap((assessment) =>
+				(resultsByAssessmentId.get(assessment.id) ?? [])
+					.map((result) => normalizeResultPercent(result))
+					.filter((value): value is number => typeof value === 'number')
+			);
+			const studentScores = classPublishedAssessments.flatMap((assessment) =>
+				(resultsByAssessmentId.get(assessment.id) ?? [])
+					.filter((result) => result.student_id === student.id)
+					.map((result) => normalizeResultPercent(result))
+					.filter((value): value is number => typeof value === 'number')
+			);
+
+			const classAveragePercent = average(classScores);
+			const studentAveragePercent = average(studentScores);
+			if (classAveragePercent === null || studentAveragePercent === null) return null;
+
+			const gapPercent = Number((studentAveragePercent - classAveragePercent).toFixed(1));
+			if (!isSignificantNegativeDelta(gapPercent)) return null;
+
+			return {
+				studentId: student.id,
+				studentName: student.name,
+				classId: student.class_id,
+				className: classRows.find((item) => item.id === student.class_id)?.name ?? 'Turma',
+				studentAveragePercent: Math.round(Number(studentAveragePercent.toFixed(1))),
+				classAveragePercent: Math.round(Number(classAveragePercent.toFixed(1))),
+				gapPercent,
+				publishedAssessmentsCount: studentScores.length
+			};
+		})
+		.filter((item): item is TeacherStudentComparisonCard => item !== null)
+		.sort(
+			(a, b) => a.gapPercent - b.gapPercent || a.studentName.localeCompare(b.studentName, 'pt-BR')
+		)
+		.slice(0, 8);
+
+	const publishedAssessments = assessments.filter(
+		(assessment) => assessment.status === 'published'
+	);
+	const publishedAssessmentsByClassAndSubject = new Map<string, AssessmentRow[]>();
+	for (const assessment of publishedAssessments) {
+		const key = `${assessment.class_id}:${assessment.subject_id}`;
+		const current = publishedAssessmentsByClassAndSubject.get(key) ?? [];
+		current.push(assessment);
+		publishedAssessmentsByClassAndSubject.set(key, current);
+	}
+
+	const assessmentDrops: TeacherAssessmentDropCard[] = [
+		...publishedAssessmentsByClassAndSubject.entries()
+	]
+		.map(([key, subjectAssessments]) => {
+			const orderedAssessments = [...subjectAssessments]
+				.sort((a, b) => a.assessment_date.localeCompare(b.assessment_date))
+				.slice(-2);
+
+			if (orderedAssessments.length < 2) return null;
+
+			const [previousAssessment, latestAssessment] = orderedAssessments;
+			const previousScores = (resultsByAssessmentId.get(previousAssessment.id) ?? [])
+				.filter((result) => !result.is_excused)
+				.map((result) => normalizeResultPercent(result))
+				.filter((value): value is number => typeof value === 'number');
+			const latestScores = (resultsByAssessmentId.get(latestAssessment.id) ?? [])
+				.filter((result) => !result.is_excused)
+				.map((result) => normalizeResultPercent(result))
+				.filter((value): value is number => typeof value === 'number');
+
+			const previousAverage = average(previousScores);
+			const latestAverage = average(latestScores);
+			if (previousAverage === null || latestAverage === null) return null;
+
+			const dropPercent = Number((latestAverage - previousAverage).toFixed(1));
+			if (!isSignificantNegativeDelta(dropPercent)) return null;
+
+			const [classId, subjectId] = key.split(':');
+
+			return {
+				classId,
+				className: classRows.find((item) => item.id === classId)?.name ?? 'Turma',
+				subjectId,
+				subjectName: subjectNameByClassAndId.get(key) ?? 'Materia sem nome',
+				latestAssessmentId: latestAssessment.id,
+				latestAssessmentDate: latestAssessment.assessment_date,
+				previousAssessmentDate: previousAssessment.assessment_date,
+				latestAveragePercent: Math.round(Number(latestAverage.toFixed(1))),
+				previousAveragePercent: Math.round(Number(previousAverage.toFixed(1))),
+				dropPercent,
+				sampleSize: latestScores.length
+			};
+		})
+		.filter((item): item is TeacherAssessmentDropCard => item !== null)
+		.sort(
+			(a, b) => a.dropPercent - b.dropPercent || a.subjectName.localeCompare(b.subjectName, 'pt-BR')
+		)
+		.slice(0, 8);
+
+	const operationalQueue: TeacherActionQueueItem[] = dashboardCards
+		.flatMap((item) => {
+			const queue: TeacherActionQueueItem[] = [];
+
+			if (item.studentsCount === 0) {
 				queue.push({
 					id: `${item.id}-students`,
 					classId: item.id,
 					title: `${item.name} precisa de alunos`,
-					description: 'A turma existe, mas ainda não possui alunos cadastrados.',
+					description: 'A turma existe, mas ainda nao possui alunos cadastrados.',
 					ctaLabel: 'Abrir turma',
 					href: `/teacher/${item.id}`,
-					priority: 0
+					priority: 0,
+					signalType: 'operational'
 				});
 			}
 
-			if (item.status === 'setup' && item.skillsCount === 0) {
+			if (item.subjectsCount === 0) {
 				queue.push({
-					id: `${item.id}-skills`,
+					id: `${item.id}-subjects`,
 					classId: item.id,
-					title: `${item.name} precisa de skills`,
-					description: 'Sem skills, a turma ainda não gera leitura pedagógica útil.',
+					title: `${item.name} precisa de materias`,
+					description: 'Sem materias, a turma ainda nao entra no fluxo formal de avaliacao.',
 					ctaLabel: 'Abrir turma',
 					href: `/teacher/${item.id}`,
-					priority: 1
+					priority: 0,
+					signalType: 'operational'
 				});
 			}
 
-			if (item.riskStudentsCount > 0) {
+			if (item.studentsCount > 0 && item.subjectsCount > 0 && item.assessmentsCount === 0) {
 				queue.push({
-					id: `${item.id}-risk`,
+					id: `${item.id}-assessments`,
 					classId: item.id,
-					title: `${item.name} tem ${item.riskStudentsCount} aluno(s) em risco`,
-					description: 'Vale revisar os lançamentos e priorizar intervenção nesta turma.',
+					title: `${item.name} ainda nao tem avaliacoes`,
+					description: 'A proxima acao e criar a primeira avaliacao desta turma.',
 					ctaLabel: 'Abrir turma',
 					href: `/teacher/${item.id}`,
-					priority: 0
+					priority: 1,
+					signalType: 'operational'
 				});
 			}
 
-			if (item.pendingCells > 0) {
+			if (item.readyToPublishCount > 0) {
+				queue.push({
+					id: `${item.id}-publish`,
+					classId: item.id,
+					title: `${item.name} tem ${item.readyToPublishCount} avaliacao(oes) pronta(s) para publicar`,
+					description: 'Ja existe resultado salvo em rascunho e vale fechar a leitura oficial.',
+					ctaLabel: 'Abrir avaliacoes',
+					href: `/teacher/assessments`,
+					priority: 1,
+					signalType: 'operational'
+				});
+			}
+
+			if (item.pendingResultsCount > 0) {
 				queue.push({
 					id: `${item.id}-coverage`,
 					classId: item.id,
-					title: `${item.name} tem ${item.pendingCells} lançamento(s) pendente(s)`,
-					description: `Cobertura atual: ${item.coveragePercent}%. Ainda há lacunas no grid de notas.`,
-					ctaLabel: 'Importar notas',
-					href: `/teacher/import?classId=${item.id}`,
-					priority: item.coveragePercent < 60 ? 0 : 2
-				});
-			}
-
-			if (item.needsSnapshot) {
-				queue.push({
-					id: `${item.id}-snapshot`,
-					classId: item.id,
-					title: `${item.name} está sem snapshot recente`,
-					description:
-						item.latestSnapshotDate === null
-							? 'Ainda não existe histórico gerado para esta turma.'
-							: `Último snapshot em ${item.latestSnapshotDate}.`,
+					title: `${item.name} tem ${item.pendingResultsCount} resultado(s) pendente(s)`,
+					description: `Cobertura dos rascunhos: ${item.draftCoveragePercent}%. Ainda ha lacunas para fechar as avaliacoes abertas.`,
 					ctaLabel: 'Abrir turma',
 					href: `/teacher/${item.id}`,
-					priority: 2
+					priority: item.draftCoveragePercent < 60 ? 0 : 2,
+					signalType: 'operational'
 				});
 			}
 
@@ -464,40 +677,96 @@ export const load: PageServerLoad = async ({ locals }) => {
 		.sort((a, b) => a.priority - b.priority)
 		.slice(0, 6);
 
+	const pedagogicalQueue: TeacherActionQueueItem[] = [
+		...riskStudents.slice(0, 3).map((student, index) => ({
+			id: `risk-${student.studentId}`,
+			classId: student.classId,
+			title: `${student.studentName} pede leitura individual`,
+			description: `${student.className} - media publicada em ${student.averagePercent}%. Vale abrir a trajetoria individual para entender onde a queda se concentra.`,
+			ctaLabel: 'Abrir perfil do aluno',
+			href: `/teacher/students/${student.studentId}`,
+			priority: index,
+			signalType: 'pedagogical' as const
+		})),
+		...studentComparisons.slice(0, 3).map((item, index) => ({
+			id: `gap-${item.studentId}`,
+			classId: item.classId,
+			title: `${item.studentName} esta abaixo da media da turma`,
+			description: `${item.className} - gap de ${item.gapPercent} pontos contra a media publicada da turma.`,
+			ctaLabel: 'Abrir perfil do aluno',
+			href: `/teacher/students/${item.studentId}`,
+			priority: index + 1,
+			signalType: 'pedagogical' as const
+		})),
+		...assessmentDrops.slice(0, 2).map((item, index) => ({
+			id: `drop-${item.latestAssessmentId}`,
+			classId: item.classId,
+			title: `${item.subjectName} recuou em ${item.className}`,
+			description: `A media da turma caiu ${item.dropPercent} pontos entre as duas publicacoes mais recentes desta materia.`,
+			ctaLabel: 'Abrir avaliacao',
+			href: `/teacher/assessments/${item.latestAssessmentId}`,
+			priority: index + 1,
+			signalType: 'pedagogical' as const
+		}))
+	]
+		.sort((a, b) => a.priority - b.priority)
+		.slice(0, 6);
+
+	const actionQueue: TeacherActionQueueItem[] = [...operationalQueue, ...pedagogicalQueue];
+
 	const totalClasses = dashboardCards.length;
 	const totalStudents = dashboardCards.reduce((sum, item) => sum + item.studentsCount, 0);
+	const totalDraftAssessments = dashboardCards.reduce(
+		(sum, item) => sum + item.draftAssessmentsCount,
+		0
+	);
+	const totalPublishedAssessments = dashboardCards.reduce(
+		(sum, item) => sum + item.publishedAssessmentsCount,
+		0
+	);
+	const totalPendingPublications = dashboardCards.reduce(
+		(sum, item) => sum + item.readyToPublishCount,
+		0
+	);
 	const totalRiskStudents = dashboardCards.reduce((sum, item) => sum + item.riskStudentsCount, 0);
-	const totalPendingCells = dashboardCards.reduce((sum, item) => sum + item.pendingCells, 0);
-	const classesNeedingSnapshot = dashboardCards.filter((item) => item.needsSnapshot).length;
+	const totalPendingCells = dashboardCards.reduce((sum, item) => sum + item.pendingResultsCount, 0);
 	const classesAtRisk = dashboardCards.filter(
 		(item) => item.status === 'critical' || item.riskStudentsCount > 0
 	).length;
 	const classesInSetup = dashboardCards.filter((item) => item.status === 'setup').length;
 	const healthyClasses = dashboardCards.filter((item) => item.status === 'healthy').length;
 
-	let message = 'Seu workspace está pronto para operar.';
+	let message = 'Seu workspace teacher esta pronto para operar no fluxo novo.';
 	if (totalClasses === 0) {
 		message = 'Pronto para transformar dados em progresso? Crie sua primeira turma.';
 	} else if (classesInSetup > 0) {
-		message = `Você tem ${classesInSetup} turma(s) em fase de configuração.`;
-	} else if (totalRiskStudents > 0) {
-		message = `${totalRiskStudents} aluno(s) pedem atenção hoje em ${classesAtRisk} turma(s).`;
-	} else if (classesNeedingSnapshot > 0) {
-		message = `${classesNeedingSnapshot} turma(s) estão sem snapshot recente.`;
+		message = `Voce tem ${classesInSetup} turma(s) ainda montando base de alunos e materias.`;
+	} else if (totalPendingPublications > 0) {
+		message = `Ha ${totalPendingPublications} avaliacao(oes) pronta(s) para publicar agora.`;
+	} else if (totalDraftAssessments > 0) {
+		message = `${totalDraftAssessments} avaliacao(oes) seguem em rascunho aguardando fechamento.`;
 	} else if (totalPendingCells > 0) {
-		message = `Há ${totalPendingCells} lançamento(s) ainda pendente(s) nas suas turmas.`;
+		message = `Ha ${totalPendingCells} resultado(s) ainda pendente(s) nas suas turmas.`;
+	} else if (longitudinalSubjects.length > 0) {
+		message = 'As materias com menor media publicada ja aparecem no longitudinal do dashboard.';
 	}
 
 	return {
 		classes: dashboardCards,
 		actionQueue,
+		longitudinalSubjects,
+		riskStudents,
+		studentComparisons,
+		assessmentDrops,
 		summary: {
 			displayName,
 			totalClasses,
 			totalStudents,
+			totalDraftAssessments,
+			totalPublishedAssessments,
+			totalPendingPublications,
 			totalRiskStudents,
 			totalPendingCells,
-			classesNeedingSnapshot,
 			classesAtRisk,
 			classesInSetup,
 			healthyClasses,
@@ -517,33 +786,33 @@ export const actions: Actions = {
 		const scoreDecimals = parseIntegerInput(form.get('score_decimals'), 0);
 
 		if (!name) {
-			return fail(400, { action: 'createClass', message: 'Nome da turma é obrigatório.' });
+			return fail(400, { action: 'createClass', message: 'Nome da turma e obrigatorio.' });
 		}
 
 		if (!Number.isFinite(scoreMin) || !Number.isFinite(scoreMax)) {
 			return fail(400, {
 				action: 'createClass',
-				message: 'Escala inválida: min e max precisam ser numéricos.'
+				message: 'Escala invalida: min e max precisam ser numericos.'
 			});
 		}
 
 		if (!(scoreMax > scoreMin)) {
 			return fail(400, {
 				action: 'createClass',
-				message: 'Escala inválida: max precisa ser > min.'
+				message: 'Escala invalida: max precisa ser > min.'
 			});
 		}
 
 		if (!Number.isInteger(scoreDecimals) || scoreDecimals < 0 || scoreDecimals > 6) {
 			return fail(400, {
 				action: 'createClass',
-				message: 'Decimais inválidos (0 a 6).'
+				message: 'Decimais invalidos (0 a 6).'
 			});
 		}
 
 		const userId = getAuthenticatedUserId(locals);
 		if (!userId) {
-			return fail(401, { action: 'createClass', message: 'Você precisa estar logado.' });
+			return fail(401, { action: 'createClass', message: 'Voce precisa estar logado.' });
 		}
 
 		const { error } = await locals.supabase.from('classes').insert({
@@ -570,12 +839,12 @@ export const actions: Actions = {
 		const classId = String(form.get('classId') ?? '').trim();
 
 		if (!classId) {
-			return fail(400, { action: 'deleteClass', message: 'classId obrigatório.' });
+			return fail(400, { action: 'deleteClass', message: 'classId obrigatorio.' });
 		}
 
 		const userId = getAuthenticatedUserId(locals);
 		if (!userId) {
-			return fail(401, { action: 'deleteClass', message: 'Você precisa estar logado.' });
+			return fail(401, { action: 'deleteClass', message: 'Voce precisa estar logado.' });
 		}
 
 		const { error } = await locals.supabase
@@ -602,7 +871,7 @@ export const actions: Actions = {
 		if (!classId) {
 			return fail(400, {
 				action: 'generateClassSnapshot',
-				message: 'classId obrigatório.'
+				message: 'classId obrigatorio.'
 			});
 		}
 
@@ -610,7 +879,7 @@ export const actions: Actions = {
 		if (!userId) {
 			return fail(401, {
 				action: 'generateClassSnapshot',
-				message: 'Você precisa estar logado.'
+				message: 'Voce precisa estar logado.'
 			});
 		}
 
@@ -624,7 +893,7 @@ export const actions: Actions = {
 		if (classError || !ownedClass) {
 			return fail(404, {
 				action: 'generateClassSnapshot',
-				message: 'Turma não encontrada.'
+				message: 'Turma nao encontrada.'
 			});
 		}
 

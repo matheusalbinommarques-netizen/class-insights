@@ -1,21 +1,57 @@
+<!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import { page } from '$app/stores';
 
-	let { children } = $props();
+	let { children, data } = $props<{
+		children: () => unknown;
+		data: {
+			profile: {
+				display_name: string;
+			};
+		};
+	}>();
 
 	const links = [
-		{ href: '/student', label: 'Início', description: 'Resumo do progresso' },
-		{ href: '/student/skills', label: 'Skills', description: 'Jornada e evolução' }
+		{ href: '/student', label: 'Inicio', description: 'Resumo do progresso' },
+		{ href: '/student/journey', label: 'Trajetoria', description: 'Historico publicado' },
+		{ href: '/student/skills', label: 'Materias', description: 'Leitura por materia' }
 	];
 
 	const isActive = (href: string) => {
 		if (href === '/student') return $page.url.pathname === '/student';
 		return $page.url.pathname.startsWith(href);
 	};
+
+	const sectionSummary = (pathname: string) => {
+		if (pathname.startsWith('/student/journey')) {
+			return {
+				title: 'Trajetoria longitudinal',
+				description: 'Veja sua sequencia de publicacoes e como seu momento atual foi construido.',
+				nextLabel: 'Abrir materias'
+			};
+		}
+
+		if (pathname.startsWith('/student/skills')) {
+			return {
+				title: 'Leitura por materia',
+				description: 'Entenda onde voce esta bem, onde caiu e qual materia pede a proxima acao.',
+				nextLabel: 'Voltar para a trajetoria'
+			};
+		}
+
+		return {
+			title: 'Panorama do momento',
+			description:
+				'Comece pelo resumo geral e siga para trajetoria e materias quando quiser aprofundar.',
+			nextLabel: 'Abrir trajetoria'
+		};
+	};
+
+	const currentSection = $derived(sectionSummary($page.url.pathname));
 </script>
 
 <svelte:head>
-	<title>Student • Class Insights</title>
+	<title>Student - Class Insights</title>
 </svelte:head>
 
 <div class="student-shell">
@@ -35,7 +71,8 @@
 	</header>
 
 	<nav class="nav">
-		{#each links as link}
+		{#each links as link (link.href)}
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 			<a
 				href={link.href}
 				class="nav-link"
@@ -47,6 +84,33 @@
 			</a>
 		{/each}
 	</nav>
+
+	<section class="overview">
+		<div>
+			<p class="overview-kicker">Jornada do aluno</p>
+			<h2>{currentSection.title}</h2>
+			<p>
+				{currentSection.description}
+				{#if data.profile.display_name}
+					Leitura pessoal de {data.profile.display_name}.
+				{/if}
+			</p>
+		</div>
+		<div class="overview-steps" aria-label="Etapas do portal do aluno">
+			{#each links as link (link.href)}
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+				<a
+					href={link.href}
+					class="overview-step"
+					class:active={isActive(link.href)}
+					aria-current={isActive(link.href) ? 'page' : undefined}
+				>
+					<span>{link.label}</span>
+					<small>{link.description}</small>
+				</a>
+			{/each}
+		</div>
+	</section>
 
 	<main class="content">
 		<div class="content-inner">
@@ -63,7 +127,13 @@
 			linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
 		color: #0f172a;
 		font-family:
-			Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+			Inter,
+			ui-sans-serif,
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			sans-serif;
 	}
 
 	:global(a) {
@@ -146,7 +216,7 @@
 
 	.nav {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 0.75rem;
 		margin-bottom: 1rem;
 	}
@@ -187,6 +257,79 @@
 		color: #64748b;
 	}
 
+	.overview {
+		display: grid;
+		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+		gap: 1rem;
+		padding: 1rem;
+		margin-bottom: 1rem;
+		border-radius: 1.35rem;
+		background:
+			linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(255, 255, 255, 0.92)),
+			radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 45%);
+		border: 1px solid rgba(125, 211, 252, 0.3);
+		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+	}
+
+	.overview-kicker {
+		margin: 0;
+		font-size: 0.78rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: #0369a1;
+	}
+
+	.overview h2 {
+		margin: 0.35rem 0 0;
+		font-size: 1.25rem;
+		line-height: 1.15;
+		color: #0f172a;
+	}
+
+	.overview p {
+		margin: 0.55rem 0 0;
+		max-width: 52rem;
+		font-size: 0.95rem;
+		line-height: 1.65;
+		color: #334155;
+	}
+
+	.overview-steps {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+	}
+
+	.overview-step {
+		display: block;
+		padding: 0.9rem;
+		border-radius: 1rem;
+		text-decoration: none;
+		background: rgba(255, 255, 255, 0.76);
+		border: 1px solid rgba(148, 163, 184, 0.16);
+	}
+
+	.overview-step.active {
+		background: linear-gradient(180deg, rgba(14, 165, 233, 0.16), rgba(14, 165, 233, 0.08));
+		border-color: rgba(14, 165, 233, 0.32);
+	}
+
+	.overview-step span {
+		display: block;
+		font-size: 0.94rem;
+		font-weight: 800;
+		color: #0f172a;
+	}
+
+	.overview-step small {
+		display: block;
+		margin-top: 0.22rem;
+		font-size: 0.8rem;
+		line-height: 1.45;
+		color: #475569;
+	}
+
 	.content {
 		padding-bottom: 1.5rem;
 	}
@@ -194,6 +337,14 @@
 	.content-inner {
 		max-width: 900px;
 		margin: 0 auto;
+	}
+
+	@media (max-width: 800px) {
+		.nav,
+		.overview,
+		.overview-steps {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	@media (max-width: 640px) {
@@ -209,10 +360,6 @@
 		.topbar-chip {
 			width: 100%;
 			justify-content: center;
-		}
-
-		.nav {
-			grid-template-columns: 1fr;
 		}
 	}
 </style>

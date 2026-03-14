@@ -43,7 +43,9 @@ export function normalizeTextForMatch(value: string | null | undefined): string 
 }
 
 export function normalizeNumericString(raw: string | null | undefined): string {
-	const value = String(raw ?? '').trim().replace(/\s+/g, '');
+	const value = String(raw ?? '')
+		.trim()
+		.replace(/\s+/g, '');
 
 	if (!value) return '';
 

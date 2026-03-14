@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { supabase } from '$lib/services/supabaseClient';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	type ClaimStudentRpcRow = {
 		student_id: string;
@@ -54,7 +55,8 @@
 	$: trimmedEmail = email.trim().toLowerCase();
 	$: normalizedInviteCode = normalizeInviteCode(inviteCode);
 	$: passwordHasMinLength = password.length >= MIN_PASSWORD_LENGTH;
-	$: passwordsMatch = password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
+	$: passwordsMatch =
+		password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
 
 	function resetMessages() {
 		errorMessage = '';
@@ -217,7 +219,7 @@
 				await invalidateAll();
 
 				if (linked) {
-					await goto('/student');
+					await goto(resolve('/student'));
 					return;
 				}
 
@@ -263,9 +265,7 @@
 				'Se existir um cadastro pendente para esse e-mail, enviamos um novo link de verificação.';
 		} catch (error) {
 			errorMessage =
-				error instanceof Error
-					? error.message
-					: 'Não foi possível reenviar a verificação.';
+				error instanceof Error ? error.message : 'Não foi possível reenviar a verificação.';
 		} finally {
 			resending = false;
 		}
@@ -287,18 +287,36 @@
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
 	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-		<div class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"></div>
+		<div
+			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"
+		></div>
 		<div class="absolute -right-24 top-40 h-72 w-72 rounded-full bg-sky-200/50 blur-3xl"></div>
 		<div class="absolute -left-24 top-96 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl"></div>
 	</div>
 
 	<div class="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 lg:px-8">
-		<div class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]">
-			<section class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-amber-50 via-white to-emerald-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10">
-				<a href="/" class="inline-flex w-fit items-center gap-3">
-					<div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
-						<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z" />
+		<div
+			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]"
+		>
+			<section
+				class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-amber-50 via-white to-emerald-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10"
+			>
+				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
+					<div
+						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+					>
+						<svg
+							class="h-6 w-6"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							stroke-width="2.2"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z"
+							/>
 						</svg>
 					</div>
 
@@ -315,7 +333,9 @@
 						Cadastro de aluno
 					</p>
 
-					<h1 class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
+					<h1
+						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
+					>
 						Crie sua conta e acompanhe seu progresso com mais clareza.
 					</h1>
 
@@ -326,19 +346,49 @@
 				</div>
 
 				<div class="mt-8 grid gap-3">
-					{#each benefits as benefit}
-						<div class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-							<div class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}>
+					{#each benefits as benefit (benefit.title)}
+						<div
+							class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+						>
+							<div
+								class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}
+							>
 								{#if benefit.tone === 'sky'}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M7 8h10M7 12h7m-7 4h10" />
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M7 8h10M7 12h7m-7 4h10"
+										/>
 									</svg>
 								{:else if benefit.tone === 'emerald'}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M3 12h6l3 8 4-16 3 8h2" />
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M3 12h6l3 8 4-16 3 8h2"
+										/>
 									</svg>
 								{:else}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
 										<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" />
 									</svg>
 								{/if}
@@ -363,7 +413,9 @@
 							</h2>
 						</div>
 
-						<div class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 sm:block">
+						<div
+							class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 sm:block"
+						>
 							Aluno + código
 						</div>
 					</div>
@@ -378,7 +430,9 @@
 						</div>
 
 						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-							<p class="text-xs font-black uppercase tracking-widest text-emerald-700">2. Cadastre</p>
+							<p class="text-xs font-black uppercase tracking-widest text-emerald-700">
+								2. Cadastre
+							</p>
 							<p class="mt-2 text-lg font-black text-slate-950">Sua conta</p>
 							<p class="mt-2 text-sm leading-6 text-slate-600">
 								Você cria seu acesso com nome, e-mail, senha e o código da turma.
@@ -386,7 +440,9 @@
 						</div>
 
 						<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-							<p class="text-xs font-black uppercase tracking-widest text-amber-700">3. Acompanhe</p>
+							<p class="text-xs font-black uppercase tracking-widest text-amber-700">
+								3. Acompanhe
+							</p>
 							<p class="mt-2 text-lg font-black text-slate-950">Seu progresso</p>
 							<p class="mt-2 text-sm leading-6 text-slate-600">
 								O sistema conecta sua conta ao registro correto e libera a área do aluno.
@@ -396,9 +452,13 @@
 
 					<div class="mt-5 flex flex-wrap gap-3 text-sm text-slate-600">
 						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Skills</div>
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Progresso visual</div>
+						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">
+							Progresso visual
+						</div>
 						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Pontos fortes</div>
-						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">Pontos de atenção</div>
+						<div class="rounded-full border border-slate-200 bg-white px-4 py-2">
+							Pontos de atenção
+						</div>
 					</div>
 				</div>
 			</section>
@@ -406,7 +466,7 @@
 			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
 				<div class="w-full max-w-md">
 					<div class="mb-8 flex items-center justify-between lg:hidden">
-						<a href="/" class="text-sm font-bold text-slate-600 hover:text-slate-900">
+						<a href={resolve('/')} class="text-sm font-bold text-slate-600 hover:text-slate-900">
 							← Voltar para home
 						</a>
 					</div>
@@ -420,21 +480,31 @@
 								Criar conta de aluno
 							</h2>
 							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Use o código de convite enviado pelo professor para vincular sua conta ao
-								registro acadêmico correto.
+								Use o código de convite enviado pelo professor para vincular sua conta ao registro
+								acadêmico correto.
 							</p>
 						</div>
 
 						<form class="space-y-5" onsubmit={handleSubmit}>
 							<div class="space-y-2">
-								<label for="name" class="block text-sm font-bold text-slate-700">
-									Nome
-								</label>
+								<label for="name" class="block text-sm font-bold text-slate-700"> Nome </label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M15 19a4 4 0 0 0-8 0m8 0a4 4 0 0 1 4-4m-4 4H9m10-4a4 4 0 0 0-4-4m0 0a4 4 0 1 0-8 0m8 0H9" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M15 19a4 4 0 0 0-8 0m8 0a4 4 0 0 1 4-4m-4 4H9m10-4a4 4 0 0 0-4-4m0 0a4 4 0 1 0-8 0m8 0H9"
+											/>
 										</svg>
 									</div>
 
@@ -452,14 +522,24 @@
 							</div>
 
 							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700">
-									E-mail
-								</label>
+								<label for="email" class="block text-sm font-bold text-slate-700"> E-mail </label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1"
+											/>
 										</svg>
 									</div>
 
@@ -479,14 +559,24 @@
 							</div>
 
 							<div class="space-y-2">
-								<label for="password" class="block text-sm font-bold text-slate-700">
-									Senha
-								</label>
+								<label for="password" class="block text-sm font-bold text-slate-700"> Senha </label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
+											/>
 										</svg>
 									</div>
 
@@ -519,9 +609,21 @@
 								</label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
+											/>
 										</svg>
 									</div>
 
@@ -541,7 +643,9 @@
 										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
 										onclick={() => (showConfirmPassword = !showConfirmPassword)}
 										disabled={loading}
-										aria-label={showConfirmPassword ? 'Ocultar confirmação de senha' : 'Mostrar confirmação de senha'}
+										aria-label={showConfirmPassword
+											? 'Ocultar confirmação de senha'
+											: 'Mostrar confirmação de senha'}
 									>
 										{showConfirmPassword ? 'Ocultar' : 'Mostrar'}
 									</button>
@@ -554,9 +658,21 @@
 								</label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-8 4h10m-8-8h10M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M9 12h6m-8 4h10m-8-8h10M5 5h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"
+											/>
 										</svg>
 									</div>
 
@@ -623,8 +739,19 @@
 								{#if loading}
 									<span class="flex items-center gap-3">
 										<svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-											<circle cx="12" cy="12" r="10" class="opacity-25" stroke="currentColor" stroke-width="4"></circle>
-											<path class="opacity-75" fill="currentColor" d="M22 12a10 10 0 0 0-10-10v4a6 6 0 0 1 6 6h4Z"></path>
+											<circle
+												cx="12"
+												cy="12"
+												r="10"
+												class="opacity-25"
+												stroke="currentColor"
+												stroke-width="4"
+											></circle>
+											<path
+												class="opacity-75"
+												fill="currentColor"
+												d="M22 12a10 10 0 0 0-10-10v4a6 6 0 0 1 6 6h4Z"
+											></path>
 										</svg>
 										Criando conta...
 									</span>
@@ -635,13 +762,17 @@
 						</form>
 
 						{#if errorMessage}
-							<div class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+							<div
+								class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+							>
 								{errorMessage}
 							</div>
 						{/if}
 
 						{#if successMessage}
-							<div class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+							<div
+								class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
+							>
 								{successMessage}
 							</div>
 						{/if}
@@ -663,7 +794,7 @@
 							</button>
 
 							<a
-								href="/login"
+								href={resolve('/login')}
 								class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white"
 							>
 								Fazer login
@@ -671,8 +802,8 @@
 						</div>
 
 						<p class="mt-6 text-center text-sm leading-6 text-slate-500">
-							Se o projeto exigir confirmação de e-mail, o vínculo final com o aluno será
-							concluído no login usando o código salvo durante o cadastro.
+							Se o projeto exigir confirmação de e-mail, o vínculo final com o aluno será concluído
+							no login usando o código salvo durante o cadastro.
 						</p>
 					</div>
 				</div>

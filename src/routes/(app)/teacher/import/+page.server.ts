@@ -7,19 +7,13 @@ import {
 	resolveEffectiveScale,
 	validateScoreInput
 } from '$lib/server/scoring';
+import { getAuthenticatedUserId } from '$lib/server/auth';
+import { getOwnedClass } from '$lib/server/teacher';
 
 type ParsedCSV = {
 	headers: string[];
 	rows: string[][];
 	delimiter: ',' | ';' | '\t';
-};
-
-type OwnedClass = {
-	id: string;
-	name: string;
-	score_min: number;
-	score_max: number;
-	score_decimals: number;
 };
 
 type OwnedImportJob = {
@@ -67,39 +61,6 @@ type PersistableMappedRow = {
 
 const MAX_PREVIEW_ROWS = 20;
 const UPDATE_CHUNK_SIZE = 50;
-
-async function getAuthenticatedUserId(locals: App.Locals): Promise<string | null> {
-	const {
-		data: { user },
-		error
-	} = await locals.supabase.auth.getUser();
-
-	if (error || !user) return null;
-	return user.id;
-}
-
-async function getOwnedClass(
-	locals: App.Locals,
-	classId: string,
-	userId: string
-): Promise<OwnedClass | null> {
-	const { data, error } = await locals.supabase
-		.from('classes')
-		.select('id, name, score_min, score_max, score_decimals')
-		.eq('id', classId)
-		.eq('teacher_id', userId)
-		.maybeSingle();
-
-	if (error || !data) return null;
-
-	return {
-		id: data.id,
-		name: data.name,
-		score_min: data.score_min,
-		score_max: data.score_max,
-		score_decimals: data.score_decimals
-	};
-}
 
 async function getOwnedImportJob(
 	locals: App.Locals,
@@ -598,8 +559,7 @@ export const actions: Actions = {
 
 			if (!rawRow) {
 				return fail(400, {
-					message:
-						'Este job foi criado em uma versão antiga do staging. Gere o preview novamente.'
+					message: 'Este job foi criado em uma versão antiga do staging. Gere o preview novamente.'
 				});
 			}
 
@@ -667,8 +627,7 @@ export const actions: Actions = {
 						row_index: rowIndex,
 						column_index: skill.columnIndex,
 						column_name: skill.columnName,
-						message:
-							maybeNumeric === null ? 'Nota inválida (não numérica).' : validation.message,
+						message: maybeNumeric === null ? 'Nota inválida (não numérica).' : validation.message,
 						value: raw
 					});
 				}

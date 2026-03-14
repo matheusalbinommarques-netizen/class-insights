@@ -1,261 +1,272 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
-import { resolveEffectiveScale, validateScoreInput } from '$lib/server/scoring';
 
-type BaselineLatestSnapshotRow = {
-	skill_id: string;
-	skill_name: string;
-	baseline_date: string | null;
-	baseline_n: number | null;
-	baseline_avg: number | null;
-	baseline_median: number | null;
-	latest_date: string | null;
-	latest_n: number | null;
-	latest_avg: number | null;
-	latest_median: number | null;
+import { validateAssessmentInput } from '$lib/server/assessments';
+import { getAuthenticatedUserId } from '$lib/server/auth';
+import { buildSubjectLongitudinalSummaries } from '$lib/server/longitudinal';
+import { validateSubjectInput } from '$lib/server/subjects';
+import { getOwnedClass, getOwnedClassSubject } from '$lib/server/teacher';
+import type { LongitudinalPoint, SubjectLongitudinalSummary } from '$lib/types/academic';
+import type {
+	TeacherClassStudent,
+	TeacherClassSubjectCard,
+	TeacherSubjectOption
+} from '$lib/types/teacher';
+
+type ClassSubjectRow = {
+	class_id: string;
+	subject_id: string;
+	teacher_id: string;
+	subjects:
+		| {
+				id: string;
+				name: string;
+				code: string | null;
+		  }
+		| {
+				id: string;
+				name: string;
+				code: string | null;
+		  }[];
 };
 
-type OwnedClass = {
+type AssessmentRow = {
 	id: string;
-	name: string;
+	title: string;
+	assessment_date: string;
+	weight: number;
+	status: 'draft' | 'published';
+	published_at: string | null;
+	subject_id: string;
+};
+
+type AssessmentResultRow = {
+	assessment_id: string;
+	raw_score: number | null;
 	score_min: number;
 	score_max: number;
-	score_decimals: number;
+	is_excused: boolean;
 };
-
-type StudentRow = {
-	id: string;
-	name: string;
-	invite_code: string | null;
-	created_at?: string;
-};
-
-type SkillRow = {
-	id: string;
-	name: string;
-	created_at?: string;
-	score_min: number | null;
-	score_max: number | null;
-	score_decimals: number | null;
-};
-
-type ScoreRow = {
-	student_id: string;
-	skill_id: string;
-	score: number;
-};
-
-type OwnedSkill = {
-	id: string;
-	class_id: string;
-	score_min: number | null;
-	score_max: number | null;
-	score_decimals: number | null;
-};
-
-function getAuthenticatedUserId(locals: App.Locals): string | null {
-	return locals.session?.user?.id ?? null;
-}
-
-function todayUTCDateString(): string {
-	return new Date().toISOString().slice(0, 10);
-}
 
 function generateInviteCode(): string {
 	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
 }
 
-function parseDecimalInput(raw: FormDataEntryValue | null): number {
-	const normalized = String(raw ?? '')
-		.trim()
-		.replace(/\s+/g, '')
-		.replace(',', '.');
-
-	return Number(normalized);
+function parseNumberInput(raw: FormDataEntryValue | null): number {
+	return Number(
+		String(raw ?? '')
+			.trim()
+			.replace(',', '.')
+	);
 }
 
-function parseIntegerInput(raw: FormDataEntryValue | null): number {
-	return Number(String(raw ?? '').trim());
+function average(values: number[]): number | null {
+	if (values.length === 0) return null;
+	return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-async function getOwnedClass(
-	locals: App.Locals,
-	classId: string,
-	userId: string
-): Promise<OwnedClass | null> {
-	const { data, error } = await locals.supabase
-		.from('classes')
-		.select('id, name, score_min, score_max, score_decimals')
-		.eq('id', classId)
-		.eq('teacher_id', userId)
-		.maybeSingle();
+function normalizePercent(rawScore: number | null, min: number, max: number): number | null {
+	if (typeof rawScore !== 'number') return null;
 
-	if (error || !data) return null;
+	const range = max - min;
+	if (range <= 0) return null;
 
-	return {
-		id: data.id,
-		name: data.name,
-		score_min: data.score_min,
-		score_max: data.score_max,
-		score_decimals: data.score_decimals
-	};
-}
-
-async function getOwnedStudent(
-	locals: App.Locals,
-	classId: string,
-	studentId: string
-): Promise<{ id: string } | null> {
-	const { data, error } = await locals.supabase
-		.from('students')
-		.select('id')
-		.eq('id', studentId)
-		.eq('class_id', classId)
-		.maybeSingle();
-
-	if (error || !data) return null;
-
-	return { id: data.id };
-}
-
-async function getOwnedSkill(
-	locals: App.Locals,
-	classId: string,
-	skillId: string
-): Promise<OwnedSkill | null> {
-	const { data, error } = await locals.supabase
-		.from('skills')
-		.select('id, class_id, score_min, score_max, score_decimals')
-		.eq('id', skillId)
-		.eq('class_id', classId)
-		.maybeSingle();
-
-	if (error || !data) return null;
-
-	return {
-		id: data.id,
-		class_id: data.class_id,
-		score_min: data.score_min,
-		score_max: data.score_max,
-		score_decimals: data.score_decimals
-	};
+	return Math.max(0, Math.min(100, ((rawScore - min) / range) * 100));
 }
 
 export const load: PageServerLoad = async ({ params, locals }) => {
-	const classId = params.classId;
-	const today = todayUTCDateString();
-
 	const userId = getAuthenticatedUserId(locals);
 
 	if (!userId) {
 		return {
 			class: null,
-			students: [] as StudentRow[],
-			skills: [] as SkillRow[],
-			scores: [] as ScoreRow[],
-			insights: null,
-			hasTodaySnapshot: false,
-			today
+			students: [] as TeacherClassStudent[],
+			subjects: [] as TeacherClassSubjectCard[],
+			availableSubjects: [] as TeacherSubjectOption[],
+			longitudinalSubjects: [] as SubjectLongitudinalSummary[],
+			summary: {
+				totalStudents: 0,
+				totalSubjects: 0,
+				totalAssessments: 0,
+				draftAssessments: 0
+			}
 		};
 	}
 
-	const classData = await getOwnedClass(locals, classId, userId);
+	const ownedClass = await getOwnedClass(locals, params.classId, userId);
 
-	if (!classData) {
+	if (!ownedClass) {
 		return {
 			class: null,
-			students: [] as StudentRow[],
-			skills: [] as SkillRow[],
-			scores: [] as ScoreRow[],
-			insights: null,
-			hasTodaySnapshot: false,
-			today
+			students: [] as TeacherClassStudent[],
+			subjects: [] as TeacherClassSubjectCard[],
+			availableSubjects: [] as TeacherSubjectOption[],
+			longitudinalSubjects: [] as SubjectLongitudinalSummary[],
+			summary: {
+				totalStudents: 0,
+				totalSubjects: 0,
+				totalAssessments: 0,
+				draftAssessments: 0
+			}
 		};
 	}
 
-	const [{ data: studentsData }, { data: skillsData }, { data: snapshotData, error: snapshotError }] =
+	const [{ data: studentsData }, { data: classSubjectsData }, { data: allSubjectsData }] =
 		await Promise.all([
 			locals.supabase
 				.from('students')
 				.select('id, name, invite_code, created_at')
-				.eq('class_id', classData.id)
+				.eq('class_id', ownedClass.id)
 				.order('created_at', { ascending: true }),
 			locals.supabase
-				.from('skills')
-				.select('id, name, created_at, score_min, score_max, score_decimals')
-				.eq('class_id', classData.id)
-				.order('created_at', { ascending: true }),
-			locals.supabase.rpc('get_baseline_latest_snapshots', {
-				p_class_id: classData.id
-			})
+				.from('class_subjects')
+				.select(
+					`
+						class_id,
+						subject_id,
+						teacher_id,
+						subjects!inner (
+							id,
+							name,
+							code
+						)
+					`
+				)
+				.eq('class_id', ownedClass.id)
+				.eq('teacher_id', userId),
+			locals.supabase.from('subjects').select('id, name, code').order('name', { ascending: true })
 		]);
 
-	const students = (studentsData ?? []) as StudentRow[];
-	const skills = (skillsData ?? []) as SkillRow[];
+	const students = (studentsData ?? []) as TeacherClassStudent[];
+	const classSubjects = ((classSubjectsData ?? []) as ClassSubjectRow[])
+		.map((item) => {
+			const subject = Array.isArray(item.subjects) ? item.subjects[0] : item.subjects;
+			if (!subject) return null;
 
-	const studentIds = students.map((student) => student.id);
+			return {
+				class_id: item.class_id,
+				subject_id: item.subject_id,
+				teacher_id: item.teacher_id,
+				subject
+			};
+		})
+		.filter(
+			(
+				item
+			): item is {
+				class_id: string;
+				subject_id: string;
+				teacher_id: string;
+				subject: {
+					id: string;
+					name: string;
+					code: string | null;
+				};
+			} => item !== null
+		);
+	const availableSubjects = (allSubjectsData ?? []) as TeacherSubjectOption[];
 
-	let scores: ScoreRow[] = [];
-	if (studentIds.length > 0) {
-		const { data: scoreData } = await locals.supabase
-			.from('student_skill_scores')
-			.select('student_id, skill_id, score')
-			.in('student_id', studentIds);
+	const subjectIds = classSubjects.map((item) => item.subject_id);
 
-		scores = (scoreData ?? []) as ScoreRow[];
+	let assessments: AssessmentRow[] = [];
+	const resultsByAssessmentId = new Map<string, number>();
+	let longitudinalSubjects: SubjectLongitudinalSummary[] = [];
+
+	if (subjectIds.length > 0) {
+		const { data: assessmentsData } = await locals.supabase
+			.from('assessments')
+			.select('id, title, assessment_date, weight, status, published_at, subject_id')
+			.eq('class_id', ownedClass.id)
+			.in('subject_id', subjectIds)
+			.order('assessment_date', { ascending: false });
+
+		assessments = (assessmentsData ?? []) as AssessmentRow[];
+
+		if (assessments.length > 0) {
+			const { data: resultsData } = await locals.supabase
+				.from('assessment_results')
+				.select('assessment_id, raw_score, score_min, score_max, is_excused')
+				.in(
+					'assessment_id',
+					assessments.map((item) => item.id)
+				);
+
+			const assessmentResults = (resultsData ?? []) as AssessmentResultRow[];
+			const resultsForLongitudinal = new Map<string, AssessmentResultRow[]>();
+
+			for (const row of assessmentResults) {
+				resultsByAssessmentId.set(
+					row.assessment_id,
+					(resultsByAssessmentId.get(row.assessment_id) ?? 0) + 1
+				);
+
+				const current = resultsForLongitudinal.get(row.assessment_id) ?? [];
+				current.push(row);
+				resultsForLongitudinal.set(row.assessment_id, current);
+			}
+
+			const publishedTimeline: LongitudinalPoint[] = assessments
+				.filter((assessment) => assessment.status === 'published')
+				.map((assessment) => {
+					const normalizedValues = (resultsForLongitudinal.get(assessment.id) ?? [])
+						.filter((result) => !result.is_excused)
+						.map((result) => normalizePercent(result.raw_score, result.score_min, result.score_max))
+						.filter((value): value is number => typeof value === 'number');
+					const subject = classSubjects.find(
+						(item) => item.subject_id === assessment.subject_id
+					)?.subject;
+					const normalizedAverage = average(normalizedValues);
+
+					return {
+						assessment_id: assessment.id,
+						assessment_title: assessment.title,
+						assessment_date: assessment.assessment_date,
+						subject_id: assessment.subject_id,
+						subject_name: subject?.name ?? 'Materia',
+						raw_score: normalizedAverage,
+						normalized_percent:
+							normalizedAverage === null ? null : Number(normalizedAverage.toFixed(2)),
+						status: assessment.status
+					};
+				});
+
+			longitudinalSubjects = buildSubjectLongitudinalSummaries(publishedTimeline);
+		}
 	}
 
-	const insightsRows: BaselineLatestSnapshotRow[] =
-		(snapshotData as BaselineLatestSnapshotRow[] | null)?.map((row) => ({
-			skill_id: row.skill_id,
-			skill_name: row.skill_name,
-			baseline_date: row.baseline_date,
-			baseline_n: row.baseline_n ?? null,
-			baseline_avg: row.baseline_avg ?? null,
-			baseline_median: row.baseline_median ?? null,
-			latest_date: row.latest_date,
-			latest_n: row.latest_n ?? null,
-			latest_avg: row.latest_avg ?? null,
-			latest_median: row.latest_median ?? null
-		})) ?? [];
-
-	const hasTodaySnapshot = insightsRows.some((row) => row.latest_date === today);
-
-	const latestAvgs = insightsRows
-		.map((row) => row.latest_avg)
-		.filter((value): value is number => typeof value === 'number');
-
-	const classAvg = latestAvgs.length
-		? latestAvgs.reduce((sum, value) => sum + value, 0) / latestAvgs.length
-		: null;
-
-	const criticalSkill =
-		insightsRows
-			.filter((row) => typeof row.latest_avg === 'number')
-			.sort((a, b) => (a.latest_avg ?? 0) - (b.latest_avg ?? 0))[0] ?? null;
-
-	const strongSkill =
-		insightsRows
-			.filter((row) => typeof row.latest_avg === 'number')
-			.sort((a, b) => (b.latest_avg ?? 0) - (a.latest_avg ?? 0))[0] ?? null;
+	const subjects: TeacherClassSubjectCard[] = classSubjects
+		.map((item) => ({
+			id: item.subject.id,
+			name: item.subject.name,
+			code: item.subject.code,
+			assessments: assessments
+				.filter((assessment) => assessment.subject_id === item.subject_id)
+				.map((assessment) => ({
+					id: assessment.id,
+					title: assessment.title,
+					assessmentDate: assessment.assessment_date,
+					weight: assessment.weight,
+					status: assessment.status,
+					publishedAt: assessment.published_at,
+					resultsCount: resultsByAssessmentId.get(assessment.id) ?? 0
+				}))
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
 	return {
-		class: classData,
+		class: ownedClass,
 		students,
-		skills,
-		scores,
-		insights: snapshotError
-			? null
-			: {
-					rows: insightsRows,
-					kpis: {
-						classAvg,
-						criticalSkill,
-						strongSkill
-					}
-				},
-		hasTodaySnapshot,
-		today
+		subjects,
+		availableSubjects,
+		longitudinalSubjects,
+		summary: {
+			totalStudents: students.length,
+			totalSubjects: subjects.length,
+			totalAssessments: assessments.length,
+			draftAssessments: assessments.filter((assessment) => assessment.status === 'draft').length,
+			publishedAssessments: assessments.filter((assessment) => assessment.status === 'published')
+				.length
+		}
 	};
 };
 
@@ -265,261 +276,174 @@ export const actions: Actions = {
 		const name = String(form.get('name') ?? '').trim();
 
 		if (!name) {
-			return fail(400, { message: 'Nome do aluno é obrigatório.' });
+			return fail(400, { action: 'createStudent', message: 'Nome do aluno e obrigatorio.' });
 		}
 
 		const userId = getAuthenticatedUserId(locals);
 		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
+			return fail(401, { action: 'createStudent', message: 'Voce precisa estar logado.' });
 		}
 
 		const ownedClass = await getOwnedClass(locals, params.classId, userId);
 		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
+			return fail(404, { action: 'createStudent', message: 'Turma nao encontrada.' });
 		}
-
-		const inviteCode = generateInviteCode();
 
 		const { error } = await locals.supabase.from('students').insert({
 			name,
 			class_id: ownedClass.id,
-			invite_code: inviteCode
+			invite_code: generateInviteCode()
 		});
 
 		if (error) {
-			return fail(400, { message: error.message });
+			return fail(400, { action: 'createStudent', message: error.message });
 		}
 
-		return { success: true };
+		return { success: true, action: 'createStudent', message: 'Aluno criado com sucesso.' };
 	},
 
-	createSkill: async ({ request, params, locals }) => {
+	createSubject: async ({ request, params, locals }) => {
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { action: 'createSubject', message: 'Voce precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { action: 'createSubject', message: 'Turma nao encontrada.' });
+		}
+
 		const form = await request.formData();
 		const name = String(form.get('name') ?? '').trim();
+		const code = String(form.get('code') ?? '').trim();
 
-		if (!name) {
-			return fail(400, { message: 'Nome da skill é obrigatório.' });
-		}
-
-		const userId = getAuthenticatedUserId(locals);
-		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
-		}
-
-		const ownedClass = await getOwnedClass(locals, params.classId, userId);
-		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
-		}
-
-		const { error } = await locals.supabase.from('skills').insert({
-			name,
-			class_id: ownedClass.id
-		});
-
-		if (error) {
-			return fail(400, { message: error.message });
-		}
-
-		return { success: true };
-	},
-
-	deleteSkill: async ({ request, params, locals }) => {
-		const form = await request.formData();
-		const skillId = String(form.get('skillId') ?? '').trim();
-
-		if (!skillId) {
-			return fail(400, { message: 'Skill inválida.' });
-		}
-
-		const userId = getAuthenticatedUserId(locals);
-		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
-		}
-
-		const ownedClass = await getOwnedClass(locals, params.classId, userId);
-		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
-		}
-
-		const { error } = await locals.supabase
-			.from('skills')
-			.delete()
-			.eq('id', skillId)
-			.eq('class_id', ownedClass.id);
-
-		if (error) {
-			return fail(400, { message: error.message });
-		}
-
-		return { success: true };
-	},
-
-	updateSkillScale: async ({ request, params, locals }) => {
-		const form = await request.formData();
-		const skillId = String(form.get('skillId') ?? '').trim();
-		const mode = String(form.get('mode') ?? 'inherit').trim();
-
-		if (!skillId) {
-			return fail(400, { message: 'Skill inválida.' });
-		}
-
-		if (mode !== 'inherit' && mode !== 'custom') {
-			return fail(400, { message: 'Modo de escala inválido.' });
-		}
-
-		const userId = getAuthenticatedUserId(locals);
-		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
-		}
-
-		const ownedClass = await getOwnedClass(locals, params.classId, userId);
-		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
-		}
-
-		if (mode === 'inherit') {
-			const { error } = await locals.supabase
-				.from('skills')
-				.update({
-					score_min: null,
-					score_max: null,
-					score_decimals: null
-				})
-				.eq('id', skillId)
-				.eq('class_id', ownedClass.id);
-
-			if (error) {
-				return fail(400, { message: error.message });
-			}
-
-			return { success: true };
-		}
-
-		const scoreMin = parseDecimalInput(form.get('score_min'));
-		const scoreMax = parseDecimalInput(form.get('score_max'));
-		const decimals = parseIntegerInput(form.get('score_decimals'));
-
-		if (!Number.isFinite(scoreMin) || !Number.isFinite(scoreMax)) {
-			return fail(400, { message: 'Min/Max inválidos.' });
-		}
-
-		if (!(scoreMax > scoreMin)) {
-			return fail(400, { message: 'Max precisa ser maior que Min.' });
-		}
-
-		if (!Number.isInteger(decimals) || decimals < 0 || decimals > 6) {
-			return fail(400, { message: 'Decimais inválidos.' });
-		}
-
-		const { error } = await locals.supabase
-			.from('skills')
-			.update({
-				score_min: scoreMin,
-				score_max: scoreMax,
-				score_decimals: decimals
-			})
-			.eq('id', skillId)
-			.eq('class_id', ownedClass.id);
-
-		if (error) {
-			return fail(400, { message: error.message });
-		}
-
-		return { success: true };
-	},
-
-	upsertScore: async ({ request, params, locals }) => {
-		const form = await request.formData();
-		const studentId = String(form.get('studentId') ?? '').trim();
-		const skillId = String(form.get('skillId') ?? '').trim();
-		const rawScore = String(form.get('score') ?? '').trim();
-
-		if (!studentId || !skillId) {
-			return fail(400, { message: 'Aluno/skill inválidos.' });
-		}
-
-		const userId = getAuthenticatedUserId(locals);
-		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
-		}
-
-		const ownedClass = await getOwnedClass(locals, params.classId, userId);
-		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
-		}
-
-		const [student, skill] = await Promise.all([
-			getOwnedStudent(locals, ownedClass.id, studentId),
-			getOwnedSkill(locals, ownedClass.id, skillId)
-		]);
-
-		if (!student) {
-			return fail(400, { message: 'Aluno não encontrado.' });
-		}
-
-		if (!skill) {
-			return fail(400, { message: 'Skill não encontrada.' });
-		}
-
-		if (!rawScore) {
-			const { error } = await locals.supabase
-				.from('student_skill_scores')
-				.delete()
-				.eq('student_id', studentId)
-				.eq('skill_id', skillId);
-
-			if (error) {
-				return fail(400, { message: error.message });
-			}
-
-			return { success: true };
-		}
-
-		const scale = resolveEffectiveScale(ownedClass, skill);
-
-		const validation = validateScoreInput(rawScore, scale, {
-			allowBlank: true
-		});
-
+		const validation = validateSubjectInput({ name, code });
 		if (!validation.ok) {
-			return fail(400, { message: validation.message });
+			return fail(400, { action: 'createSubject', message: validation.message });
 		}
 
-		const { error } = await locals.supabase
-			.from('student_skill_scores')
-			.upsert([{ student_id: studentId, skill_id: skillId, score: validation.value }], {
-				onConflict: 'student_id,skill_id'
+		const { data: createdSubject, error: subjectError } = await locals.supabase
+			.from('subjects')
+			.insert({
+				name: validation.value.name,
+				code: validation.value.code,
+				created_by: userId
+			})
+			.select('id')
+			.single<{ id: string }>();
+
+		if (subjectError || !createdSubject) {
+			return fail(400, {
+				action: 'createSubject',
+				message: subjectError?.message ?? 'Nao foi possivel criar a materia.'
 			});
-
-		if (error) {
-			return fail(400, { message: error.message });
 		}
 
-		return { success: true };
-	},
-
-	generateSnapshot: async ({ params, locals }) => {
-		const userId = getAuthenticatedUserId(locals);
-		if (!userId) {
-			return fail(401, { message: 'Você precisa estar logado.' });
-		}
-
-		const ownedClass = await getOwnedClass(locals, params.classId, userId);
-		if (!ownedClass) {
-			return fail(404, { message: 'Turma não encontrada.' });
-		}
-
-		const { data, error } = await locals.supabase.rpc('generate_mastery_snapshot', {
-			p_class_id: ownedClass.id
+		const { error: linkError } = await locals.supabase.from('class_subjects').insert({
+			class_id: ownedClass.id,
+			subject_id: createdSubject.id,
+			teacher_id: userId
 		});
 
-		if (error) {
-			return fail(400, { message: error.message });
+		if (linkError) {
+			return fail(400, { action: 'createSubject', message: linkError.message });
 		}
 
 		return {
 			success: true,
-			snapshot: data
+			action: 'createSubject',
+			message: 'Materia criada e vinculada a turma com sucesso.'
+		};
+	},
+
+	linkSubject: async ({ request, params, locals }) => {
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { action: 'linkSubject', message: 'Voce precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { action: 'linkSubject', message: 'Turma nao encontrada.' });
+		}
+
+		const form = await request.formData();
+		const subjectId = String(form.get('subject_id') ?? '').trim();
+
+		if (!subjectId) {
+			return fail(400, { action: 'linkSubject', message: 'Materia invalida.' });
+		}
+
+		const { error } = await locals.supabase.from('class_subjects').upsert(
+			{
+				class_id: ownedClass.id,
+				subject_id: subjectId,
+				teacher_id: userId
+			},
+			{ onConflict: 'class_id,subject_id' }
+		);
+
+		if (error) {
+			return fail(400, { action: 'linkSubject', message: error.message });
+		}
+
+		return { success: true, action: 'linkSubject', message: 'Materia vinculada a turma.' };
+	},
+
+	createAssessment: async ({ request, params, locals }) => {
+		const userId = getAuthenticatedUserId(locals);
+		if (!userId) {
+			return fail(401, { action: 'createAssessment', message: 'Voce precisa estar logado.' });
+		}
+
+		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+		if (!ownedClass) {
+			return fail(404, { action: 'createAssessment', message: 'Turma nao encontrada.' });
+		}
+
+		const form = await request.formData();
+		const validation = validateAssessmentInput({
+			class_id: ownedClass.id,
+			subject_id: String(form.get('subject_id') ?? '').trim(),
+			title: String(form.get('title') ?? '').trim(),
+			assessment_date: String(form.get('assessment_date') ?? '').trim(),
+			weight: parseNumberInput(form.get('weight'))
+		});
+
+		if (!validation.ok) {
+			return fail(400, { action: 'createAssessment', message: validation.message });
+		}
+
+		const classSubject = await getOwnedClassSubject(
+			locals,
+			ownedClass.id,
+			validation.value.subject_id,
+			userId
+		);
+		if (!classSubject) {
+			return fail(400, {
+				action: 'createAssessment',
+				message: 'A materia selecionada nao esta vinculada a esta turma.'
+			});
+		}
+
+		const { error } = await locals.supabase.from('assessments').insert({
+			class_id: validation.value.class_id,
+			subject_id: validation.value.subject_id,
+			title: validation.value.title,
+			assessment_date: validation.value.assessment_date,
+			weight: validation.value.weight,
+			status: 'draft'
+		});
+
+		if (error) {
+			return fail(400, { action: 'createAssessment', message: error.message });
+		}
+
+		return {
+			success: true,
+			action: 'createAssessment',
+			message: 'Avaliacao criada em rascunho com sucesso.'
 		};
 	}
 };

@@ -1,8 +1,5 @@
 <script lang="ts">
-	let {
-		variant = 'desktop',
-		class: className = ''
-	} = $props<{
+	let { variant = 'desktop', class: className = '' } = $props<{
 		variant?: 'mini' | 'desktop' | 'mobile';
 		class?: string;
 	}>();
@@ -32,7 +29,8 @@
 			actor: 'Professor',
 			tone: 'blue',
 			title: 'Cadastra ou importa alunos',
-			description: 'A entrada operacional precisa ser rápida, clara e segura para evitar retrabalho.',
+			description:
+				'A entrada operacional precisa ser rápida, clara e segura para evitar retrabalho.',
 			outcome: 'alunos vinculados'
 		},
 		{
@@ -40,7 +38,8 @@
 			actor: 'Professor',
 			tone: 'blue',
 			title: 'Cria avaliação e lança notas',
-			description: 'A rotina do professor alimenta o sistema com o que realmente importa para a leitura.',
+			description:
+				'A rotina do professor alimenta o sistema com o que realmente importa para a leitura.',
 			outcome: 'dados pedagógicos publicados'
 		},
 		{
@@ -56,7 +55,8 @@
 			actor: 'Professor + Coordenação',
 			tone: 'emerald',
 			title: 'Gera leitura e prioridades',
-			description: 'Médias, quedas, padrões e comparações passam a orientar intervenção de verdade.',
+			description:
+				'Médias, quedas, padrões e comparações passam a orientar intervenção de verdade.',
 			outcome: 'insight acionável'
 		},
 		{
@@ -64,7 +64,8 @@
 			actor: 'Aluno',
 			tone: 'amber',
 			title: 'Acompanha evolução com clareza',
-			description: 'O aluno recebe uma visão simples do próprio progresso, sem depender de leitura manual.',
+			description:
+				'O aluno recebe uma visão simples do próprio progresso, sem depender de leitura manual.',
 			outcome: 'valor percebido'
 		}
 	];
@@ -95,9 +96,11 @@
 
 {#if variant === 'mini'}
 	<div class={`${className} items-center gap-3`}>
-		{#each miniSteps as step, i}
+		{#each miniSteps as step, i (step.id)}
 			<div class="flex items-center gap-3">
-				<div class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.18em] ${toneBadge(step.tone)}`}>
+				<div
+					class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.18em] ${toneBadge(step.tone)}`}
+				>
 					{step.id}
 				</div>
 
@@ -110,26 +113,33 @@
 			</div>
 		{/each}
 
-		<div class="ml-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">
+		<div
+			class="ml-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
+		>
 			operação → histórico → leitura
 		</div>
 	</div>
-
 {:else if variant === 'desktop'}
 	<div class={className}>
 		<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-			{#each steps as step, i}
+			{#each steps as step, i (step.id)}
 				<div class="relative">
 					{#if i < steps.length - 1}
-						<div class="pointer-events-none absolute left-[calc(100%-0.5rem)] top-10 hidden h-px w-4 bg-white/10 xl:block"></div>
-						<div class="pointer-events-none absolute left-[calc(100%+0.6rem)] top-[2.02rem] hidden text-white/25 xl:block">
+						<div
+							class="pointer-events-none absolute left-[calc(100%-0.5rem)] top-10 hidden h-px w-4 bg-white/10 xl:block"
+						></div>
+						<div
+							class="pointer-events-none absolute left-[calc(100%+0.6rem)] top-[2.02rem] hidden text-white/25 xl:block"
+						>
 							→
 						</div>
 					{/if}
 
 					<article class={`h-full rounded-[1.75rem] border p-5 ${tonePanel(step.tone)}`}>
 						<div class="flex items-center justify-between gap-3">
-							<span class={`rounded-full border px-2.5 py-1 text-[11px] font-black tracking-[0.16em] ${toneBadge(step.tone)}`}>
+							<span
+								class={`rounded-full border px-2.5 py-1 text-[11px] font-black tracking-[0.16em] ${toneBadge(step.tone)}`}
+							>
 								{step.id}
 							</span>
 
@@ -160,19 +170,20 @@
 		<div class="mt-5 rounded-[1.75rem] border border-white/8 bg-slate-950/45 px-5 py-4">
 			<p class="text-sm text-slate-300">
 				<span class="font-bold text-white">Resumo:</span>
-				o professor alimenta uma vez, o sistema organiza o histórico e a plataforma devolve
-				leitura útil para professor, coordenação e aluno.
+				o professor alimenta uma vez, o sistema organiza o histórico e a plataforma devolve leitura útil
+				para professor, coordenação e aluno.
 			</p>
 		</div>
 	</div>
-
 {:else if variant === 'mobile'}
 	<div class={`${className} space-y-3`}>
-		{#each steps as step, i}
+		{#each steps as step, i (step.id)}
 			<div class="rounded-[1.5rem] border border-white/8 bg-slate-950/55 p-4">
 				<div class="flex items-start gap-4">
 					<div class="flex flex-col items-center">
-						<div class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.16em] ${toneBadge(step.tone)}`}>
+						<div
+							class={`flex h-12 w-12 items-center justify-center rounded-2xl border text-xs font-black tracking-[0.16em] ${toneBadge(step.tone)}`}
+						>
 							{step.id}
 						</div>
 
@@ -197,7 +208,9 @@
 							{step.description}
 						</p>
 
-						<div class="mt-3 inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+						<div
+							class="mt-3 inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400"
+						>
 							{step.outcome}
 						</div>
 					</div>

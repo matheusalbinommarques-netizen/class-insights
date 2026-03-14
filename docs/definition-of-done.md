@@ -20,17 +20,20 @@ Uma tarefa, correção ou feature só está **Done** quando:
 ## 1. Critérios técnicos obrigatórios
 
 ### 1.1 TypeScript / Svelte
+
 - sem erro em `npm run check`
 - sem erro de tipagem introduzido pela mudança
 - sem uso desnecessário de `any`
 - sem quebrar SSR/client onde isso importa
 
 ### 1.2 Lint / format
+
 - `npm run lint` sem erro
 - código formatado segundo Prettier
 - sem arquivos temporários ou lixo acidental em commit
 
 ### 1.3 Build
+
 - `npm run build` concluído sem erro nas entregas que alteram comportamento estrutural
 
 ---
@@ -38,23 +41,29 @@ Uma tarefa, correção ou feature só está **Done** quando:
 ## 2. Critérios de produto
 
 ### 2.1 Fluxo
+
 A entrega precisa funcionar no fluxo real do usuário.
 
 Exemplos:
+
 - login realmente redireciona para a área certa
 - criação de turma realmente aparece no dashboard
 - nota lançada realmente afeta a visualização
 - importação realmente valida antes de aplicar
 
 ### 2.2 Feedback
+
 Toda ação relevante deve dar retorno mínimo ao usuário:
+
 - sucesso
 - erro
 - estado vazio
 - loading quando aplicável
 
 ### 2.3 Clareza
+
 A tela não deve conter:
+
 - texto placeholder enganoso
 - promessa de funcionalidade inexistente
 - mensagem ambígua que esconda erro real
@@ -66,6 +75,7 @@ A tela não deve conter:
 Toda entrega deve respeitar o modelo de acesso do sistema.
 
 ### Obrigatório
+
 - professor/coordenador não devem cair em rotas de aluno por erro de guard
 - aluno não deve acessar área teacher
 - ações sensíveis precisam validar ownership/class_id/role
@@ -78,7 +88,9 @@ Se a entrega depender de policy nova, isso precisa estar explicitado.
 ## 4. Critérios de UX / UI
 
 ### 4.1 Consistência visual
+
 A entrega deve usar a base visual do projeto:
+
 - tokens
 - buttons
 - cards/panels
@@ -86,13 +98,16 @@ A entrega deve usar a base visual do projeto:
 - inputs consistentes
 
 ### 4.2 Responsividade
+
 Não pode haver:
+
 - overflow horizontal acidental
 - botão inacessível em mobile
 - conteúdo crítico ilegível
 - layout quebrado em tela pequena
 
 ### 4.3 Persona correta
+
 - Teacher: experiência mais densa e operacional
 - Student: experiência mais simples, visual e mobile-first
 
@@ -103,6 +118,7 @@ Não pode haver:
 A entrega deve respeitar as regras de negócio do produto.
 
 ### Exemplos
+
 - skill pode herdar escala da turma
 - skill pode ter override de escala
 - nota precisa validar range e decimais
@@ -115,6 +131,7 @@ A entrega deve respeitar as regras de negócio do produto.
 ## 6. Critérios de documentação
 
 A entrega precisa estar documentada quando alterar:
+
 - arquitetura
 - regra de domínio relevante
 - fluxo crítico
@@ -123,6 +140,7 @@ A entrega precisa estar documentada quando alterar:
 - RPC ou tabela importante
 
 ### Onde documentar
+
 - `README.md`
 - `docs/adr/`
 - comentários pontuais em código, quando fizer sentido
@@ -134,12 +152,15 @@ A entrega precisa estar documentada quando alterar:
 Antes de considerar pronto, validar pelo menos o caminho principal impactado.
 
 ### Exemplos
+
 #### Login
+
 - consegue entrar
 - redireciona corretamente
 - falha mostra mensagem
 
 #### Teacher
+
 - cria turma
 - abre turma
 - cria aluno
@@ -147,12 +168,14 @@ Antes de considerar pronto, validar pelo menos o caminho principal impactado.
 - lança nota
 
 #### Import
+
 - faz preview
 - valida
 - mostra erro quando necessário
 - aplica quando validado
 
 #### Student
+
 - carrega área protegida
 - mostra progresso
 - mostra estado vazio coerente
@@ -195,6 +218,7 @@ Use este checklist antes de considerar concluído:
 No Class Insights, “pronto” não significa perfeito.
 
 Significa:
+
 - confiável para o próximo passo
 - coerente com o produto
 - sem erro estrutural evidente

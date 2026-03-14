@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type ProfileRole = 'teacher' | 'student' | 'coord';
@@ -350,18 +351,36 @@
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
 	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-		<div class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"></div>
+		<div
+			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"
+		></div>
 		<div class="absolute -right-24 top-48 h-80 w-80 rounded-full bg-sky-200/50 blur-3xl"></div>
 		<div class="absolute -left-24 top-96 h-80 w-80 rounded-full bg-amber-200/40 blur-3xl"></div>
 	</div>
 
 	<div class="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 lg:px-8">
-		<div class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]">
-			<section class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-emerald-50 via-white to-sky-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10">
-				<a href="/" class="inline-flex w-fit items-center gap-3">
-					<div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
-						<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z" />
+		<div
+			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]"
+		>
+			<section
+				class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-emerald-50 via-white to-sky-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10"
+			>
+				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
+					<div
+						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+					>
+						<svg
+							class="h-6 w-6"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke="currentColor"
+							stroke-width="2.2"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z"
+							/>
 						</svg>
 					</div>
 
@@ -378,7 +397,9 @@
 						Acesso inteligente
 					</p>
 
-					<h1 class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
+					<h1
+						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
+					>
 						Entre e continue de onde parou.
 					</h1>
 
@@ -389,19 +410,49 @@
 				</div>
 
 				<div class="mt-8 grid gap-3">
-					{#each benefits as benefit}
-						<div class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-							<div class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}>
+					{#each benefits as benefit (benefit.title)}
+						<div
+							class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+						>
+							<div
+								class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}
+							>
 								{#if benefit.tone === 'sky'}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M7 12h10M9 17h6" />
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M4 7h16M7 12h10M9 17h6"
+										/>
 									</svg>
 								{:else if benefit.tone === 'emerald'}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-										<path stroke-linecap="round" stroke-linejoin="round" d="M3 12h6l3 8 4-16 3 8h2" />
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M3 12h6l3 8 4-16 3 8h2"
+										/>
 									</svg>
 								{:else}
-									<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+									<svg
+										class="h-5 w-5"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+										stroke-width="2"
+									>
 										<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" />
 									</svg>
 								{/if}
@@ -426,15 +477,19 @@
 							</h2>
 						</div>
 
-						<div class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600 sm:block">
+						<div
+							class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600 sm:block"
+						>
 							histórico longitudinal
 						</div>
 					</div>
 
 					<div class="mt-5 grid gap-4 md:grid-cols-3">
-						{#each roleCards as card}
+						{#each roleCards as card (card.title)}
 							<div class={`rounded-2xl border p-4 ${toneCardClasses(card.tone)}`}>
-								<p class={`text-[11px] font-black uppercase tracking-widest ${toneTextClasses(card.tone)}`}>
+								<p
+									class={`text-[11px] font-black uppercase tracking-widest ${toneTextClasses(card.tone)}`}
+								>
 									{card.label}
 								</p>
 
@@ -442,8 +497,10 @@
 								<p class="mt-2 text-sm leading-6 text-slate-700">{card.text}</p>
 
 								<div class="mt-4 space-y-2">
-									{#each card.items as item}
-										<div class="rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-sm text-slate-800">
+									{#each card.items as item (`${card.title}-${item}`)}
+										<div
+											class="rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-sm text-slate-800"
+										>
 											{item}
 										</div>
 									{/each}
@@ -469,7 +526,7 @@
 			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
 				<div class="w-full max-w-md">
 					<div class="mb-8 flex items-center justify-between lg:hidden">
-						<a href="/" class="text-sm font-bold text-slate-600 hover:text-slate-900">
+						<a href={resolve('/')} class="text-sm font-bold text-slate-600 hover:text-slate-900">
 							← Voltar para home
 						</a>
 					</div>
@@ -483,13 +540,15 @@
 								Bem-vindo de volta
 							</h2>
 							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Entre com seu e-mail para acessar sua área. O sistema direciona você
-								automaticamente para professor, coordenação ou aluno.
+								Entre com seu e-mail para acessar sua área. O sistema direciona você automaticamente
+								para professor, coordenação ou aluno.
 							</p>
 						</div>
 
 						{#if sanitizeRedirect(redirectToParam)}
-							<div class="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+							<div
+								class="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
+							>
 								Você será redirecionado para a página solicitada após o login.
 							</div>
 						{/if}
@@ -501,9 +560,21 @@
 								</label>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1"
+											/>
 										</svg>
 									</div>
 
@@ -528,15 +599,30 @@
 										Senha
 									</label>
 
-									<a href="/forgot-password" class="text-sm font-bold text-sky-700 hover:text-sky-800 hover:underline">
+									<a
+										href={resolve('/forgot-password')}
+										class="text-sm font-bold text-sky-700 hover:text-sky-800 hover:underline"
+									>
 										Esqueceu a senha?
 									</a>
 								</div>
 
 								<div class="relative">
-									<div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-										<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-											<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z" />
+									<div
+										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M12 15v2m-6 0h12a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2Z"
+											/>
 										</svg>
 									</div>
 
@@ -571,8 +657,19 @@
 								{#if loading}
 									<span class="flex items-center gap-3">
 										<svg class="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none">
-											<circle cx="12" cy="12" r="10" class="opacity-25" stroke="currentColor" stroke-width="4"></circle>
-											<path class="opacity-75" fill="currentColor" d="M22 12a10 10 0 0 0-10-10v4a6 6 0 0 1 6 6h4Z"></path>
+											<circle
+												cx="12"
+												cy="12"
+												r="10"
+												class="opacity-25"
+												stroke="currentColor"
+												stroke-width="4"
+											></circle>
+											<path
+												class="opacity-75"
+												fill="currentColor"
+												d="M22 12a10 10 0 0 0-10-10v4a6 6 0 0 1 6 6h4Z"
+											></path>
 										</svg>
 										Entrando...
 									</span>
@@ -599,7 +696,7 @@
 
 						<div class="space-y-3">
 							<a
-								href="/register/teacher"
+								href={resolve('/register/teacher')}
 								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
 							>
 								<p class="text-sm font-black text-slate-900">Cadastro de professor</p>
@@ -609,7 +706,7 @@
 							</a>
 
 							<a
-								href="/register/student"
+								href={resolve('/register/student')}
 								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
 							>
 								<p class="text-sm font-black text-slate-900">Cadastro de aluno</p>

@@ -12,6 +12,7 @@ Plataforma educacional focada em transformar notas em **insights pedagógicos ac
 **Fase atual:** MVP funcional do núcleo professor, base real do portal do aluno e pipeline de importação com staging.
 
 ### Já existe
+
 - Autenticação com Supabase
 - Separação por persona (`teacher`, `student`, `coord`)
 - Dashboard do professor
@@ -24,6 +25,7 @@ Plataforma educacional focada em transformar notas em **insights pedagógicos ac
 - Portal do aluno com dados reais de skills e progresso
 
 ### Em evolução
+
 - Heatmap e BI prescritivo do professor
 - Skill tree visual do aluno
 - Dashboard da coordenação
@@ -76,3 +78,9 @@ src/
         import/
       student/
         skills/
+```
+
+## Documentos novos da V1
+
+- `docs/adr/0002-modelo-academico-v1.md`: contrato do dominio alvo da V1
+- `docs/backlog-tecnico-v1.md`: backlog tecnico executavel por blocos

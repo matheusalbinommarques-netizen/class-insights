@@ -73,11 +73,11 @@
 	const PREVIEW_STORAGE_KEY = 'classInsights.import.previewState';
 	const MAPPING_STORAGE_PREFIX = 'classInsights.import.mapping';
 
-	$: formState = (($page.form ?? null) as FormState | null);
+	$: formState = ($page.form ?? null) as FormState | null;
 
 	let selectedClassId = '';
 	let studentColIndex = 0;
-	let selectedSkillCols = new Set<number>();
+	let selectedSkillCols: number[] = [];
 
 	let previewState: PreviewState = {
 		jobId: '',
@@ -118,14 +118,14 @@
 		if (restoredMapping) {
 			studentColIndex = restoredMapping.studentColIndex;
 
-			const next = new Set<number>();
+			const next: number[] = [];
 			for (const col of restoredMapping.selectedSkillCols) {
 				if (
 					col >= 0 &&
 					col < previewState.headers.length &&
 					col !== restoredMapping.studentColIndex
 				) {
-					next.add(col);
+					next.push(col);
 				}
 			}
 
@@ -133,9 +133,9 @@
 		} else {
 			studentColIndex = previewState.studentGuess;
 
-			const next = new Set<number>();
+			const next: number[] = [];
 			for (let i = 0; i < previewState.headers.length; i++) {
-				if (i !== previewState.studentGuess) next.add(i);
+				if (i !== previewState.studentGuess) next.push(i);
 			}
 
 			selectedSkillCols = next;
@@ -147,29 +147,28 @@
 	$: if (browser && hydratedFromStorage && previewState.jobId) {
 		persistMappingState(previewState.jobId, {
 			studentColIndex,
-			selectedSkillCols: Array.from(selectedSkillCols).sort((a, b) => a - b)
+			selectedSkillCols: [...selectedSkillCols].sort((a, b) => a - b)
 		});
 	}
 
 	const toggleSkill = (i: number) => {
 		if (i === studentColIndex) return;
 
-		const next = new Set(selectedSkillCols);
-		if (next.has(i)) next.delete(i);
-		else next.add(i);
-		selectedSkillCols = next;
+		selectedSkillCols = selectedSkillCols.includes(i)
+			? selectedSkillCols.filter((value) => value !== i)
+			: [...selectedSkillCols, i].sort((a, b) => a - b);
 	};
 
 	const selectAllSkills = () => {
-		const next = new Set<number>();
+		const next: number[] = [];
 		for (let i = 0; i < headers.length; i++) {
-			if (i !== studentColIndex) next.add(i);
+			if (i !== studentColIndex) next.push(i);
 		}
 		selectedSkillCols = next;
 	};
 
 	const clearAllSkills = () => {
-		selectedSkillCols = new Set<number>();
+		selectedSkillCols = [];
 	};
 
 	const delimiterLabel = (delimiter: ',' | ';' | '\t' | undefined) => {
@@ -180,7 +179,7 @@
 
 	const columnRole = (index: number): ColumnRole => {
 		if (index === studentColIndex) return 'student';
-		if (selectedSkillCols.has(index)) return 'skill';
+		if (selectedSkillCols.includes(index)) return 'skill';
 		return 'ignored';
 	};
 
@@ -204,7 +203,9 @@
 
 		try {
 			sessionStorage.setItem(PREVIEW_STORAGE_KEY, JSON.stringify(state));
-		} catch {}
+		} catch {
+			// Ignore storage write failures in unsupported/private contexts.
+		}
 	}
 
 	function readPreviewStateFromStorage(): PreviewState | null {
@@ -231,7 +232,9 @@
 
 		try {
 			sessionStorage.setItem(mappingKeyForJob(jobId), JSON.stringify(state));
-		} catch {}
+		} catch {
+			// Ignore storage write failures in unsupported/private contexts.
+		}
 	}
 
 	function readMappingStateFromStorage(jobId: string): MappingState | null {
@@ -280,9 +283,8 @@
 	$: formMessage = formState?.message ?? null;
 	$: defaultScale = formState?.scale ?? null;
 
-	$: totalSelectedSkills = selectedSkillCols.size;
-	$: ignoredColumnsCount =
-		headers.length > 0 ? headers.length - 1 - totalSelectedSkills : 0;
+	$: totalSelectedSkills = selectedSkillCols.length;
+	$: ignoredColumnsCount = headers.length > 0 ? headers.length - 1 - totalSelectedSkills : 0;
 
 	$: mappingIsValid =
 		headers.length > 0 &&
@@ -300,54 +302,56 @@
 		selectedClassId.trim().length > 0 ? classLabelById(selectedClassId) : null;
 
 	$: validationStatus = (
-	validationErrors.length > 0
-		? 'error'
-		: validationStats
-			? validationWarnings.length > 0
-				? 'warning'
-				: 'success'
-			: 'idle'
-) as ValidationStatus;
+		validationErrors.length > 0
+			? 'error'
+			: validationStats
+				? validationWarnings.length > 0
+					? 'warning'
+					: 'success'
+				: 'idle'
+	) as ValidationStatus;
 
-	$: if (selectedSkillCols.has(studentColIndex)) {
-		const next = new Set(selectedSkillCols);
-		next.delete(studentColIndex);
-		selectedSkillCols = next;
+	$: if (selectedSkillCols.includes(studentColIndex)) {
+		selectedSkillCols = selectedSkillCols.filter((value) => value !== studentColIndex);
 	}
 </script>
 
 <svelte:head>
-	<title>Importação • Class Insights</title>
+	<title>Importacao - Class Insights</title>
 </svelte:head>
 
 <section class="page-header">
 	<div>
-		<div class="eyebrow">Importação</div>
-		<h1>Planilha mágica com staging</h1>
+		<div class="eyebrow">Importacao legada</div>
+		<h1>CSV por skill com staging seguro</h1>
 		<p>
-			Suba um CSV, gere preview, mapeie colunas, rode a validação completa e só depois aplique
-			tudo de forma atômica.
+			Este fluxo continua disponivel como apoio operacional legado. A V1 academica prioriza
+			materias, avaliacoes, resultados e publicacao; aqui o import ainda funciona por colunas de
+			skill, com preview, validacao e aplicacao atomica.
 		</p>
 	</div>
 </section>
 
 <section class="info-grid">
 	<article class="info-card">
-		<div class="info-label">Fluxo</div>
-		<div class="info-value">Upload → Preview → Validar → Aplicar</div>
+		<div class="info-label">Papel na V1</div>
+		<div class="info-value">Apoio legado, nao fluxo central</div>
+		<div class="info-foot">Use quando o CSV realmente acelerar a operacao atual.</div>
+	</article>
+
+	<article class="info-card">
+		<div class="info-label">Fluxo tecnico</div>
+		<div class="info-value">Upload -> Preview -> Validar -> Aplicar</div>
 		<div class="info-foot">Sem aplicar direto no banco antes do preflight</div>
 	</article>
 
 	<article class="info-card">
 		<div class="info-label">Regra de escala</div>
-		<div class="info-value">Skill override &gt; turma</div>
-		<div class="info-foot">Skill existente usa escala própria; skill nova usa escala default</div>
-	</article>
-
-	<article class="info-card">
-		<div class="info-label">Modo</div>
-		<div class="info-value">Staging seguro</div>
-		<div class="info-foot">Rows staged, erros auditáveis e aplicação via RPC</div>
+		<div class="info-value">Importacao legada por skill</div>
+		<div class="info-foot">
+			Enquanto este import nao for reinterpretado no modelo academico, ele continua operando por
+			colunas de skill e respeita a escala existente.
+		</div>
 	</article>
 </section>
 
@@ -357,7 +361,7 @@
 			<div class="section-kicker">Etapa 1</div>
 			<h2>Upload + preview</h2>
 		</div>
-		<p>Selecione a turma e envie um CSV para gerar um job de importação com preview inicial.</p>
+		<p>Selecione a turma e envie um CSV para gerar um job de importacao com preview inicial.</p>
 	</div>
 
 	<form method="POST" action="?/preview" enctype="multipart/form-data" class="upload-form">
@@ -365,9 +369,9 @@
 			<label for="classId">Turma</label>
 			<select id="classId" name="classId" bind:value={selectedClassId} required>
 				<option value="" disabled>Selecione...</option>
-				{#each data.classes as c}
+				{#each data.classes as c (c.id)}
 					<option value={c.id}>
-						{c.name} (escala padrão {c.score_min}–{c.score_max}, dec {c.score_decimals})
+						{c.name} (escala padrao {c.score_min}-{c.score_max}, dec {c.score_decimals})
 					</option>
 				{/each}
 			</select>
@@ -397,7 +401,8 @@
 		<div class="job-meta">
 			<span>Job criado: <strong>{activeJobId}</strong></span>
 			{#if previewState.delimiter}
-				<span>Delimitador detectado: <strong>{delimiterLabel(previewState.delimiter)}</strong></span>
+				<span>Delimitador detectado: <strong>{delimiterLabel(previewState.delimiter)}</strong></span
+				>
 			{/if}
 			<span>Colunas detectadas: <strong>{headers.length}</strong></span>
 			<span>Linhas no preview: <strong>{preview.length}</strong></span>
@@ -410,19 +415,19 @@
 		<div class="panel-head">
 			<div>
 				<div class="section-kicker">Etapa 2</div>
-				<h2>Mapear + validar</h2>
+				<h2>Mapear colunas do CSV legado</h2>
 			</div>
 			<p>
-				Defina a coluna do aluno e escolha quais colunas devem ser tratadas como skills no
-				preflight.
+				Defina a coluna do aluno e escolha quais colunas continuam sendo tratadas como skills neste
+				fluxo legado.
 			</p>
 		</div>
 
 		<div class="helper-box">
-			<strong>Como a validação funciona agora</strong>
+			<strong>Como a validacao funciona neste legado</strong>
 			<p>
-				Cada cabeçalho de skill é comparado com as skills já existentes na turma. Se a skill já
-				existir, a validação usa a escala dela. Se não existir, usa a escala padrão da turma.
+				Cada cabecalho de skill e comparado com as skills ja existentes na turma. Se a skill ja
+				existir, a validacao usa a escala dela. Se nao existir, usa a escala padrao da turma.
 			</p>
 		</div>
 
@@ -447,7 +452,7 @@
 			<table class="preview-table">
 				<thead>
 					<tr>
-						{#each headers as h, i}
+						{#each headers as h, i (`header-${i}-${h}`)}
 							<th class={previewCellClass(i)}>
 								<div class="col-title">{i}: {h}</div>
 								<div class="col-role">{roleLabel(columnRole(i))}</div>
@@ -456,9 +461,9 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each preview as row}
+					{#each preview as row, rowIndex (`preview-${rowIndex}`)}
 						<tr>
-							{#each headers as _, i}
+							{#each headers as h, i (`cell-${rowIndex}-${i}-${h}`)}
 								<td class={previewCellClass(i)}>{row[i] ?? ''}</td>
 							{/each}
 						</tr>
@@ -474,7 +479,7 @@
 				<div class="field">
 					<label for="studentColIndex">Coluna do aluno</label>
 					<select id="studentColIndex" name="studentColIndex" bind:value={studentColIndex}>
-						{#each headers as h, i}
+						{#each headers as h, i (`student-col-${i}-${h}`)}
 							<option value={i}>{i}: {h}</option>
 						{/each}
 					</select>
@@ -496,20 +501,20 @@
 			</div>
 
 			<div class="skill-picker">
-				{#each headers as h, i}
+				{#each headers as h, i (`skill-col-${i}-${h}`)}
 					{#if i !== studentColIndex}
-						<label class="skill-option" class:selected={selectedSkillCols.has(i)}>
+						<label class="skill-option" class:selected={selectedSkillCols.includes(i)}>
 							<input
 								type="checkbox"
 								name="skillColIndex"
 								value={i}
-								checked={selectedSkillCols.has(i)}
+								checked={selectedSkillCols.includes(i)}
 								onchange={() => toggleSkill(i)}
 							/>
 							<div class="skill-option-copy">
 								<span class="skill-option-title">{i}: {h}</span>
 								<span class="skill-option-meta">
-									{selectedSkillCols.has(i) ? 'Será validada como skill' : 'Será ignorada'}
+									{selectedSkillCols.includes(i) ? 'Sera validada como skill' : 'Sera ignorada'}
 								</span>
 							</div>
 						</label>
@@ -519,14 +524,12 @@
 
 			{#if !mappingIsValid}
 				<div class="feedback warning">
-					Selecione uma coluna válida de aluno e pelo menos 1 coluna de skill antes de validar.
+					Selecione uma coluna valida de aluno e pelo menos 1 coluna de skill antes de validar.
 				</div>
 			{/if}
 
 			<div class="actions">
-				<button type="submit" class="primary-button" disabled={!mappingIsValid}>
-					Validar
-				</button>
+				<button type="submit" class="primary-button" disabled={!mappingIsValid}> Validar </button>
 			</div>
 		</form>
 	</section>
@@ -537,9 +540,11 @@
 		<div class="panel-head">
 			<div>
 				<div class="section-kicker">Etapa 3</div>
-				<h2>Resultado da validação</h2>
+				<h2>Resultado da validacao</h2>
 			</div>
-			<p>Confira se o job está apto para aplicação ou se precisa corrigir o CSV/mapeamento.</p>
+			<p>
+				Confira se o job esta apto para aplicacao ou se ainda precisa corrigir o CSV/mapeamento.
+			</p>
 		</div>
 
 		<div class="validation-status-row">
@@ -556,7 +561,7 @@
 					<strong>Validado com alertas.</strong>
 					<p>O job pode ser aplicado, mas vale revisar os warnings antes.</p>
 				{:else if validationStatus === 'success'}
-					<strong>Validação limpa.</strong>
+					<strong>Validacao limpa.</strong>
 					<p>Sem erros bloqueantes nem alertas relevantes.</p>
 				{/if}
 			</div>
@@ -595,8 +600,8 @@
 
 		{#if validationErrors.length > 0}
 			<div class="feedback error">
-				Foram encontrados <strong>{validationErrors.length}</strong> erros. Corrija o CSV ou o
-				mapeamento e valide novamente.
+				Foram encontrados <strong>{validationErrors.length}</strong> erros. Corrija o CSV ou o mapeamento
+				e valide novamente.
 			</div>
 
 			<div class="error-summary-grid">
@@ -612,7 +617,7 @@
 			</div>
 
 			<div class="error-list">
-				{#each validationErrors as e}
+				{#each validationErrors as e (`${e.job_id}-${e.row_index}-${e.column_index}-${e.message}`)}
 					<div class="error-item">
 						<div class="error-title">
 							{#if e.row_index === 0}
@@ -635,8 +640,8 @@
 
 		{#if validationWarnings.length > 0}
 			<div class="feedback warning">
-				Foram encontrados <strong>{validationWarnings.length}</strong> warnings. Eles não bloqueiam
-				a aplicação, mas merecem revisão.
+				Foram encontrados <strong>{validationWarnings.length}</strong> warnings. Eles não bloqueiam a
+				aplicação, mas merecem revisão.
 			</div>
 
 			<div class="warning-summary-grid">
@@ -652,7 +657,7 @@
 			</div>
 
 			<div class="warning-list">
-				{#each validationWarnings as w}
+				{#each validationWarnings as w (`${w.job_id}-${w.row_index}-${w.column_index}-${w.message}`)}
 					<div class="warning-item">
 						<div class="warning-title">
 							{#if w.row_index === 0}
@@ -675,15 +680,17 @@
 
 		{#if validationErrors.length === 0}
 			{#if validationWarnings.length === 0}
-				<div class="feedback success">Sem erros e sem warnings. O job está pronto para aplicar.</div>
+				<div class="feedback success">
+					Sem erros e sem warnings. O job está pronto para aplicar.
+				</div>
 			{/if}
 
 			<div class="apply-box">
 				<div>
 					<h3>Aplicar no banco</h3>
 					<p>
-						A aplicação é feita de forma atômica no backend. Se houver falha, o job não deve
-						ficar parcialmente aplicado.
+						A aplicação é feita de forma atômica no backend. Se houver falha, o job não deve ficar
+						parcialmente aplicado.
 					</p>
 				</div>
 
@@ -701,9 +708,9 @@
 		<div class="panel-head">
 			<div>
 				<div class="section-kicker">Etapa 4</div>
-				<h2>Aplicação concluída</h2>
+				<h2>Aplicacao concluida</h2>
 			</div>
-			<p>Resumo do que foi criado e atualizado no banco após a aplicação do job.</p>
+			<p>Resumo do que foi criado e atualizado no banco apos a aplicacao do job.</p>
 		</div>
 
 		<div class="apply-results">

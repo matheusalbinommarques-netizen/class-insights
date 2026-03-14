@@ -1,6 +1,6 @@
-export type UserRole = "teacher" | "student" | "coord";
+export type UserRole = 'teacher' | 'student' | 'coord';
 
 export interface BaseEntity {
-  id: string;
-  created_at: string;
+	id: string;
+	created_at: string;
 }

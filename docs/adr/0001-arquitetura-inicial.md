@@ -23,6 +23,7 @@ O produto precisa atender dois públicos com necessidades bem diferentes:
   - linguagem visual mais leve e motivadora
 
 Além disso, o sistema precisa:
+
 - autenticar usuários com baixo atrito
 - suportar regras por perfil
 - permitir staging e validação antes de aplicar importações
@@ -36,9 +37,11 @@ Além disso, o sistema precisa:
 Adotar a seguinte arquitetura inicial:
 
 ### 1. Front-end / App
+
 **SvelteKit + TypeScript**
 
 Motivos:
+
 - SSR e rotas server-side nativas
 - boa integração entre UI e server load/actions
 - produtividade alta para MVP
@@ -46,9 +49,11 @@ Motivos:
 - TypeScript strict ajuda a reduzir ambiguidade no domínio
 
 ### 2. Backend / Auth / DB
+
 **Supabase**
 
 Motivos:
+
 - autenticação pronta
 - banco relacional com Postgres
 - RLS nativa
@@ -56,19 +61,23 @@ Motivos:
 - velocidade de entrega compatível com MVP
 
 ### 3. Separação por persona em rotas
+
 Usar grupos de rotas por papel:
 
 - `(app)/teacher`
 - `(app)/student`
 
 Motivos:
+
 - layouts independentes
 - UX contextualizada por público
 - proteção mais simples por papel
 - menor acoplamento visual entre áreas do sistema
 
 ### 4. Portal do professor desktop-first
+
 O professor lida com:
+
 - tabelas
 - grids
 - cockpit
@@ -77,7 +86,9 @@ O professor lida com:
 Por isso, a área teacher será otimizada primeiro para uso denso em telas maiores.
 
 ### 5. Portal do aluno mobile-first
+
 O aluno precisa de:
+
 - clareza
 - feedback visual
 - baixo atrito
@@ -86,9 +97,11 @@ O aluno precisa de:
 Por isso, a área student será construída com prioridade em leitura simples e responsiva.
 
 ### 6. Lógica crítica no servidor
+
 Validações e regras de domínio relevantes devem ficar no backend/server-side, e não espalhadas pela UI.
 
 Exemplos:
+
 - escala de nota
 - override por skill
 - parsing e validação de score
@@ -97,9 +110,11 @@ Exemplos:
 - snapshots e cálculo analítico
 
 ### 7. Importação obrigatoriamente com staging
+
 CSV não deve ser aplicado diretamente.
 
 Fluxo adotado:
+
 1. upload
 2. preview
 3. staging
@@ -108,26 +123,32 @@ Fluxo adotado:
 6. apply atômico
 
 Motivos:
+
 - evitar sujeira no banco
 - permitir auditoria
 - dar segurança operacional ao professor
 - sustentar piloto real
 
 ### 8. RPCs para fluxos sensíveis
+
 Operações de maior risco ou que precisam ser atômicas devem preferencialmente usar RPCs SQL.
 
 Exemplos já previstos/usados:
+
 - claim de aluno por invite code
 - apply de import job
 - geração de snapshot
 - leitura baseline/latest
 
 ### 9. CSS com tokens e base compartilhada
+
 Mesmo sem adotar uma biblioteca completa de componentes neste momento, o projeto terá:
+
 - `tokens.css`
 - `base.css`
 
 Motivos:
+
 - reduzir repetição
 - manter consistência visual
 - criar mini design system evolutivo
@@ -177,6 +198,7 @@ Com base neste ADR:
 ## Revisão futura
 
 Este ADR pode ser revisado quando:
+
 - houver necessidade de multi-tenant mais formal
 - a coordenação ganhar área própria robusta
 - o design system for componentizado
