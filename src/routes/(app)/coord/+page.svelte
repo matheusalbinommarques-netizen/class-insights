@@ -1,10 +1,13 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
-	import type { ActionData } from './$types';
-
 	type Trend = 'improving' | 'declining' | 'stable' | 'insufficient_data';
 
-	export let form: ActionData;
+	export let form:
+		| {
+				action?: 'claimAccessCode';
+				message?: string;
+				success?: boolean;
+		  }
+		| undefined;
 	export let data: {
 		summary: {
 			displayName: string;
@@ -51,19 +54,24 @@
 		error: string | null;
 	};
 
-	const formatScore = (value: number | null) =>
-		typeof value === 'number' ? (value / 10).toFixed(1) : '--';
-
-	const toneClass = (tone: 'healthy' | 'attention' | 'critical') => {
-		if (tone === 'critical') return 'border-red-200 bg-red-50 text-red-700';
-		if (tone === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
-		return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+	const formatGrade = (value: number | null) => {
+		if (typeof value !== 'number') return '--';
+		return new Intl.NumberFormat('pt-BR', {
+			minimumFractionDigits: 1,
+			maximumFractionDigits: 1
+		}).format(value / 10);
 	};
 
 	const toneLabel = (tone: 'healthy' | 'attention' | 'critical') => {
 		if (tone === 'critical') return 'Critica';
 		if (tone === 'attention') return 'Atencao';
-		return 'Saudavel';
+		return 'Dentro do esperado';
+	};
+
+	const toneClass = (tone: 'healthy' | 'attention' | 'critical') => {
+		if (tone === 'critical') return 'border-red-200 bg-red-50 text-red-700';
+		if (tone === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
+		return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 	};
 
 	const trendLabel = (trend: Trend) => {
@@ -72,39 +80,54 @@
 		if (trend === 'stable') return 'Estavel';
 		return 'Base insuficiente';
 	};
+
+	const trendClass = (trend: Trend) => {
+		if (trend === 'declining') return 'border-red-200 bg-red-50 text-red-700';
+		if (trend === 'improving') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+		if (trend === 'stable') return 'border-slate-200 bg-slate-50 text-slate-700';
+		return 'border-slate-200 bg-slate-50 text-slate-500';
+	};
+
+	$: criticalClasses = data.classes.filter((item) => item.tone === 'critical');
+	$: attentionClasses = data.classes.filter((item) => item.tone === 'attention');
+	$: decliningSubjects = data.subjects.filter((item) => item.recentTrend === 'declining');
+	$: operationalPendingClasses = data.classes.filter((item) => item.publishedAssessments === 0);
+	$: lowestTeachers = [...data.teachers].slice(0, 4);
+	$: priorityStudents = [...data.students].slice(0, 5);
 </script>
 
 <svelte:head>
-	<title>Coordenacao - Class Insights</title>
+	<title>Class Insights - Coordenacao</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-		<div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-			<div class="max-w-3xl">
+		<div class="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+			<div>
 				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Coordenacao institucional
+					Leitura institucional
 				</p>
 				<h1 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-					Painel macro de {data.summary?.displayName ?? 'coordenacao'}
+					O que pede leitura no seu escopo agora.
 				</h1>
-				<p class="mt-3 text-base leading-8 text-slate-600">
-					Agora a coordenacao entra por codigo de turma e le apenas o que foi publicado dentro do
-					escopo realmente administrado.
+				<p class="mt-3 max-w-3xl text-base leading-8 text-slate-600">
+					Este painel responde quatro perguntas: quais turmas estao piores, quais materias mais
+					exigem atencao, onde a tendencia esta caindo e onde ainda ha pendencia operacional no
+					escopo que voce acompanha.
 				</p>
 				<p class="mt-4 text-sm leading-7 text-slate-600">
 					{data.summary?.message ?? 'Nao foi possivel montar a leitura institucional.'}
 				</p>
 			</div>
 
-			<div class="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-slate-50 p-5">
+			<div class="rounded-[2rem] border border-slate-200 bg-slate-50 p-5">
 				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Vincular turma por codigo
+					Adicionar turma ao escopo
 				</p>
 				<form method="POST" action="?/claimAccessCode" class="mt-4 space-y-3">
-					<label class="block text-sm font-bold text-slate-700" for="accessCode">
-						Codigo da turma
-					</label>
+					<label class="block text-sm font-bold text-slate-700" for="accessCode"
+						>Codigo da turma</label
+					>
 					<input
 						id="accessCode"
 						name="accessCode"
@@ -116,17 +139,13 @@
 						type="submit"
 						class="rounded-full bg-slate-950 px-5 py-3 text-sm font-black uppercase tracking-widest text-white transition hover:bg-slate-800"
 					>
-						Adicionar ao meu escopo
+						Adicionar ao painel
 					</button>
 				</form>
 
 				{#if form?.message}
 					<p
-						class={`mt-4 rounded-2xl border px-4 py-3 text-sm leading-7 ${
-							form.success
-								? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-								: 'border-red-200 bg-red-50 text-red-700'
-						}`}
+						class={`mt-4 rounded-2xl border px-4 py-3 text-sm leading-7 ${form.success ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}
 					>
 						{form.message}
 					</p>
@@ -145,24 +164,29 @@
 
 	<section class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
 		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-			<p class="text-xs font-black uppercase tracking-widest text-slate-500">Turmas sob escopo</p>
+			<p class="text-xs font-black uppercase tracking-widest text-slate-500">Turmas no escopo</p>
 			<p class="mt-2 text-3xl font-black text-slate-950">{data.summary?.totalClasses ?? 0}</p>
+			<p class="mt-2 text-sm leading-6 text-slate-600">Base institucional sob sua leitura hoje.</p>
 		</div>
 		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-			<p class="text-xs font-black uppercase tracking-widest text-slate-500">Alunos</p>
-			<p class="mt-2 text-3xl font-black text-slate-950">{data.summary?.totalStudents ?? 0}</p>
-		</div>
-		<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
-			<p class="text-xs font-black uppercase tracking-widest text-sky-700">Avaliacoes publicadas</p>
+			<p class="text-xs font-black uppercase tracking-widest text-slate-500">Media institucional</p>
 			<p class="mt-2 text-3xl font-black text-slate-950">
-				{data.summary?.totalPublishedAssessments ?? 0}
+				{formatGrade(data.summary?.institutionAverage ?? null)} / 10
 			</p>
+			<p class="mt-2 text-sm leading-6 text-slate-600">Considera apenas resultados publicados.</p>
 		</div>
 		<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
 			<p class="text-xs font-black uppercase tracking-widest text-amber-700">Turmas em atencao</p>
 			<p class="mt-2 text-3xl font-black text-slate-950">{data.summary?.classesAtRisk ?? 0}</p>
+			<p class="mt-2 text-sm leading-6 text-slate-600">Precisam de acompanhamento mais proximo.</p>
+		</div>
+		<div class="rounded-2xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+			<p class="text-xs font-black uppercase tracking-widest text-sky-700">
+				Pendencias operacionais
+			</p>
+			<p class="mt-2 text-3xl font-black text-slate-950">{operationalPendingClasses.length}</p>
 			<p class="mt-2 text-sm leading-6 text-slate-600">
-				Media institucional atual: {formatScore(data.summary?.institutionAverage ?? null)}
+				Turmas sem publicacao ainda no seu escopo.
 			</p>
 		</div>
 	</section>
@@ -171,31 +195,31 @@
 		<section
 			class="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm"
 		>
-			<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Sem turmas ainda</p>
+			<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Sem escopo ainda</p>
 			<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950">
-				Seu painel institucional comeca pelo codigo da turma
+				Seu painel institucional comeca pela primeira turma.
 			</h2>
 			<p class="mx-auto mt-4 max-w-2xl text-sm leading-8 text-slate-600 sm:text-base">
-				Assim que voce vincular a primeira turma, esta tela passa a mostrar medias publicadas,
-				materias mais sensiveis e alunos pedindo acompanhamento dentro do seu escopo real.
+				Assim que voce vincular uma turma, este painel mostra comparativo entre turmas, materias
+				mais criticas, tendencias de queda e pendencias operacionais reais.
 			</p>
 		</section>
 	{:else}
-		<div class="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+		<div class="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
 			<section class="space-y-6">
 				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
 					<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 						<div>
 							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-								Turmas sob coordenacao
+								Turmas mais sensiveis
 							</p>
 							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-								Onde a leitura institucional mais pede atencao
+								Quais turmas estao piores agora
 							</h2>
 						</div>
 						<p class="max-w-xl text-sm leading-7 text-slate-600">
-							Cada card combina media publicada, alunos em risco e o codigo que define o escopo
-							oficial desta coordenacao.
+							Media publicada, risco e cobertura operacional aparecem no mesmo lugar para facilitar
+							a leitura macro.
 						</p>
 					</div>
 
@@ -203,33 +227,33 @@
 						{#each data.classes as item (item.classId)}
 							<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 								<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-									<div class="min-w-0">
-										<p class="text-base font-black text-slate-950">{item.className}</p>
-										<p class="mt-1 text-sm leading-6 text-slate-600">{item.teacherName}</p>
+									<div>
+										<div class="flex flex-wrap items-center gap-3">
+											<p class="text-lg font-black text-slate-950">{item.className}</p>
+											<span
+												class={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-widest ${toneClass(item.tone)}`}
+												>{toneLabel(item.tone)}</span
+											>
+										</div>
+										<p class="mt-1 text-sm leading-6 text-slate-600">
+											Professor responsavel: {item.teacherName}
+										</p>
 										{#if item.accessCode}
 											<p
-												class="mt-2 text-[11px] font-black uppercase tracking-[0.35em] text-slate-500"
+												class="mt-2 text-[11px] font-black uppercase tracking-[0.28em] text-slate-500"
 											>
 												Codigo {item.accessCode}
 											</p>
 										{/if}
 									</div>
-									<span
-										class={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-widest ${toneClass(item.tone)}`}
-									>
-										{toneLabel(item.tone)}
-									</span>
+									<p class="text-sm font-semibold text-slate-600">
+										Media publicada: <span class="text-slate-950"
+											>{formatGrade(item.averagePercent)} / 10</span
+										>
+									</p>
 								</div>
 
 								<div class="mt-4 grid gap-3 sm:grid-cols-4">
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-											Media
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(item.averagePercent)}
-										</p>
-									</div>
 									<div class="rounded-2xl border border-slate-200 bg-white p-3">
 										<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
 											Alunos
@@ -244,10 +268,22 @@
 									</div>
 									<div class="rounded-2xl border border-slate-200 bg-white p-3">
 										<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-											Publicadas
+											Publicacoes
 										</p>
 										<p class="mt-2 text-lg font-black text-slate-950">
 											{item.publishedAssessments}
+										</p>
+									</div>
+									<div class="rounded-2xl border border-slate-200 bg-white p-3">
+										<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
+											Leitura
+										</p>
+										<p class="mt-2 text-sm font-black text-slate-950">
+											{item.publishedAssessments === 0
+												? 'Sem publicacao ainda'
+												: item.riskStudents > 0
+													? 'Pede acompanhamento'
+													: 'Leitura estavel'}
 										</p>
 									</div>
 								</div>
@@ -260,156 +296,141 @@
 					<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 						<div>
 							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-								Materias mais sensiveis
+								Materias criticas
 							</p>
 							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-								Leitura macro por materia
+								Quais materias mais exigem atencao
 							</h2>
 						</div>
 						<p class="max-w-xl text-sm leading-7 text-slate-600">
-							Este recorte ajuda a separar um problema localizado de um padrao que atravessa o
-							escopo institucional.
+							Quando o problema se repete em materia, a coordenacao consegue separar um caso isolado
+							de um padrao institucional.
 						</p>
 					</div>
 
-					<div class="mt-5 grid gap-3 md:grid-cols-2">
-						{#if data.subjects.length === 0}
-							<p class="text-sm leading-7 text-slate-600">
-								Ainda nao ha base publicada suficiente para leitura por materia.
-							</p>
-						{:else}
+					{#if data.subjects.length === 0}
+						<div
+							class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-600"
+						>
+							Ainda nao ha base publicada suficiente para leitura institucional por materia.
+						</div>
+					{:else}
+						<div class="mt-5 grid gap-3 md:grid-cols-2">
 							{#each data.subjects as subject (subject.subjectId)}
 								<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-									<p class="text-base font-black text-slate-950">{subject.subjectName}</p>
-									<div class="mt-4 grid gap-3 sm:grid-cols-3">
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Media
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{formatScore(subject.averagePercent)}
+									<div class="flex items-start justify-between gap-3">
+										<div>
+											<p class="text-base font-black text-slate-950">{subject.subjectName}</p>
+											<p class="mt-1 text-sm leading-6 text-slate-600">
+												Media publicada: {formatGrade(subject.averagePercent)} / 10
 											</p>
 										</div>
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Avaliacoes
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{subject.assessmentsCount}
-											</p>
-										</div>
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Tendencia
-											</p>
-											<p class="mt-2 text-sm font-black text-slate-950">
-												{trendLabel(subject.recentTrend)}
-											</p>
-										</div>
+										<span
+											class={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-widest ${trendClass(subject.recentTrend)}`}
+											>{trendLabel(subject.recentTrend)}</span
+										>
+									</div>
+									<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+										<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
+											Publicacoes no escopo
+										</p>
+										<p class="mt-2 text-lg font-black text-slate-950">{subject.assessmentsCount}</p>
 									</div>
 								</article>
 							{/each}
-						{/if}
-					</div>
+						</div>
+					{/if}
 				</section>
 			</section>
 
 			<aside class="space-y-6">
 				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-						Professores no escopo
-					</p>
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">Leitura rapida</p>
 					<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-						Leitura comparativa inicial
+						O que mudou no painel
 					</h2>
-					<p class="mt-3 text-sm leading-7 text-slate-600">
-						Esse bloco continua sendo um sinal inicial. A leitura mais forte ainda precisa ganhar
-						contexto por materia e por turma.
-					</p>
-
-					<div class="mt-4 space-y-3">
-						{#if data.teachers.length === 0}
-							<p class="text-sm leading-7 text-slate-600">
-								As turmas vinculadas ainda nao formaram base comparativa suficiente.
-							</p>
-						{:else}
-							{#each data.teachers as teacher (teacher.teacherId)}
-								<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-									<p class="text-base font-black text-slate-950">{teacher.teacherName}</p>
-									<div class="mt-4 grid grid-cols-3 gap-3">
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Media
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{formatScore(teacher.averagePercent)}
-											</p>
-										</div>
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Turmas
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">{teacher.classesCount}</p>
-										</div>
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Publicadas
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{teacher.publishedAssessments}
-											</p>
-										</div>
-									</div>
-								</article>
-							{/each}
-						{/if}
+					<div class="mt-4 space-y-3 text-sm leading-7 text-slate-600">
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+							{criticalClasses.length > 0
+								? `${criticalClasses.length} turma(s) estao em estado critico.`
+								: 'Nenhuma turma esta em estado critico agora.'}
+						</div>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+							{decliningSubjects.length > 0
+								? `${decliningSubjects.length} materia(s) mostram tendencia de queda.`
+								: 'Nenhuma materia em queda no recorte atual.'}
+						</div>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+							{operationalPendingClasses.length > 0
+								? `${operationalPendingClasses.length} turma(s) ainda nao publicaram avaliacao.`
+								: 'Sem pendencia operacional relevante agora.'}
+						</div>
+						<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+							{priorityStudents.length > 0
+								? `${priorityStudents.length} aluno(s) aparecem como prioridade de acompanhamento.`
+								: 'Nenhum aluno abaixo da referencia institucional agora.'}
+						</div>
 					</div>
 				</section>
 
 				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-					<p class="text-xs font-black uppercase tracking-widest text-slate-500">Alunos criticos</p>
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Professores e turmas
+					</p>
 					<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-						Quem mais pede acompanhamento
+						Onde a operacao ainda pede cuidado
 					</h2>
+					{#if lowestTeachers.length === 0}
+						<p class="mt-4 text-sm leading-7 text-slate-600">
+							Ainda nao ha base suficiente para leitura por professor.
+						</p>
+					{:else}
+						<div class="mt-4 space-y-3">
+							{#each lowestTeachers as teacher (teacher.teacherId)}
+								<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+									<p class="text-base font-black text-slate-950">{teacher.teacherName}</p>
+									<p class="mt-2 text-sm leading-6 text-slate-600">
+										{teacher.classesCount} turma(s) no escopo
+									</p>
+									<p class="mt-1 text-sm leading-6 text-slate-600">
+										Media publicada: {formatGrade(teacher.averagePercent)} / 10
+									</p>
+									<p class="mt-1 text-sm leading-6 text-slate-600">
+										Publicacoes: {teacher.publishedAssessments}
+									</p>
+								</article>
+							{/each}
+						</div>
+					{/if}
+				</section>
 
-					<div class="mt-4 space-y-3">
-						{#if data.students.length === 0}
-							<p class="text-sm leading-7 text-slate-600">
-								Ainda nao ha alunos abaixo de 60% na leitura publicada institucional.
-							</p>
-						{:else}
-							{#each data.students as student (student.studentId)}
-								<a
-									href={resolve(`/coord/students/${student.studentId}`)}
-									class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-amber-300 hover:bg-amber-50/60"
-								>
+				<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Acompanhamento de alunos
+					</p>
+					<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+						Quem pode precisar de apoio primeiro
+					</h2>
+					{#if priorityStudents.length === 0}
+						<p class="mt-4 text-sm leading-7 text-slate-600">
+							Nenhum aluno abaixo da referencia institucional no recorte atual.
+						</p>
+					{:else}
+						<div class="mt-4 space-y-3">
+							{#each priorityStudents as student (student.studentId)}
+								<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
 									<p class="text-base font-black text-slate-950">{student.studentName}</p>
 									<p class="mt-1 text-sm leading-6 text-slate-600">{student.className}</p>
-									<div class="mt-4 grid grid-cols-2 gap-3">
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Media
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{formatScore(student.averagePercent)}
-											</p>
-										</div>
-										<div class="rounded-2xl border border-slate-200 bg-white p-3">
-											<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-												Publicadas
-											</p>
-											<p class="mt-2 text-lg font-black text-slate-950">
-												{student.publishedAssessments}
-											</p>
-										</div>
-									</div>
-									<p class="mt-3 text-xs font-black uppercase tracking-widest text-amber-700">
-										Abrir perfil longitudinal
+									<p class="mt-3 text-sm font-semibold text-red-700">
+										Media publicada: {formatGrade(student.averagePercent)} / 10
 									</p>
-								</a>
+									<p class="mt-1 text-sm leading-6 text-slate-600">
+										Base em {student.publishedAssessments} publicacao(oes)
+									</p>
+								</article>
 							{/each}
-						{/if}
-					</div>
+						</div>
+					{/if}
 				</section>
 			</aside>
 		</div>

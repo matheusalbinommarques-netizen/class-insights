@@ -21,6 +21,7 @@ export type StudentPortalEnrollment = {
 	studentName: string;
 	className: string;
 	isCurrent: boolean;
+	isSelectable: boolean;
 };
 
 type PendingStudentPortalPayload = {
@@ -105,7 +106,7 @@ export function buildPendingStudentPortalPayload(
 
 export function mapStudentPortalEnrollments(
 	rows: EnrollmentRpcRow[],
-	currentClassId: string | null
+	selectedEnrollmentId: string | null
 ): StudentPortalEnrollment[] {
 	return rows.map((row) => ({
 		enrollmentId: row.enrollment_id,
@@ -117,6 +118,10 @@ export function mapStudentPortalEnrollments(
 		leftAt: row.left_at,
 		studentName: row.student_name,
 		className: row.class_name,
-		isCurrent: currentClassId !== null && row.class_id === currentClassId && row.status === 'active'
+		isCurrent:
+			selectedEnrollmentId !== null &&
+			row.enrollment_id === selectedEnrollmentId &&
+			row.status === 'active',
+		isSelectable: row.status === 'active'
 	}));
 }

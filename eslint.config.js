@@ -29,6 +29,13 @@ export default defineConfig(
 	},
 	{
 		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
+		rules: {
+			// This combination currently crashes on some Svelte files with the project's parser/plugin versions.
+			'@typescript-eslint/no-unused-vars': 'off'
+		}
+	},
+	{
+		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
 		languageOptions: {
 			parserOptions: {
 				projectService: true,

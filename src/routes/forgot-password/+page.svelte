@@ -45,7 +45,7 @@
 </script>
 
 <svelte:head>
-	<title>Recuperar Senha • Class Insights</title>
+	<title>Class Insights - Recuperar senha</title>
 	<meta
 		name="description"
 		content="Solicite um link para redefinir sua senha de acesso no Class Insights."

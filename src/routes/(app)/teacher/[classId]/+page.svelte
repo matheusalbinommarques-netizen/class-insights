@@ -23,6 +23,7 @@
 				score_min: number;
 				score_max: number;
 				score_decimals: number;
+				access_code: string | null;
 			} | null;
 			students: TeacherClassStudent[];
 			subjects: TeacherClassSubjectCard[];
@@ -158,7 +159,7 @@
 </script>
 
 <svelte:head>
-	<title>{data.class ? `${data.class.name} - Class Insights` : 'Turma - Class Insights'}</title>
+	<title>{data.class ? `Class Insights - ${data.class.name}` : 'Class Insights - Turma'}</title>
 </svelte:head>
 
 {#if !data.class}
@@ -195,6 +196,16 @@
 						Escala padrao da turma: {data.class.score_min} a {data.class.score_max} com
 						{data.class.score_decimals} casa(s) decimal(is).
 					</p>
+					<div
+						class="mt-4 inline-flex w-fit items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+					>
+						<span class="text-[11px] font-black uppercase tracking-[0.28em] text-slate-500">
+							Codigo da turma
+						</span>
+						<code class="text-sm font-black text-slate-950">
+							{data.class.access_code ?? '--'}
+						</code>
+					</div>
 					<div class="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
 						<p class="text-xs font-black uppercase tracking-widest text-sky-700">Proximo passo</p>
 						<h2 class="mt-2 text-lg font-black tracking-tight text-slate-950">

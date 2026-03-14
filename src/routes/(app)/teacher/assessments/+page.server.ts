@@ -411,7 +411,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'createAssessment',
-			message: 'Avaliacao criada em rascunho com sucesso.'
+			message: 'Avaliacao salva como rascunho.'
 		};
 	}
 };

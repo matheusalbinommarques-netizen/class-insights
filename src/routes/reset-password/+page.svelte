@@ -104,7 +104,7 @@
 </script>
 
 <svelte:head>
-	<title>Nova Senha • Class Insights</title>
+	<title>Class Insights - Nova senha</title>
 	<meta
 		name="description"
 		content="Defina uma nova senha para continuar acessando o Class Insights."

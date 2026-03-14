@@ -1,6 +1,7 @@
 import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 
+import { buildErrorMessage, createErrorId, logServerEvent } from '$lib/server/observability';
 import { loadStudentPortalData } from '$lib/server/student-portal';
 
 type ParentData = {
@@ -15,13 +16,13 @@ type ParentData = {
 	};
 };
 
-export const load: PageServerLoad = async ({ locals, parent }) => {
+export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 	const parentData = (await parent()) as ParentData;
 	if (!parentData.authUser?.id) {
 		throw redirect(302, '/login');
 	}
 
-	const payload = await loadStudentPortalData(locals, parentData);
+	const payload = await loadStudentPortalData(locals, parentData, cookies);
 
 	return {
 		authUser: payload.authUser,
@@ -92,9 +93,18 @@ export const actions: Actions = {
 		});
 
 		if (error) {
+			const errorId = createErrorId('student_claim');
+			logServerEvent('error', 'student.claim_invite_code_failed', {
+				errorId,
+				userId: locals.session.user.id,
+				route: '/student',
+				action: 'claimInviteCode',
+				inviteCode,
+				supabaseMessage: error.message
+			});
 			return fail(400, {
 				action: 'claimInviteCode',
-				message: error.message,
+				message: buildErrorMessage(error.message, errorId),
 				inviteCode
 			});
 		}

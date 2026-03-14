@@ -67,7 +67,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'claimAccessCode',
-			message: 'Turma vinculada com sucesso ao seu escopo institucional.'
+			message: 'Turma adicionada ao seu painel com sucesso.'
 		};
 	}
 };

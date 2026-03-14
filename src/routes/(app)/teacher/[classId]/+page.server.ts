@@ -5,6 +5,11 @@ import { validateAssessmentInput } from '$lib/server/assessments';
 import { getAuthenticatedUserId } from '$lib/server/auth';
 import { buildSubjectLongitudinalSummaries } from '$lib/server/longitudinal';
 import { validateSubjectInput } from '$lib/server/subjects';
+import {
+	createTeacherInviteCode,
+	listTeacherInviteCodesByClass,
+	mapInviteCodesByStudentId
+} from '$lib/server/teacher-invite-codes';
 import { getOwnedClass, getOwnedClassSubject } from '$lib/server/teacher';
 import type { LongitudinalPoint, SubjectLongitudinalSummary } from '$lib/types/academic';
 import type {
@@ -47,16 +52,6 @@ type AssessmentResultRow = {
 	score_max: number;
 	is_excused: boolean;
 };
-
-type InviteCodeRow = {
-	student_id: string;
-	code: string;
-	status: 'active' | 'claimed' | 'archived';
-};
-
-function generateInviteCode(): string {
-	return crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase();
-}
 
 function parseNumberInput(raw: FormDataEntryValue | null): number {
 	return Number(
@@ -119,7 +114,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
 	const [
 		{ data: studentsData },
-		{ data: inviteCodesData },
+		inviteCodesData,
 		{ data: classSubjectsData },
 		{ data: allSubjectsData }
 	] = await Promise.all([
@@ -128,11 +123,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.select('id, name, created_at')
 			.eq('class_id', ownedClass.id)
 			.order('created_at', { ascending: true }),
-		locals.supabase
-			.from('teacher_invite_codes')
-			.select('student_id, code, status')
-			.eq('class_id', ownedClass.id)
-			.in('status', ['active', 'claimed']),
+		listTeacherInviteCodesByClass(locals, ownedClass.id),
 		locals.supabase
 			.from('class_subjects')
 			.select(
@@ -152,9 +143,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		locals.supabase.from('subjects').select('id, name, code').order('name', { ascending: true })
 	]);
 
-	const inviteCodesByStudentId = new Map(
-		((inviteCodesData ?? []) as InviteCodeRow[]).map((row) => [row.student_id, row.code])
-	);
+	const inviteCodesByStudentId = mapInviteCodesByStudentId(inviteCodesData);
 	const students = ((studentsData ?? []) as Array<Omit<TeacherClassStudent, 'invite_code'>>).map(
 		(student) => ({
 			...student,
@@ -312,7 +301,6 @@ export const actions: Actions = {
 			return fail(404, { action: 'createStudent', message: 'Turma nao encontrada.' });
 		}
 
-		const inviteCode = generateInviteCode();
 		const { data: createdStudent, error: studentError } = await locals.supabase
 			.from('students')
 			.insert({
@@ -329,12 +317,10 @@ export const actions: Actions = {
 			});
 		}
 
-		const { error: inviteCodeError } = await locals.supabase.from('teacher_invite_codes').insert({
-			code: inviteCode,
-			student_id: createdStudent.id,
-			class_id: ownedClass.id,
-			teacher_id: userId,
-			status: 'active'
+		const { error: inviteCodeError } = await createTeacherInviteCode(locals, {
+			studentId: createdStudent.id,
+			classId: ownedClass.id,
+			teacherId: userId
 		});
 
 		if (inviteCodeError) {

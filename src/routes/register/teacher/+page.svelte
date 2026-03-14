@@ -133,7 +133,7 @@
 </script>
 
 <svelte:head>
-	<title>Cadastro de Professor • Class Insights</title>
+	<title>Class Insights - Cadastro de professor</title>
 	<meta
 		name="description"
 		content="Crie sua conta de professor no Class Insights para acessar turmas, avaliações e leitura pedagógica."

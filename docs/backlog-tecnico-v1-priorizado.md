@@ -1,325 +1,516 @@
-# Backlog tecnico V1 priorizado
+# Backlog Prioritário — Class Insights
 
-Atualizado em 2026-03-14 para refletir a ordem recomendada de execucao antes do piloto controlado.
+Atualizado em 2026-03-14 para refletir a ordem recomendada de execução do produto antes de polimento visual mais amplo.
 
-## Regra central da V1
+## Progresso registrado
 
-- `subject` e a unidade operacional principal visivel para o professor
-- `assessment` e a unidade formal de avaliacao
-- `assessment_result` e a origem oficial da nota
-- apenas resultado publicado entra em leitura de professor, coordenacao e aluno
-- `skill` continua existindo apenas como legado auxiliar
+### 2026-03-14 — rodada 1
 
-## Ordem executiva
+- `P0.2` parcialmente concluído com ajuste do redirect pós-login por role sem depender de F5 manual
+- `P0.1` iniciado com limpeza das strings mais visíveis em `home` e `login`
+- `home` e `login` passaram a usar o ícone oficial `src/lib/assets/ci-icon.png`
+- `npm run check`, `npm run lint` e `npm run build` passaram após essas mudanças
 
-1. PR 0 - quick wins antes do bloco grande
-2. PR 1 - onboarding e vinculos como verdade nova do dominio
-3. PR 2 - decidir de vez o papel da importacao legada
-4. PR 3 - hardening real para piloto
-5. PR 4 - exportacao minima e baseline de piloto
-6. PR 5 - checagem final contra DoD e piloto controlado
+### 2026-03-14 — rodada 2
 
-## PR 0 - quick wins antes do bloco grande
+- `P0.3` avançado com restauração da navegação estrutural do `teacher`
+- sidebar do `teacher` passou a usar o ícone oficial, estado ativo mais claro e botão de logout
+- `P0.5` iniciado com prompt leve para capturar nome ausente ou genérico em `teacher`, `student` e `coord`
+- `npm run check` e `npm run lint` seguiram verdes após essas mudanças
 
-Status:
+### Próxima frente imediata
 
-`concluido`
+- concluir a limpeza de encoding/acentuação nas demais telas críticas
+- revisar escala, cálculo e formatação numérica em `teacher` e `student`
 
-Faz primeiro duas correcoes pequenas porque elas limpam ruido e evitam retrabalho:
+## Princípio de priorização
 
-- trocar o `lang="en"` de `src/app.html` para `pt-BR`
-- criar uma camada unica de leitura e validacao de env para nao depender de leitura solta em `src/hooks.server.ts`
+Esta ordem prioriza primeiro o que afeta confiança, legibilidade e funcionamento real do produto. Estética vem depois da base confiável.
 
-Hoje o HTML esta em ingles e o servidor quebra direto se faltar `VITE_PUBLIC_SUPABASE_URL` ou `VITE_PUBLIC_SUPABASE_ANON_KEY`. Isso funciona, mas ainda esta cru para piloto.
+## Regras de produto para esta fase
 
-Arquivos alvo:
+- `subject`, `assessment` e `assessment_result` continuam como modelo oficial da V1
+- apenas resultados publicados entram nas leituras de professor, coordenação e aluno
+- `/teacher/import` continua como fluxo auxiliar e legado
+- para o MVP, `diretor` deve ser tratado como visão da coordenação, não como role nova
 
-- `src/app.html`
-- `src/lib/config/env.ts`
-- `src/hooks.server.ts`
-- `src/lib/services/supabaseClient.ts` se for necessario centralizar o bootstrap do cliente
+## P0 — Crítico: confiança e funcionamento
 
-Objetivo:
+### 1. Corrigir acentuação e encoding em todo o app
 
-- ter um unico ponto de verdade para env
-- deixar SSR e browser mais previsiveis
+**Objetivo:** eliminar qualquer sensação de produto quebrado por texto corrompido.
 
-Progresso ja executado:
+**Áreas:** home, login, teacher, student e futuros fluxos de coordenação.
 
-- `lang="pt-BR"` aplicado em `src/app.html`
-- camada unica de env criada em `src/lib/config/env.ts` e `src/lib/config/env.server.ts`
-- `src/hooks.server.ts`, `src/lib/services/supabaseClient.ts` e `src/lib/server/supabase-admin.ts` passaram a usar a nova camada centralizada
-- `npm run check`, `npm run lint` e `npm run build` passaram depois da troca
+**Ações:**
 
-## PR 1 - onboarding e vinculos como verdade nova do dominio
+- garantir UTF-8 em todos os arquivos
+- revisar strings fixas do front
+- validar fonte e renderização de caracteres pt-BR
+- padronizar formatação pt-BR no front
+- revisar dados vindos do banco e seed
 
-Status:
+**Critério de pronto:**
 
-`em andamento`
+- nenhuma palavra com caractere corrompido
+- textos legíveis em todas as páginas principais
 
-Esse e o bloco mais importante. Os docs do repo ja deixam claro que a V1 nao deve mais depender da ideia de aluno preso a um unico professor, e que onboarding precisa suportar:
+### 2. Corrigir login para entrar sem precisar de F5
 
-- conta sem vinculo inicial
-- vinculo posterior
-- multi-vinculo
+**Objetivo:** garantir que o acesso funcione de forma imediata e previsível.
 
-O ADR do modelo academico tambem ja define que identidade da conta nao pode se confundir com vinculo academico.
+**Áreas:** login, auth, sessão e redirecionamento por role.
 
-### Diretriz de implementacao
+**Ações:**
 
-Fazer de forma aditiva, nao destrutiva. Em vez de reinventar `profiles`, `students` e tudo de uma vez, criar uma camada nova de vinculo pedagogico como fonte futura de verdade.
+- revisar fluxo de sessão após sign-in
+- atualizar corretamente o estado do usuário no client
+- garantir redirecionamento imediato por perfil
+- revisar `load`, hooks, invalidação de sessão e hidratação
+- exibir estado de loading claro durante a entrada
 
-### O que implementar
+**Critério de pronto:**
 
-1. Criar um novo ADR, por exemplo `docs/adr/0003-vinculos-e-onboarding-v1.md`, formalizando:
-   - `profiles` = identidade e autenticacao
-   - `students` = entidade academica do aluno
-   - `enrollments` = vinculo pedagogico do aluno com turma e professor
-   - vinculo de coordenacao continua separado do vinculo pedagogico
-2. Criar uma migration nova para introduzir `enrollments` como centro do vinculo, com no minimo:
-   - `id`
-   - `student_id`
-   - `class_id`
-   - `teacher_id`
-   - `status` (`pending`, `active`, `archived`)
-   - `claimed_by_user_id` ou equivalente
-   - `joined_at`
-   - `left_at`
-3. Criar uma tabela de convites ou codigos, como `teacher_invite_codes` ou `class_invite_codes`, para suportar professor distribuindo codigo e aluno entrando depois.
-4. Fazer backfill minimo da estrutura atual para a nova:
-   - o que hoje estiver em `students.class_id` e `students.user_id` vira um `enrollment` inicial
-   - esse backfill e a ponte para nao quebrar o fluxo atual de `teacher` e `student`
-5. Criar ou ajustar RPCs e RLS para:
-   - `claim invite code`
-   - leitura de "meus vinculos"
-   - definicao de vinculo ativo, se a UX precisar destacar uma turma principal
+- usuário entra e cai direto na área correta
+- nenhum refresh manual é necessário
+- estado de carregamento fica claro durante o login
 
-### Progresso ja executado
+### 3. Restaurar a navegação estrutural do teacher
 
-- ADR criado em `docs/adr/0003-vinculos-e-onboarding-v1.md`
-- migration aditiva criada em `supabase/migrations/20260314210000_student_enrollments_and_invite_codes.sql`
-- `enrollments` e `teacher_invite_codes` modelados com backfill, trigger de sync, RPC de claim e RLS inicial
-- migration aplicada no banco remoto com `npx supabase db push`
-- cadastro de aluno atualizado para permitir conta sem codigo em `src/routes/register/student/+page.svelte`
-- portal do aluno atualizado para aceitar claim posterior do codigo em `src/routes/(app)/student/+page.server.ts` e `src/routes/(app)/student/+page.svelte`
-- leitura longitudinal do aluno passou a preferir `enrollments` em `src/lib/server/student-longitudinal-profile.ts`
-- leituras teacher de convites passaram a usar `teacher_invite_codes` em `src/routes/(app)/teacher/[classId]/+page.server.ts` e `src/routes/(app)/teacher/assessments/[assessmentId]/+page.server.ts`
-- fluxo de login do aluno foi ajustado em `src/routes/login/+page.svelte` para usar codigo pendente em storage e nao depender de metadata para concluir claim
-- criacao de aluno pelo professor passou a gravar o convite diretamente em `teacher_invite_codes`, sem usar `students.invite_code` como caminho principal de escrita
-- portal do aluno agora lista os vinculos encontrados na conta e destaca a turma ativa, deixando o multi-vinculo visivel na UX
-- rotas `student/journey` e `student/skills` agora tambem recebem e exibem os vinculos da conta, mantendo a leitura de multi-vinculo consistente nas telas principais do aluno
-- leitura longitudinal principal removeu `students.invite_code` do caminho `student-self`, reforcando `enrollments` como fonte principal
-- `npm run check`, `npm run lint` e `npm run build` seguem passando com as mudancas atuais
+**Objetivo:** devolver estabilidade e orientação na área interna do professor.
 
-### O que ainda falta neste PR
+**Áreas:** teacher.
 
-- revisar e remover os pontos restantes de compatibilidade que ainda carregam `students.invite_code` fora da camada legada
-- aprofundar a escolha explicita de vinculo ativo se a UX passar a permitir alternancia entre turmas
-- revisar `src/lib/server/auth.ts` e `src/routes/(app)/student/+layout.server.ts` se surgirem needs de guard mais especifico para multi-vinculo
+**Ações:**
 
-### Arquivos provaveis depois da migration
+- tornar a sidebar fixa e estável
+- inserir o ícone oficial do app na navegação: `src/lib/assets/ci-icon.png`
+- corrigir truncamentos como `Clas Insig...`
+- destacar claramente o item ativo do menu
+- adicionar botão de logout
 
-- `src/routes/register/student/+page.svelte`
-- `src/routes/login/+page.svelte`
-- `src/lib/server/auth.ts`
-- `src/routes/(app)/student/+layout.server.ts`
-- `src/routes/(app)/student/+page.server.ts`
-- `src/lib/server/student-portal.ts`
-- `src/lib/server/student-longitudinal-profile.ts`
+**Critério de pronto:**
 
-### Criterio de pronto
-
-Esse PR so fecha quando:
-
-- aluno consegue criar conta sem codigo
-- aluno consegue entrar no portal com estado `pending-link`
-- aluno consegue adicionar vinculo depois
-- aluno consegue manter mais de um vinculo sem quebrar leitura
-- teacher continua convidando sem depender de gambiarra em metadata
+- a sidebar não desaparece sem motivo
+- o usuário entende onde está
+- o logout está sempre acessível
 
-## PR 2 - decidir de vez o papel da importacao legada
+### 4. Corrigir formatação numérica e regras erradas de leitura
 
-Status:
-
-`quase concluido`
+**Objetivo:** garantir coerência pedagógica e credibilidade nos dados exibidos.
 
-O backlog e os docs ja sao claros em dois pontos:
+**Áreas:** student e teacher.
 
-- falta decidir se o import legado e transicao, apoio permanente ou futura migracao para `assessment_results`
-- falta impedir que `skill` volte para o centro da V1
-
-Pelo modelo academico novo, a unidade operacional central e `subject` / `assessment` / `assessment_result`, e `skill` fica como legado auxiliar.
+**Ações:**
 
-### Recomendacao
+- padronizar escala das notas
+- padronizar locale pt-BR
+- revisar cálculo de média, prioridade, risco e gap
+- ajustar regra para exibir `Tudo dentro do esperado` quando não houver item abaixo da meta
 
-Na V1, o import fica como ponte operacional, nao como fluxo principal nem como fonte conceitual do produto. Ele existe para reduzir atrito de professor que vem de CSV, mas o happy path do sistema passa pelo modelo novo.
+**Critério de pronto:**
 
-### O que fazer
+- números exibidos fazem sentido
+- prioridades refletem a situação real
+- não há alertas falsos
 
-1. Criar um ADR curto, por exemplo `docs/adr/0004-import-legado-v1.md`.
-2. Atualizar `README.md` e este backlog deixando claro:
-   - import e auxiliar
-   - nao e o caminho principal
-   - nenhuma tela central nova deve depender de `student_skill_scores`
-3. Ajustar a UX de `/teacher/import` para deixar isso visualmente claro:
-   - badge "Fluxo auxiliar/legado"
-   - copy dizendo quando usar
-   - CTA principal do professor apontando para materia e avaliacao, nao para import
-4. Criar uma regra de engenharia:
-   - nenhuma pagina nova de `teacher`, `coord` ou `student` deve ler diretamente o legado
-   - se ainda precisar ler, isso deve ficar encapsulado em server/service com comentario de transicao
+### 5. Capturar e salvar nome do usuário quando faltar
 
-### Progresso ja executado
+**Objetivo:** substituir mensagens genéricas por uma experiência mais pessoal e adequada.
 
-- ADR criado em `docs/adr/0004-import-legado-v1.md`
-- `README.md` atualizado para deixar explicito que o modelo oficial da V1 e `subject` / `assessment` / `assessment_result`
-- `README.md` tambem passou a registrar que `/teacher/import` e fluxo auxiliar e legado
-- UX de `src/routes/(app)/teacher/import/+page.svelte` foi endurecida com badge de fluxo auxiliar e CTAs principais apontando para materias e avaliacoes
-- dashboard teacher em `src/routes/(app)/teacher/+page.svelte` passou a tratar import como apoio operacional, com CTA rebaixado para `Import legado` e copy alinhada ao fluxo principal de materias e avaliacoes
-- navegacao teacher em `src/routes/(app)/teacher/+layout.svelte` tambem passou a descrever o import como fluxo auxiliar legado
-- `npm run check`, `npm run lint` e `npm run build` passaram apos as mudancas desta rodada
+**Áreas:** login, onboarding, teacher e student.
 
-### O que ainda falta neste PR
+**Ações:**
 
-- reforcar a regra de engenharia sobre encapsulamento do legado onde ainda houver dependencia residual de `student_skill_scores`
+- se `display_name` estiver vazio, abrir prompt leve de preenchimento
+- salvar nome no perfil
+- usar o nome nas áreas internas
 
-### Criterio de pronto
+**Critério de pronto:**
 
-Esse bloco fecha quando alguem novo entrando no projeto entende, sem duvida, que:
+- o usuário sempre vê o próprio nome
+- não existem mensagens genéricas como `Usuário`
 
-- o modelo oficial e o novo
-- o legado existe
-- o legado nao manda mais no dominio
+## P1 — Clareza de produto e posicionamento
 
-## PR 3 - hardening real para piloto
+### 6. Refazer o hero da home
 
-Status:
+**Objetivo:** deixar a proposta clara já no primeiro bloco da página.
 
-`em andamento`
+**Ações:**
 
-Aqui o foco e fechar o gap entre "funciona" e "done". O repo ja indica progresso recente em `test`, `build` e `check`, mas ainda faltam os itens que o DoD cobra para piloto.
+- remover `edtech platform`
+- usar o ícone oficial
+- escrever headline e subheadline mais diretas
+- trabalhar com um CTA principal e um CTA secundário
+- mostrar uma prova visual do produto com mais foco
 
-### Ordem interna
+**Direção de copy:**
 
-1. Zerar `lint`.
-2. Ampliar testes automatizados por camada:
-   - unitarios em `src/lib/server/*.test.ts`
-   - integracao por perfil para `teacher`, `student` e `coord`
-   - smoke E2E do fluxo principal
-3. Fechar observabilidade e erros:
-   - helper central de erro
-   - logs com contexto de rota, usuario e acao
-   - mensagens menos ambiguas
-   - IDs ou codigos de erro para troubleshooting
-4. Revisar acessibilidade e responsividade:
-   - overflow horizontal
-   - estados vazios, loading e erro nas rotas principais
-   - teclado e foco em formularios criticos
-   - contraste e hierarquia no portal do aluno
-   - densidade e usabilidade desktop-first no teacher
-5. Revisar performance e paginacao onde necessario
+- headline: `Acompanhe a aprendizagem com clareza, não só com notas soltas.`
+- subheadline: `O Class Insights ajuda professores, coordenação e alunos a transformar avaliações em leitura pedagógica acionável.`
+- CTAs: `Entrar` e `Ver como funciona`
 
-### Progresso ja executado
+### 7. Reduzir repetição e excesso de explicação na home
 
-- baseline atual validada com `npm run check`, `npm run lint`, `npm test` e `npm run build`
-- suite atual de testes passou com 23 testes verdes, cobrindo validacoes de assessments, scoring, subjects, publication helpers, longitudinal e teacher analytics
-- novos testes adicionados em `src/lib/server/auth.test.ts` e `src/lib/server/publication.test.ts`
-- suite atual passou a 30 testes verdes, agora cobrindo tambem helpers de auth/session e bordas de publication
-- novos testes adicionados em `src/lib/server/teacher.test.ts` para ownership de turma, aluno, avaliacao e vinculo de materia no escopo do professor
-- suite atual passou a 34 testes verdes, elevando a cobertura dos guards/helpers server-side mais proximos do fluxo teacher
-- helpers puros do portal do aluno foram extraidos para `src/lib/server/student-portal.helpers.ts`, reduzindo acoplamento e melhorando a testabilidade do fluxo student
-- novos testes adicionados em `src/lib/server/student-portal.test.ts` para estado `pending-link` e marcacao correta do vinculo ativo no conjunto de enrollments
-- suite atual passou a 36 testes verdes, ampliando a cobertura do portal do aluno no modelo novo de onboarding e multi-vinculo
+**Objetivo:** tornar a home mais convincente e menos cansativa.
 
-### Fluxos minimos em automacao
+**Ações:**
 
-Teacher:
+- cortar cards redundantes
+- reduzir texto institucional
+- diminuir elementos decorativos sem função
+- concentrar a página em poucas seções fortes
 
-- cria turma
-- cria ou vincula materia
-- cria avaliacao
-- lanca notas
-- publica
+**Estrutura ideal:**
 
-Student:
+- hero
+- como funciona em 3 passos
+- três leituras do produto
+- CTA final
 
-- entra com ou sem vinculo
-- ve home
-- ve trajetoria
-- ve materias e publicado
+### 8. Melhorar a seção de perfis
 
-Coord:
+**Objetivo:** deixar claro o valor para cada público.
 
-- entra no `/coord`
-- ve apenas escopo permitido
-- abre drill-down do aluno
+**Ações:**
 
-### Criterio de pronto
+- trocar texto genérico por benefícios concretos
+- mostrar 3 entregas objetivas para cada persona
+- tornar coordenação consistente com o produto real
+- definir se `diretor` é nome comercial ou role separada
 
-- `npm run check`, `npm run lint`, `npm test` e `npm run build` passam
-- fluxo principal por persona passa em automacao
-- erros principais sao observaveis
-- app aguenta piloto sem verificacao manual constante
+### 9. Refazer a tela de login para parecer produto, não formulário
 
-## PR 4 - exportacao minima e baseline de piloto
+**Objetivo:** aumentar clareza e percepção de valor já no acesso.
 
-O backlog ja fala em "fechar exportacao minima necessaria", mas ainda sem definir exatamente qual. Para manter a V1 enxuta, a recomendacao e limitar a dois exports uteis:
+**Ações:**
 
-- export de resultados publicados por avaliacao e turma
-- export resumido longitudinal por aluno e materia
+- remover `edtech platform`
+- usar o ícone oficial
+- simplificar o bloco lateral
+- dar mais contraste entre login e primeiro acesso
 
-### Diretriz
+**Estrutura sugerida:**
 
-Implementar como server action ou endpoint protegido, perto do nucleo `teacher` e `coord`, sem misturar com legado.
+- lado esquerdo: proposta curta + 3 bullets de valor
+- lado direito: login + opções de primeiro acesso
 
-### Criterio de pronto
+### 10. Reescrever os textos da home e do login
 
-- existe export util para operacao do professor e da coordenacao
-- o export usa o modelo novo
-- o export nao reabre dependencia conceitual do legado
+**Objetivo:** remover linguagem genérica, abstrata ou artificial.
 
-## PR 5 - checagem final contra DoD e piloto controlado
+**Ações:**
 
-Esse bloco nao e feature; e fechamento. O gate final precisa ser tratado como criterio real de merge e deploy.
+- trocar frases vagas por linguagem humana
+- remover exageros e jargões
+- priorizar clareza operacional
 
-### Checklist de piloto
+**Exemplos de direção:**
 
-Tecnico:
+- em vez de `acesso inteligente`, usar `Entre na sua área`
+- em vez de `produto orientado à ação`, usar `Menos retrabalho. Mais leitura clara.`
 
-- `npm run check`
-- `npm run lint`
-- `npm test`
-- `npm run build`
+### 11. Adicionar fluxo de cadastro para coordenação
 
-Produto:
+**Objetivo:** alinhar a proposta do produto com o acesso real.
 
-- fluxos principais por persona validados
+**Ações:**
 
-Seguranca:
+- criar opção de primeiro acesso para coordenação
+- definir se haverá convite, vínculo institucional ou aprovação
+- garantir redirecionamento correto após entrada
 
-- guards revisados
-- RLS revisada em tudo que mudou
+### 12. Definir `diretor` antes de implementar
 
-### Criterio de pronto
+**Objetivo:** evitar abrir uma frente de permissão e navegação antes da hora.
 
-- repo passa no checklist tecnico
-- fluxos principais por persona foram validados
-- nao existe quebra evidente de auth, role, guard ou RLS
-- documentacao relevante foi atualizada
+**Recomendação para MVP:**
 
-## Resumo rapido
+- tratar `diretor` como uma visão da coordenação, não como role nova
 
-### Primeiro
+**Motivo:**
 
-- PR 0: `lang`, env e bootstrap mais robusto
+- evita complexidade prematura em permissão, navegação e RLS
 
-### Bloco principal
+## P2 — Teacher como cockpit de trabalho
 
-- PR 1: novo modelo de vinculo e onboarding com migration aditiva, RLS, RPC e ajustes de login/register/student
-- PR 2: decisao formal do legado com UX e documentacao do import
+### 13. Reorganizar a dashboard do professor em torno de ação
 
-### Fechamento
+**Objetivo:** transformar a home do teacher em uma tela de prioridade, não em uma vitrine de cards.
 
-- PR 3: lint zero, integracao, smoke, observabilidade, acessibilidade e performance
-- PR 4: exportacao minima
-- PR 5: validacao final contra DoD e piloto controlado
+**Blocos sugeridos:**
+
+- pendências operacionais
+- leituras pedagógicas
+- ações rápidas
+- turmas vivas
+
+### 14. Criar orientação contextual de próximo passo
+
+**Objetivo:** dizer claramente o que o professor deve fazer em seguida.
+
+**Exemplos:**
+
+- `Você tem 1 rascunho pronto para publicar`
+- `2 matérias ainda sem avaliação nesta turma`
+- `Nenhum aluno abaixo da meta nesta matéria`
+
+**Critério de pronto:**
+
+- o professor nunca fica sem saber qual é o próximo clique
+
+### 15. Enxugar e padronizar pills e cards
+
+**Objetivo:** melhorar legibilidade e reduzir ruído visual.
+
+**Ações:**
+
+- limitar o tamanho dos textos
+- usar labels curtas
+- padronizar altura dos cards
+- reduzir variações decorativas
+
+### 16. Dar contexto aos números
+
+**Objetivo:** fazer cada métrica ser imediatamente compreensível.
+
+**Ações:**
+
+- sempre exibir escala e referência
+- mostrar comparação quando houver
+
+**Exemplos:**
+
+- `Média publicada: 6,4 / 10`
+- `Cobertura: 86% dos resultados esperados`
+- `Tendência: -0,2 em relação à avaliação anterior`
+
+### 17. Melhorar empty states e estados de atenção
+
+**Objetivo:** evitar que telas vazias pareçam erro ou quebra.
+
+**Criar estados para:**
+
+- sem turma
+- sem matéria vinculada
+- sem avaliação criada
+- sem publicação pendente
+- nenhuma matéria em atenção
+- nenhum aluno abaixo da meta
+
+### 18. Rebaixar visualmente o import legado
+
+**Objetivo:** manter essa ação como apoio, sem competir com o fluxo principal.
+
+**Ações:**
+
+- tratar como ação secundária
+- mover para menu ou área menos central
+
+## P3 — Student simples, claro e confiável
+
+### 19. Reorganizar a página do aluno com foco em progresso
+
+**Objetivo:** deixar a leitura simples e útil para quem está estudando.
+
+**Topo da página:**
+
+- média atual
+- situação geral
+- matéria que precisa de atenção, se existir
+- evolução recente
+
+**Abaixo:**
+
+- jornada ou histórico
+- matérias
+- últimas avaliações
+
+### 20. Manter só a pill de jornada
+
+**Objetivo:** remover redundâncias que pesam a leitura.
+
+**Ação:**
+
+- se a pill superior já resolve, eliminar duplicações com botões ou blocos antigos
+
+### 21. Corrigir a lógica de matéria prioritária
+
+**Objetivo:** só chamar atenção quando houver motivo real.
+
+**Regra:**
+
+- só mostrar prioridade se houver matéria abaixo da meta ou referência
+- caso contrário, mostrar `Tudo dentro do esperado` ou `Nenhuma matéria exige atenção agora`
+
+### 22. Trocar linguagem técnica por linguagem de aluno
+
+**Objetivo:** falar com clareza, sem termos institucionais.
+
+**Evitar:**
+
+- dispersão
+- cobertura
+- leitura institucional
+- prioridade macro
+
+**Preferir:**
+
+- seu progresso
+- onde você foi melhor
+- onde vale revisar
+- como você vem evoluindo
+
+### 23. Melhorar o mobile-first do aluno
+
+**Objetivo:** fazer dessa a área mais leve, direta e confortável no celular.
+
+**Ações:**
+
+- reduzir tamanho de cards
+- evitar muitos blocos lado a lado
+- tornar a jornada mais linear
+- focar no que realmente muda a vida do aluno
+
+## P4 — Coordenação
+
+### 24. Fechar escopo da coordenação antes da camada visual
+
+**Objetivo:** definir claramente quais perguntas essa área precisa responder.
+
+**Perguntas-chave:**
+
+- quais turmas estão piores?
+- quais matérias mais exigem atenção?
+- onde a tendência está caindo?
+- quais professores ou turmas têm pendências operacionais?
+
+### 25. Criar dashboard institucional de leitura
+
+**Objetivo:** diferenciar coordenação de professor.
+
+**Coordenação deve ver:**
+
+- comparativo entre turmas
+- matérias críticas
+- tendências
+- pendências de publicação e cobertura
+- leitura macro institucional
+
+## P5 — Acabamento de produto maduro
+
+### 26. Padronizar ícone e branding em toda a experiência
+
+**Objetivo:** dar unidade visual ao produto.
+
+**Áreas:** home, login, sidebar, favicon e abas.
+
+**Asset oficial:** `src/lib/assets/ci-icon.png`
+
+### 27. Melhorar títulos das abas
+
+**Objetivo:** reforçar contexto e consistência.
+
+**Exemplos:**
+
+- `Class Insights — Início`
+- `Class Insights — Login`
+- `Class Insights — Professor`
+- `Class Insights — Avaliações`
+
+### 28. Padronizar o sistema visual
+
+**Objetivo:** parar de parecer que cada bloco foi feito separadamente.
+
+**Definir:**
+
+- grid
+- espaçamentos
+- altura de cards
+- radius
+- hierarquia tipográfica
+- cores por status
+- estilo de pills
+- estilo de botões
+
+### 29. Melhorar microcopy e feedbacks
+
+**Objetivo:** deixar ações e respostas do sistema mais claras e humanas.
+
+**Exemplos:**
+
+- `Turma criada com sucesso`
+- `Avaliação salva como rascunho`
+- `Publicação concluída`
+- `Você saiu da conta`
+
+### 30. Criar checklist de qualidade por tela
+
+**Objetivo:** garantir consistência antes de considerar uma página pronta.
+
+**Checklist por página:**
+
+- texto com acento correto
+- loading adequado
+- empty state adequado
+- error state adequado
+- CTA principal claro
+- branding consistente
+- responsividade validada
+
+### 2026-03-14 - rodada 3
+
+- `P0` concluido com limpeza de caracteres corrompidos nas areas principais, login sem F5, teacher com navegacao estavel, padronizacao numerica e captura de nome ausente
+- busca por `�` em `src/routes` e `src/lib` voltou vazia ao final da rodada
+- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P0
+
+### 2026-03-14 - rodada 4
+
+- `P1` concluido com nova home enxuta em 4 blocos: hero, como funciona em 3 passos, leituras por perfil e CTA final
+- `login` reposicionado com copy mais direta e primeiro acesso explicito para professor, aluno e coordenacao
+- criado `register/coord` para dar visibilidade real ao acesso de coordenacao
+- mantida a decisao de produto: `diretor` segue como visao da coordenacao no MVP, sem role nova
+
+### 2026-03-14 - rodada 5
+
+- `P2` concluido com a dashboard do professor reorganizada como cockpit de trabalho em `pendencias operacionais`, `leituras pedagogicas`, `acoes rapidas` e `turmas vivas`
+- cada turma agora mostra contexto claro para numeros, `proximo passo`, cobertura, tendencia, gaps e estado de atencao
+- criados empty states e estados de atencao para setup, falta de materia, falta de avaliacao e ausencia de riscos reais
+- `import legado` foi rebaixado visualmente para nao competir com o fluxo principal do professor
+- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P2
+
+### 2026-03-14 - rodada 6
+
+- `P3` concluido com a experiencia do aluno simplificada em progresso, jornada e materias, com foco em leitura direta e mobile-first
+- a home do aluno agora prioriza apenas `media atual`, `situacao geral`, `onde vale revisar` e `evolucao recente`
+- a `materia prioritaria` so aparece quando ha algo realmente em atencao; caso contrario a interface mostra `Tudo dentro do esperado`
+- a jornada ficou linear e centrada em historico de publicacoes, e a tela de materias trocou linguagem tecnica por linguagem de aluno
+- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P3
+
+### 2026-03-14 - rodada 7
+
+- `P4` concluido com a area de coordenacao reposicionada como dashboard institucional, focada em comparativo entre turmas, materias criticas, tendencias de queda e pendencias operacionais
+- a tela de coordenacao agora responde explicitamente quais turmas estao piores, quais materias mais exigem atencao, onde a tendencia esta caindo e quais professores ou turmas ainda pedem acompanhamento
+- o fluxo de `codigo da turma` foi mantido como apoio para ampliar escopo, mas deixou de ser o centro da experiencia
+- `npm run check` e `npm run build` passaram apos o fechamento do P4
+- `npm run lint` seguiu bloqueado por um crash da regra `@typescript-eslint/no-unused-vars` ao analisar o arquivo `.svelte` da coordenacao, apesar de o arquivo estar formatado e sem erros no `check`
+
+### 2026-03-14 - rodada 8
+
+- corrigido o teacher para exibir o `codigo da turma` na pagina detalhada da turma, usando o `access_code` ja gerado no banco
+- removida a dependencia obrigatoria de `SUPABASE_SERVICE_ROLE_KEY` na leitura da coordenacao; o dashboard institucional agora tenta montar os dados com `locals.supabase`
+- `npm run check` e `npm run build` passaram apos esse ajuste de bloqueio previo ao `P5`
+
+### 2026-03-14 - rodada 9
+
+- corrigida a leitura incompleta da coordenacao: a tela mostrava medias publicadas, mas ainda zerava `turmas no escopo` porque faltava uma fonte segura para turmas e alunos do escopo
+- criado o snapshot institucional via RPCs `coord_scope_classes()` e `coord_scope_students()` para a coordenacao ler turmas e alunos do proprio escopo sem depender de `service role`
+- aplicada a migration `20260314195000_coord_scope_snapshot_rpc.sql` com `npx supabase db push --include-all`
+
+### 2026-03-14 - rodada 10
+
+- `P5` concluido com padronizacao do branding em favicon, abas e layouts internos, usando o icone oficial tambem na coordenacao
+- titulos das paginas internas foram alinhados para o padrao `Class Insights - ...` em professor, coordenacao, cadastro e recuperacao de senha
+- criado o documento `docs/checklist-qualidade-por-tela.md` para travar o criterio de pronto visual e funcional por pagina
+- mantida a base visual compartilhada em `src/lib/styles/base.css` para reduzir a sensacao de blocos independentes

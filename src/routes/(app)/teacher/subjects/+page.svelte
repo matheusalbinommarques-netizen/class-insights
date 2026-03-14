@@ -45,7 +45,7 @@
 </script>
 
 <svelte:head>
-	<title>Materias - Class Insights</title>
+	<title>Class Insights - Materias</title>
 </svelte:head>
 
 <div class="space-y-6">

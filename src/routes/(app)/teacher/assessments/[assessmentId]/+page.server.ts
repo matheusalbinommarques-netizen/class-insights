@@ -9,18 +9,16 @@ import {
 } from '$lib/server/assessments';
 import { getAuthenticatedUserId } from '$lib/server/auth';
 import { buildAssessmentRevisionTitle, buildPublicationMetadata } from '$lib/server/publication';
+import {
+	listTeacherInviteCodesByClass,
+	mapInviteCodesByStudentId
+} from '$lib/server/teacher-invite-codes';
 import { getOwnedAssessment, getOwnedStudent } from '$lib/server/teacher';
 
 type StudentRow = {
 	id: string;
 	name: string;
 	invite_code: string | null;
-};
-
-type InviteCodeRow = {
-	student_id: string;
-	code: string;
-	status: 'active' | 'claimed' | 'archived';
 };
 
 type AssessmentResultRow = {
@@ -116,41 +114,31 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		};
 	}
 
-	const [
-		{ data: studentsData },
-		{ data: inviteCodesData },
-		{ data: resultsData },
-		{ data: auditData }
-	] = await Promise.all([
-		locals.supabase
-			.from('students')
-			.select('id, name')
-			.eq('class_id', assessment.class_id)
-			.order('name', { ascending: true }),
-		locals.supabase
-			.from('teacher_invite_codes')
-			.select('student_id, code, status')
-			.eq('class_id', assessment.class_id)
-			.in('status', ['active', 'claimed']),
-		locals.supabase
-			.from('assessment_results')
-			.select(
-				'id, assessment_id, student_id, raw_score, score_min, score_max, score_decimals, is_excused, notes, created_at, updated_at'
-			)
-			.eq('assessment_id', assessment.id),
-		locals.supabase
-			.from('grade_audit_log')
-			.select(
-				'id, created_at, assessment_result_id, student_id, changed_by, action_type, previous_score, next_score, reason, metadata'
-			)
-			.eq('assessment_id', assessment.id)
-			.order('created_at', { ascending: false })
-			.limit(80)
-	]);
+	const [{ data: studentsData }, inviteCodesData, { data: resultsData }, { data: auditData }] =
+		await Promise.all([
+			locals.supabase
+				.from('students')
+				.select('id, name')
+				.eq('class_id', assessment.class_id)
+				.order('name', { ascending: true }),
+			listTeacherInviteCodesByClass(locals, assessment.class_id),
+			locals.supabase
+				.from('assessment_results')
+				.select(
+					'id, assessment_id, student_id, raw_score, score_min, score_max, score_decimals, is_excused, notes, created_at, updated_at'
+				)
+				.eq('assessment_id', assessment.id),
+			locals.supabase
+				.from('grade_audit_log')
+				.select(
+					'id, created_at, assessment_result_id, student_id, changed_by, action_type, previous_score, next_score, reason, metadata'
+				)
+				.eq('assessment_id', assessment.id)
+				.order('created_at', { ascending: false })
+				.limit(80)
+		]);
 
-	const inviteCodesByStudentId = new Map(
-		((inviteCodesData ?? []) as InviteCodeRow[]).map((row) => [row.student_id, row.code])
-	);
+	const inviteCodesByStudentId = mapInviteCodesByStudentId(inviteCodesData);
 	const students = ((studentsData ?? []) as Array<Omit<StudentRow, 'invite_code'>>)
 		.map((student) => ({
 			...student,
@@ -390,7 +378,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'publishAssessment',
-			message: 'Avaliacao publicada com sucesso.'
+			message: 'Publicacao concluida.'
 		};
 	},
 

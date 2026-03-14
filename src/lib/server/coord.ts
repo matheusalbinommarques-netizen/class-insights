@@ -1,5 +1,3 @@
-import { getSupabaseAdminClient } from './supabase-admin';
-
 type CoordMembershipRow = {
 	class_id: string;
 };
@@ -10,20 +8,18 @@ type CoordAccessCodeRow = {
 };
 
 type ClassRow = {
-	id: string;
-	name: string;
+	class_id: string;
+	class_name: string;
 	teacher_id: string;
-};
-
-type ProfileRow = {
-	id: string;
-	display_name: string;
+	teacher_name: string;
+	access_code: string | null;
 };
 
 type StudentRow = {
-	id: string;
-	name: string;
+	student_id: string;
+	student_name: string;
 	class_id: string;
+	class_name: string;
 };
 
 type SubjectRow = {
@@ -159,14 +155,6 @@ export async function loadCoordDashboard(
 	coordId: string,
 	displayName: string
 ): Promise<{ ok: true; data: CoordDashboardData } | { ok: false; error: string }> {
-	const admin = getSupabaseAdminClient();
-	if (!admin) {
-		return {
-			ok: false,
-			error: 'SUPABASE_SERVICE_ROLE_KEY nao configurada para montar a leitura institucional.'
-		};
-	}
-
 	const [
 		{ data: membershipsData, error: membershipsError },
 		{ data: accessCodesData, error: accessCodesError }
@@ -222,9 +210,9 @@ export async function loadCoordDashboard(
 	}
 
 	const [classesRes, studentsRes, classSubjectsRes, assessmentsRes] = await Promise.all([
-		admin.from('classes').select('id, name, teacher_id').in('id', classIds),
-		admin.from('students').select('id, name, class_id').in('class_id', classIds),
-		admin
+		locals.supabase.rpc('coord_scope_classes'),
+		locals.supabase.rpc('coord_scope_students'),
+		locals.supabase
 			.from('class_subjects')
 			.select(
 				`
@@ -236,7 +224,7 @@ export async function loadCoordDashboard(
 				`
 			)
 			.in('class_id', classIds),
-		admin
+		locals.supabase
 			.from('assessments')
 			.select('id, class_id, subject_id, status, assessment_date')
 			.in('class_id', classIds)
@@ -248,32 +236,30 @@ export async function loadCoordDashboard(
 	if (classSubjectsRes.error) return { ok: false, error: classSubjectsRes.error.message };
 	if (assessmentsRes.error) return { ok: false, error: assessmentsRes.error.message };
 
-	const classes = (classesRes.data ?? []) as ClassRow[];
-	const students = (studentsRes.data ?? []) as StudentRow[];
+	const classes = ((classesRes.data ?? []) as ClassRow[]).filter((item) =>
+		classIds.includes(item.class_id)
+	);
+	const students = ((studentsRes.data ?? []) as StudentRow[]).filter((item) =>
+		classIds.includes(item.class_id)
+	);
 	const classSubjects = (classSubjectsRes.data ?? []) as SubjectRow[];
 	const assessments = (assessmentsRes.data ?? []) as AssessmentRow[];
 
 	const teacherIds = [...new Set(classes.map((item) => item.teacher_id))];
 	const assessmentIds = assessments.map((item) => item.id);
 
-	const [profilesRes, resultsRes] = await Promise.all([
-		teacherIds.length > 0
-			? admin.from('profiles').select('id, display_name').in('id', teacherIds)
-			: Promise.resolve({ data: [], error: null }),
+	const [, resultsRes] = await Promise.all([
+		Promise.resolve({ data: [], error: null }),
 		assessmentIds.length > 0
-			? admin
+			? locals.supabase
 					.from('assessment_results')
 					.select('assessment_id, student_id, raw_score, score_min, score_max, is_excused')
 					.in('assessment_id', assessmentIds)
 			: Promise.resolve({ data: [], error: null })
 	]);
 
-	if (profilesRes.error) return { ok: false, error: profilesRes.error.message };
 	if (resultsRes.error) return { ok: false, error: resultsRes.error.message };
 
-	const teacherNameById = new Map(
-		((profilesRes.data ?? []) as ProfileRow[]).map((item) => [item.id, item.display_name])
-	);
 	const results = (resultsRes.data ?? []) as AssessmentResultRow[];
 
 	const studentsByClassId = new Map<string, StudentRow[]>();
@@ -306,8 +292,8 @@ export async function loadCoordDashboard(
 
 	const classCards = classes
 		.map((classroom) => {
-			const classStudents = studentsByClassId.get(classroom.id) ?? [];
-			const classAssessments = assessmentsByClassId.get(classroom.id) ?? [];
+			const classStudents = studentsByClassId.get(classroom.class_id) ?? [];
+			const classAssessments = assessmentsByClassId.get(classroom.class_id) ?? [];
 			const normalizedScores = classAssessments.flatMap((assessment) =>
 				(resultsByAssessmentId.get(assessment.id) ?? [])
 					.filter((result) => !result.is_excused)
@@ -337,10 +323,10 @@ export async function loadCoordDashboard(
 				averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1)));
 
 			return {
-				classId: classroom.id,
-				className: classroom.name,
-				teacherName: teacherNameById.get(classroom.teacher_id) ?? 'Professor',
-				accessCode: accessCodeByClassId.get(classroom.id) ?? null,
+				classId: classroom.class_id,
+				className: classroom.class_name,
+				teacherName: classroom.teacher_name ?? 'Professor',
+				accessCode: classroom.access_code ?? accessCodeByClassId.get(classroom.class_id) ?? null,
 				studentsCount: classStudents.length,
 				publishedAssessments: classAssessments.length,
 				averagePercent,
@@ -401,7 +387,7 @@ export async function loadCoordDashboard(
 	const teachers = teacherIds
 		.map((teacherId) => {
 			const teacherClasses = classes.filter((item) => item.teacher_id === teacherId);
-			const teacherClassIds = new Set(teacherClasses.map((item) => item.id));
+			const teacherClassIds = new Set(teacherClasses.map((item) => item.class_id));
 			const teacherAssessments = assessments.filter((item) => teacherClassIds.has(item.class_id));
 			const teacherScores = teacherAssessments.flatMap((assessment) =>
 				(resultsByAssessmentId.get(assessment.id) ?? [])
@@ -413,7 +399,7 @@ export async function loadCoordDashboard(
 
 			return {
 				teacherId,
-				teacherName: teacherNameById.get(teacherId) ?? 'Professor',
+				teacherName: teacherClasses[0]?.teacher_name ?? 'Professor',
 				classesCount: teacherClasses.length,
 				averagePercent:
 					averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1))),
@@ -435,7 +421,7 @@ export async function loadCoordDashboard(
 			const studentAssessments = assessmentsByClassId.get(student.class_id) ?? [];
 			const scores = studentAssessments.flatMap((assessment) =>
 				(resultsByAssessmentId.get(assessment.id) ?? [])
-					.filter((result) => result.student_id === student.id && !result.is_excused)
+					.filter((result) => result.student_id === student.student_id && !result.is_excused)
 					.map((result) => normalizePercent(result))
 					.filter((value): value is number => typeof value === 'number')
 			);
@@ -443,9 +429,9 @@ export async function loadCoordDashboard(
 			if (averagePercentValue === null || averagePercentValue >= 60) return null;
 
 			return {
-				studentId: student.id,
-				studentName: student.name,
-				className: classes.find((item) => item.id === student.class_id)?.name ?? 'Turma',
+				studentId: student.student_id,
+				studentName: student.student_name,
+				className: student.class_name ?? 'Turma',
 				averagePercent: Math.round(Number(averagePercentValue.toFixed(1))),
 				publishedAssessments: scores.length
 			};

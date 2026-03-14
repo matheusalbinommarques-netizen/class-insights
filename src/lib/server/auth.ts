@@ -11,6 +11,13 @@ export function getAuthenticatedUserId(locals: App.Locals): string | null {
 }
 
 export async function getCurrentAuthUser(locals: App.Locals) {
+	if (locals.e2eProfile) {
+		return {
+			id: locals.e2eProfile.id,
+			email: locals.e2eProfile.email
+		};
+	}
+
 	const {
 		data: { user },
 		error
@@ -30,6 +37,14 @@ export async function getProfileByUserId(
 	locals: App.Locals,
 	userId: string
 ): Promise<ProfileRow | null> {
+	if (locals.e2eProfile?.id === userId) {
+		return {
+			id: locals.e2eProfile.id,
+			role: locals.e2eProfile.role,
+			display_name: locals.e2eProfile.display_name
+		};
+	}
+
 	const { data, error } = await locals.supabase
 		.from('profiles')
 		.select('id, role, display_name')

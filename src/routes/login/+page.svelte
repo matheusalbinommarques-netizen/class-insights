@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
 
+	import ciIcon from '$lib/assets/ci-icon.png';
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type ProfileRole = 'teacher' | 'student' | 'coord';
@@ -38,18 +39,18 @@
 
 	const benefits: Benefit[] = [
 		{
-			title: 'Entrada sem confusao',
-			text: 'O sistema reconhece seu perfil e envia voce para a area correta.',
+			title: 'Entre na sua area',
+			text: 'Professor, coordenacao e aluno entram no lugar certo sem desvio nem retrabalho.',
 			tone: 'sky'
 		},
 		{
 			title: 'Leitura com contexto',
-			text: 'Professor, coordenacao e aluno acessam a mesma base com visoes diferentes.',
+			text: 'A mesma base vira leitura operacional, institucional ou de progresso, conforme o perfil.',
 			tone: 'emerald'
 		},
 		{
-			title: 'Produto orientado a acao',
-			text: 'Menos planilha solta. Mais acompanhamento real e historico longitudinal.',
+			title: 'Menos retrabalho',
+			text: 'O acesso ja nasce alinhado ao uso real do produto, com historico e acoes mais claras.',
 			tone: 'amber'
 		}
 	];
@@ -94,7 +95,8 @@
 	}
 
 	function fallbackRouteByRole(role: ProfileRole): string {
-		if (role === 'teacher' || role === 'coord') return '/teacher';
+		if (role === 'teacher') return '/teacher';
+		if (role === 'coord') return '/coord';
 		return '/student';
 	}
 
@@ -303,11 +305,17 @@
 				await tryCompleteStudentLink(pendingInviteCode);
 			}
 
+			await supabase.auth.getSession();
 			await invalidateAll();
 
 			const safeRedirect = sanitizeRedirect(redirectToParam);
 			const fallbackRoute = fallbackRouteByRole(profile.role);
 			const destination = safeRedirect ?? fallbackRoute;
+
+			if (typeof window !== 'undefined') {
+				window.location.assign(destination);
+				return;
+			}
 
 			await goto(destination);
 		} catch (error) {
@@ -324,7 +332,7 @@
 </script>
 
 <svelte:head>
-	<title>Login - Class Insights</title>
+	<title>Class Insights - Login</title>
 	<meta
 		name="description"
 		content="Entre no Class Insights para acessar sua area de professor, coordenacao ou aluno."
@@ -349,39 +357,25 @@
 			>
 				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
 					<div
-						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white shadow-sm"
 					>
-						<svg
-							class="h-6 w-6"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-							stroke-width="2.2"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z"
-							/>
-						</svg>
+						<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
 					</div>
 
 					<div>
 						<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-							EdTech Platform
+							Class Insights
 						</p>
 						<p class="text-2xl font-black tracking-tight text-slate-900">Class Insights</p>
 					</div>
 				</a>
 
 				<div class="mt-10 max-w-xl">
-					<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-						Acesso inteligente
-					</p>
+					<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">Acesso</p>
 					<h1
 						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
 					>
-						Entre e continue de onde parou.
+						Entre na sua area.
 					</h1>
 					<p class="mt-5 text-base leading-8 text-slate-600">
 						O Class Insights identifica seu perfil e leva voce direto para a experiencia certa:
@@ -505,7 +499,7 @@
 								Acesso
 							</p>
 							<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-								Bem-vindo de volta
+								Entre na sua area
 							</h2>
 							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
 								Entre com seu e-mail para acessar sua area. O sistema direciona voce automaticamente
@@ -523,9 +517,7 @@
 
 						<form class="space-y-5" onsubmit={handleSubmit}>
 							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700">
-									Usuario ou e-mail
-								</label>
+								<label for="email" class="block text-sm font-bold text-slate-700"> E-mail </label>
 
 								<input
 									id="email"
@@ -620,7 +612,7 @@
 
 						<div class="my-6 flex items-center gap-3 text-sm font-bold text-slate-400">
 							<div class="h-px flex-1 bg-slate-200"></div>
-							<span>Primeiro acesso?</span>
+							<span>Primeiro acesso</span>
 							<div class="h-px flex-1 bg-slate-200"></div>
 						</div>
 
@@ -629,7 +621,7 @@
 								href={resolve('/register/teacher')}
 								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
 							>
-								<p class="text-sm font-black text-slate-900">Cadastro de professor</p>
+								<p class="text-sm font-black text-slate-900">Primeiro acesso de professor</p>
 								<p class="mt-1 text-sm leading-6 text-slate-600">
 									Criar acesso para turmas, avaliacoes e acompanhamento pedagogico.
 								</p>
@@ -639,9 +631,19 @@
 								href={resolve('/register/student')}
 								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
 							>
-								<p class="text-sm font-black text-slate-900">Cadastro de aluno</p>
+								<p class="text-sm font-black text-slate-900">Primeiro acesso de aluno</p>
 								<p class="mt-1 text-sm leading-6 text-slate-600">
 									Entrar com ou sem vinculo inicial e acompanhar progresso e historico.
+								</p>
+							</a>
+
+							<a
+								href={resolve('/register/coord')}
+								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
+							>
+								<p class="text-sm font-black text-slate-900">Primeiro acesso de coordenacao</p>
+								<p class="mt-1 text-sm leading-6 text-slate-600">
+									Criar acesso institucional para comparar turmas, materias e tendencias.
 								</p>
 							</a>
 						</div>

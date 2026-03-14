@@ -11,9 +11,15 @@ export function getSupabaseAdminClient(): AdminClient | null {
 		return cachedAdminClient;
 	}
 
-	const { supabaseUrl, serviceRoleKey } = getServerEnv();
+	let env: ReturnType<typeof getServerEnv>;
+	try {
+		env = getServerEnv();
+	} catch {
+		cachedAdminClient = null;
+		return cachedAdminClient;
+	}
 
-	cachedAdminClient = createClient(supabaseUrl, serviceRoleKey, {
+	cachedAdminClient = createClient(env.supabaseUrl, env.serviceRoleKey, {
 		auth: {
 			autoRefreshToken: false,
 			persistSession: false

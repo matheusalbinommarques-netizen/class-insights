@@ -68,7 +68,7 @@
 </script>
 
 <svelte:head>
-	<title>Coordenacao - Class Insights</title>
+	<title>Class Insights - Coordenacao</title>
 </svelte:head>
 
 {#if data.error || !data.summary}

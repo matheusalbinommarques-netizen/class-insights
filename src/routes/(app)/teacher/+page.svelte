@@ -1,7 +1,8 @@
-<!-- eslint-disable svelte/no-navigation-without-resolve -->
+﻿<!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
+	import { formatPercentAsGrade, formatPtBrGrade } from '$lib/utils/format';
 	import type { SubjectLongitudinalSummary } from '$lib/types/academic';
 	import type {
 		TeacherActionQueueItem,
@@ -19,20 +20,6 @@
 	};
 
 	type ClassFilter = 'all' | 'setup' | 'healthy' | 'attention' | 'critical';
-	type StatTone = 'good' | 'neutral' | 'warn' | 'danger';
-
-	type TopStatItem = {
-		label: string;
-		value: number;
-		foot: string;
-		tone: StatTone;
-	};
-
-	type FilterChip = {
-		filter: ClassFilter;
-		label: string;
-		count: number;
-	};
 
 	type Props = {
 		data: {
@@ -54,19 +41,10 @@
 	let newDecimals = $state(0);
 	let selectedFilter = $state<ClassFilter>('all');
 	let showCreateForm = $state(false);
-	let createFormInitialized = $state(false);
-
-	$effect(() => {
-		if (!createFormInitialized) {
-			showCreateForm = data.classes.length === 0;
-			createFormInitialized = true;
-		}
-	});
 
 	const formState = $derived(($page.form ?? null) as ActionFeedback | null);
 	const formMessage = $derived(formState?.message ?? null);
 	const formSuccess = $derived(formState?.success ?? false);
-	const hasClasses = $derived(data.classes.length > 0);
 	const sortedActionQueue = $derived.by(() =>
 		[...data.actionQueue].sort((a, b) => a.priority - b.priority)
 	);
@@ -76,173 +54,146 @@
 	const pedagogicalQueue = $derived.by(() =>
 		sortedActionQueue.filter((item) => item.signalType === 'pedagogical')
 	);
-	const firstPriorityAction = $derived.by(() => sortedActionQueue[0] ?? null);
-
-	const filterChips = $derived.by((): FilterChip[] => [
-		{ filter: 'all', label: 'Todas', count: data.classes.length },
-		{
-			filter: 'critical',
-			label: 'Criticas',
-			count: data.classes.filter((c) => c.status === 'critical').length
-		},
-		{
-			filter: 'attention',
-			label: 'Atencao',
-			count: data.classes.filter((c) => c.status === 'attention').length
-		},
-		{
-			filter: 'setup',
-			label: 'Setup',
-			count: data.classes.filter((c) => c.status === 'setup').length
-		},
-		{
-			filter: 'healthy',
-			label: 'Saudaveis',
-			count: data.classes.filter((c) => c.status === 'healthy').length
-		}
-	]);
-
 	const visibleClasses = $derived.by(() =>
 		selectedFilter === 'all'
 			? data.classes
-			: data.classes.filter((classCard) => classCard.status === selectedFilter)
+			: data.classes.filter((item) => item.status === selectedFilter)
+	);
+	const classesWithoutSubjects = $derived.by(() =>
+		data.classes.filter((item) => item.subjectsCount === 0)
+	);
+	const classesWithoutAssessments = $derived.by(() =>
+		data.classes.filter(
+			(item) => item.studentsCount > 0 && item.subjectsCount > 0 && item.assessmentsCount === 0
+		)
 	);
 
-	const topStats = $derived.by((): TopStatItem[] => [
-		{
-			label: 'Turmas ativas',
-			value: data.summary.totalClasses,
-			foot: 'Portfolio atual',
-			tone: 'neutral'
-		},
-		{
-			label: 'Turmas em risco',
-			value: data.summary.classesAtRisk,
-			foot: 'Pedem atencao',
-			tone: 'warn'
-		},
-		{
-			label: 'Rascunhos',
-			value: data.summary.totalDraftAssessments,
-			foot: 'Ainda em operacao',
-			tone: 'danger'
-		},
-		{
-			label: 'Publicacoes pendentes',
-			value: data.summary.totalPendingPublications,
-			foot: 'Prontas para fechar',
-			tone: 'neutral'
-		}
-	]);
+	const quickActions = [
+		{ label: 'Criar turma', href: '#create-class', tone: 'primary' },
+		{ label: 'Criar avaliacao', href: '/teacher/assessments', tone: 'secondary' },
+		{ label: 'Abrir materias', href: '/teacher/subjects', tone: 'secondary' },
+		{ label: 'Import legado', href: '/teacher/import', tone: 'muted' }
+	] as const;
 
-	const quickGuidance = $derived.by(() =>
-		data.summary.totalClasses === 0
-			? [
-					'Crie sua primeira turma',
-					'Vincule materias e cadastre alunos',
-					'Abra avaliacoes e use a importacao legada apenas quando ela realmente reduzir atrito'
-				]
-			: [
-					'Priorize turmas sem materias ou sem avaliacoes',
-					'Feche rascunhos que ja podem virar publicacao',
-					'Trate a importacao por CSV como apoio operacional, nao como fluxo principal'
-				]
+	const classFilters = $derived.by(
+		(): Array<{ filter: ClassFilter; label: string; count: number }> => [
+			{ filter: 'all', label: 'Todas', count: data.classes.length },
+			{
+				filter: 'critical',
+				label: 'Criticas',
+				count: data.classes.filter((item) => item.status === 'critical').length
+			},
+			{
+				filter: 'attention',
+				label: 'Atencao',
+				count: data.classes.filter((item) => item.status === 'attention').length
+			},
+			{
+				filter: 'setup',
+				label: 'Setup',
+				count: data.classes.filter((item) => item.status === 'setup').length
+			},
+			{
+				filter: 'healthy',
+				label: 'Saudaveis',
+				count: data.classes.filter((item) => item.status === 'healthy').length
+			}
+		]
 	);
 
 	function formatDate(value: string | null) {
 		if (!value) return 'Nunca';
 		const date = new Date(value.includes('T') ? value : `${value}T00:00:00`);
 		if (Number.isNaN(date.getTime())) return 'Data indisponivel';
-
 		const options = value.includes('T')
 			? ({ dateStyle: 'medium', timeStyle: 'short' } as const)
 			: ({ dateStyle: 'medium' } as const);
 		return new Intl.DateTimeFormat('pt-BR', options).format(date);
 	}
 
-	function formatScore(value: number | null) {
-		if (typeof value !== 'number') return '--';
-		return (value / 10).toFixed(1);
+	function formatCoverage(value: number) {
+		return `${value}%`;
 	}
 
-	function formatDelta(value: number | null) {
-		if (typeof value !== 'number') return 'Sem baseline';
-		return `${value >= 0 ? '+' : ''}${(value / 10).toFixed(1)} pts`;
+	function formatGradeFromPercent(value: number | null) {
+		return formatPercentAsGrade(value);
+	}
+
+	function formatGap(value: number | null) {
+		if (typeof value !== 'number') return '--';
+		const absolute = formatPtBrGrade(Math.abs(value) / 10);
+		return `${value >= 0 ? '+' : '-'}${absolute}`;
+	}
+
+	function formatTrend(value: number | null) {
+		if (typeof value !== 'number') return 'Sem comparacao anterior';
+		const absolute = formatPtBrGrade(Math.abs(value) / 10);
+		return `${value >= 0 ? '+' : '-'}${absolute} em relacao a avaliacao anterior`;
 	}
 
 	function statusLabel(status: TeacherDashboardClassCard['status']) {
 		if (status === 'healthy') return 'Saudavel';
 		if (status === 'attention') return 'Atencao';
 		if (status === 'critical') return 'Critica';
-		return 'Configuracao';
+		return 'Em configuracao';
 	}
 
-	function statusBadgeClass(status: TeacherDashboardClassCard['status']) {
+	function statusClass(status: TeacherDashboardClassCard['status']) {
 		if (status === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 		if (status === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
 		if (status === 'critical') return 'border-red-200 bg-red-50 text-red-700';
 		return 'border-sky-200 bg-sky-50 text-sky-700';
 	}
 
-	function coverageClass(coverage: number) {
-		if (coverage < 50) return 'text-red-700';
-		if (coverage < 85) return 'text-amber-700';
-		return 'text-emerald-700';
-	}
-
-	function deltaClass(value: number | null) {
-		if (typeof value !== 'number') return 'text-slate-500';
-		if (value >= 0) return 'text-emerald-700';
-		return 'text-red-700';
-	}
-
-	function statCardTone(tone: StatTone) {
-		if (tone === 'good') return 'border-emerald-200 bg-emerald-50';
-		if (tone === 'warn') return 'border-amber-200 bg-amber-50';
-		if (tone === 'danger') return 'border-red-200 bg-red-50';
+	function prioritySurface(status: TeacherDashboardClassCard['status']) {
+		if (status === 'critical') return 'border-red-200 bg-red-50/70';
+		if (status === 'attention') return 'border-amber-200 bg-amber-50/70';
+		if (status === 'setup') return 'border-sky-200 bg-sky-50/70';
 		return 'border-slate-200 bg-white';
 	}
 
 	function filterButtonClass(filter: ClassFilter) {
-		const isActive = selectedFilter === filter;
-		if (!isActive)
+		const active = selectedFilter === filter;
+		if (!active)
 			return 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900';
-		if (filter === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-		if (filter === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
 		if (filter === 'critical') return 'border-red-200 bg-red-50 text-red-700';
+		if (filter === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
 		if (filter === 'setup') return 'border-sky-200 bg-sky-50 text-sky-700';
+		if (filter === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 		return 'border-slate-300 bg-slate-100 text-slate-900';
 	}
 
-	function criticalHint(classCard: TeacherDashboardClassCard) {
-		if (classCard.studentsCount === 0) return 'Turma criada, mas ainda sem alunos.';
-		if (classCard.subjectsCount === 0) return 'Turma sem materias vinculadas.';
-		if (classCard.assessmentsCount === 0) return 'Turma pronta para ganhar a primeira avaliacao.';
-		if (classCard.pendingResultsCount > 0)
-			return `${classCard.pendingResultsCount} resultado(s) ainda faltam nos rascunhos abertos.`;
-		if (classCard.riskStudentsCount > 0)
-			return `${classCard.riskStudentsCount} aluno(s) aparecem em risco nas publicacoes atuais.`;
-		return 'Turma operacional sem alertas criticos neste momento.';
+	function nextStepCopy(item: TeacherDashboardClassCard) {
+		if (item.studentsCount === 0)
+			return 'Adicione os primeiros alunos para esta turma entrar no fluxo.';
+		if (item.subjectsCount === 0)
+			return 'Vincule as materias antes de criar ou importar avaliacoes.';
+		if (item.assessmentsCount === 0) return 'Crie a primeira avaliacao desta turma.';
+		if (item.readyToPublishCount > 0)
+			return `Voce tem ${item.readyToPublishCount} rascunho(s) pronto(s) para publicar.`;
+		if (item.pendingResultsCount > 0)
+			return `${item.pendingResultsCount} resultado(s) ainda faltam para fechar os rascunhos abertos.`;
+		if (item.focusSubjects.length > 0)
+			return `${item.focusSubjects[0].subjectName} e a materia que mais pede leitura agora.`;
+		return 'Nenhum aluno abaixo da meta nesta turma no recorte publicado atual.';
 	}
 
-	function coverageBarClass(coverage: number) {
-		if (coverage < 50) return 'bg-red-500';
-		if (coverage < 85) return 'bg-amber-500';
-		return 'bg-emerald-500';
+	function classPrimaryAction(item: TeacherDashboardClassCard) {
+		if (item.readyToPublishCount > 0) {
+			return { href: '/teacher/assessments', label: 'Abrir avaliacoes' };
+		}
+		return { href: `/teacher/${item.id}`, label: 'Abrir turma' };
 	}
 
-	function longitudinalTrendLabel(trend: SubjectLongitudinalSummary['recent_trend']) {
-		if (trend === 'improving') return 'Melhora';
-		if (trend === 'declining') return 'Queda';
-		if (trend === 'stable') return 'Estavel';
-		return 'Dados insuficientes';
+	function focusToneClass(tone: TeacherDashboardClassCard['focusSubjects'][number]['tone']) {
+		if (tone === 'critical') return 'border-red-200 bg-red-50 text-red-700';
+		if (tone === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
+		return 'border-emerald-200 bg-emerald-50 text-emerald-700';
 	}
 
-	function longitudinalTrendClass(trend: SubjectLongitudinalSummary['recent_trend']) {
-		if (trend === 'improving') return 'text-emerald-700';
-		if (trend === 'declining') return 'text-red-700';
-		if (trend === 'stable') return 'text-slate-700';
-		return 'text-slate-500';
+	function trendClass(value: number | null) {
+		if (typeof value !== 'number') return 'text-slate-500';
+		return value < 0 ? 'text-red-700' : 'text-emerald-700';
 	}
 
 	function riskLevelClass(level: TeacherRiskStudentCard['riskLevel']) {
@@ -255,20 +206,11 @@
 		return level === 'high' ? 'Risco alto' : 'Risco moderado';
 	}
 
-	function formatGap(value: number) {
-		return `${value >= 0 ? '+' : ''}${(value / 10).toFixed(1)}`;
-	}
-
-	function focusSubjectToneClass(tone: TeacherDashboardClassCard['focusSubjects'][number]['tone']) {
-		if (tone === 'critical') return 'border-red-200 bg-red-50';
-		if (tone === 'attention') return 'border-amber-200 bg-amber-50';
-		return 'border-emerald-200 bg-emerald-50';
-	}
-
-	function focusSubjectToneText(tone: TeacherDashboardClassCard['focusSubjects'][number]['tone']) {
-		if (tone === 'critical') return 'text-red-700';
-		if (tone === 'attention') return 'text-amber-700';
-		return 'text-emerald-700';
+	function actionButtonClass(tone: 'primary' | 'secondary' | 'muted') {
+		if (tone === 'primary') return 'bg-slate-900 text-white hover:bg-slate-800';
+		if (tone === 'secondary')
+			return 'border border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50';
+		return 'border border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-white';
 	}
 
 	function confirmDelete(event: MouseEvent) {
@@ -278,78 +220,76 @@
 			event.preventDefault();
 		}
 	}
-
-	function goToImportForClass(classId: string) {
-		window.location.href = `${resolve('/teacher/import')}?classId=${classId}`;
-	}
 </script>
 
 <svelte:head>
-	<title>Teacher Dashboard � Class Insights</title>
+	<title>Class Insights - Professor</title>
 </svelte:head>
 
 <div class="space-y-6">
 	<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
 		<div class="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
 			<div class="max-w-3xl">
-				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Workspace do professor
-				</p>
+				<p class="text-xs font-black uppercase tracking-widest text-slate-500">Teacher cockpit</p>
 				<h1 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-					Bom trabalho, {data.summary.displayName}.
+					O que exige acao agora, {data.summary.displayName}.
 				</h1>
 				<p class="mt-3 text-base leading-8 text-slate-600">{data.summary.message}</p>
-
-				<div class="mt-5 flex flex-wrap gap-3">
-					<button
-						type="button"
-						class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white shadow-sm transition hover:bg-slate-800"
-						onclick={() => (showCreateForm = !showCreateForm)}
-					>
-						<span>{showCreateForm ? 'Ocultar nova turma' : 'Criar nova turma'}</span>
-					</button>
-
-					<a
-						href={resolve('/teacher/subjects')}
-						class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
-					>
-						<span>Abrir materias</span>
-					</a>
-
-					<a
-						href={resolve('/teacher/import')}
-						class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
-					>
-						<span>Import legado</span>
-					</a>
-
-					<a
-						href={resolve('/teacher/assessments')}
-						class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
-					>
-						<span>Abrir avaliacoes</span>
-					</a>
-
-					{#if firstPriorityAction}
-						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+				{#if sortedActionQueue[0]}
+					<div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4">
+						<p class="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+							Proximo passo
+						</p>
+						<p class="mt-2 text-lg font-black text-slate-950">{sortedActionQueue[0].title}</p>
+						<p class="mt-2 text-sm leading-7 text-slate-600">{sortedActionQueue[0].description}</p>
 						<a
-							href={firstPriorityAction.href}
-							class="inline-flex h-12 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-5 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+							href={sortedActionQueue[0].href}
+							class="mt-4 inline-flex h-11 items-center justify-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
+							>{sortedActionQueue[0].ctaLabel}</a
 						>
-							<span>Ver turma prioritaria</span>
-						</a>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</div>
 
-			<div class="grid gap-3 sm:grid-cols-2 xl:w-full xl:max-w-sm">
-				{#each topStats as stat (stat.label)}
-					<div class={`rounded-2xl border p-4 ${statCardTone(stat.tone)}`}>
-						<p class="text-xs font-black uppercase tracking-widest text-slate-500">{stat.label}</p>
-						<p class="mt-2 text-3xl font-black text-slate-950">{stat.value}</p>
-						<p class="mt-2 text-sm leading-6 text-slate-600">{stat.foot}</p>
-					</div>
-				{/each}
+			<div class="grid gap-3 sm:grid-cols-2 xl:w-full xl:max-w-md">
+				<div class="rounded-2xl border border-slate-200 bg-white p-4">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Pendencias operacionais
+					</p>
+					<p class="mt-2 text-3xl font-black text-slate-950">{operationalQueue.length}</p>
+					<p class="mt-2 text-sm leading-6 text-slate-600">
+						Rascunhos, cobertura e configuracao de turma.
+					</p>
+				</div>
+				<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+					<p class="text-xs font-black uppercase tracking-widest text-amber-700">
+						Leituras pedagogicas
+					</p>
+					<p class="mt-2 text-3xl font-black text-slate-950">{pedagogicalQueue.length}</p>
+					<p class="mt-2 text-sm leading-6 text-slate-600">
+						Materias, alunos e quedas que pedem leitura.
+					</p>
+				</div>
+				<div class="rounded-2xl border border-slate-200 bg-white p-4">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Turmas sem materia
+					</p>
+					<p class="mt-2 text-3xl font-black text-slate-950">{classesWithoutSubjects.length}</p>
+					<p class="mt-2 text-sm leading-6 text-slate-600">
+						Essas turmas ainda nao entram no fluxo formal.
+					</p>
+				</div>
+				<div class="rounded-2xl border border-slate-200 bg-white p-4">
+					<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+						Avaliacoes sem fechamento
+					</p>
+					<p class="mt-2 text-3xl font-black text-slate-950">
+						{data.summary.totalDraftAssessments}
+					</p>
+					<p class="mt-2 text-sm leading-6 text-slate-600">
+						Parte delas ja pode virar publicacao agora.
+					</p>
+				</div>
 			</div>
 		</div>
 	</section>
@@ -370,181 +310,48 @@
 		</div>
 	{/if}
 
-	<div class="grid gap-6 xl:grid-cols-[1.65fr_0.85fr]">
+	<section class="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
 		<div class="space-y-6">
 			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
 				<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 					<div>
 						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-							Decisao guiada
+							Pendencias operacionais
 						</p>
 						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-							Operar agora e ler depois
+							Feche o que destrava o resto
 						</h2>
 					</div>
 					<p class="max-w-xl text-sm leading-7 text-slate-600">
-						O dashboard agora separa gargalos operacionais de sinais pedagogicos para o professor
-						saber se precisa fechar processo ou abrir uma leitura individual.
+						Rascunhos abertos, turmas sem materia e avaliacoes sem fechamento aparecem aqui
+						primeiro.
 					</p>
 				</div>
 
-				{#if sortedActionQueue.length === 0}
+				{#if operationalQueue.length === 0}
 					<div
 						class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
 					>
-						<h3 class="text-lg font-black text-slate-950">Nenhuma pendencia urgente</h3>
+						<h3 class="text-lg font-black text-slate-950">Nenhuma pendencia operacional agora</h3>
 						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Suas turmas nao tem alertas prioritarios neste momento. Voce pode seguir com novas
-							avaliacoes, materias e criacao de novas turmas. Use a importacao apenas se o CSV
-							realmente ajudar nesta operacao.
+							Suas turmas principais estao configuradas. O proximo passo natural e publicar ou criar
+							nova avaliacao.
 						</p>
 					</div>
 				{:else}
-					<div class="mt-5 grid gap-4 xl:grid-cols-2">
-						<div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-							<div class="flex items-center justify-between gap-3">
-								<div>
-									<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-										Operacional
-									</p>
-									<h3 class="mt-1 text-lg font-black text-slate-950">Fechar processo</h3>
-								</div>
-								<span
-									class="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-sky-700"
-								>
-									{operationalQueue.length} item(ns)
-								</span>
-							</div>
-
-							{#if operationalQueue.length === 0}
-								<p class="text-sm leading-7 text-slate-600">
-									Sem gargalo operacional urgente no momento.
-								</p>
-							{:else}
-								{#each operationalQueue as item (item.href)}
-									<article
-										class="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="text-base font-black text-slate-950">{item.title}</p>
-											<p class="mt-1 text-sm leading-7 text-slate-600">{item.description}</p>
-										</div>
-										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-										<a
-											href={item.href}
-											class="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
-										>
-											<span>{item.ctaLabel}</span>
-										</a>
-									</article>
-								{/each}
-							{/if}
-						</div>
-
-						<div class="space-y-3 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
-							<div class="flex items-center justify-between gap-3">
-								<div>
-									<p class="text-xs font-black uppercase tracking-widest text-amber-700">
-										Pedagogico
-									</p>
-									<h3 class="mt-1 text-lg font-black text-slate-950">Ler e decidir</h3>
-								</div>
-								<span
-									class="rounded-full border border-amber-200 bg-white px-3 py-1 text-[11px] font-black uppercase tracking-widest text-amber-700"
-								>
-									{pedagogicalQueue.length} item(ns)
-								</span>
-							</div>
-
-							{#if pedagogicalQueue.length === 0}
-								<p class="text-sm leading-7 text-slate-600">
-									Sem alerta pedagogico prioritario no recorte atual.
-								</p>
-							{:else}
-								{#each pedagogicalQueue as item (item.href)}
-									<article
-										class="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-white p-4 md:flex-row md:items-center md:justify-between"
-									>
-										<div class="min-w-0">
-											<p class="text-base font-black text-slate-950">{item.title}</p>
-											<p class="mt-1 text-sm leading-7 text-slate-600">{item.description}</p>
-										</div>
-										<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-										<a
-											href={item.href}
-											class="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
-										>
-											<span>{item.ctaLabel}</span>
-										</a>
-									</article>
-								{/each}
-							{/if}
-						</div>
-					</div>
-				{/if}
-			</section>
-
-			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-				<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-					<div>
-						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-							Longitudinal publicado
-						</p>
-						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-							Materias que mais pedem leitura agora
-						</h2>
-					</div>
-					<p class="max-w-xl text-sm leading-7 text-slate-600">
-						Este recorte usa apenas avaliacoes publicadas e resume media, tendencia e recencia por
-						materia no workspace.
-					</p>
-				</div>
-
-				{#if data.longitudinalSubjects.length === 0}
-					<div
-						class="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
-					>
-						<h3 class="text-lg font-black text-slate-950">Sem serie publicada suficiente</h3>
-						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Publique mais avaliacoes para o dashboard comparar materias e destacar sinais
-							longitudinalmente.
-						</p>
-					</div>
-				{:else}
-					<div class="mt-5 grid gap-3 lg:grid-cols-2">
-						{#each data.longitudinalSubjects as subject (subject.subject_id)}
+					<div class="mt-5 space-y-3">
+						{#each operationalQueue as item (item.id)}
 							<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-								<div class="flex items-start justify-between gap-3">
-									<div>
-										<p class="text-lg font-black text-slate-950">{subject.subject_name}</p>
-										<p class="mt-1 text-sm leading-6 text-slate-600">
-											{subject.assessments_count} avaliacao(oes) publicada(s)
-										</p>
+								<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+									<div class="min-w-0">
+										<p class="text-base font-black text-slate-950">{item.title}</p>
+										<p class="mt-1 text-sm leading-7 text-slate-600">{item.description}</p>
 									</div>
-									<p class="text-2xl font-black text-slate-950">
-										{formatScore(subject.average_percent)}
-									</p>
-								</div>
-
-								<div class="mt-4 grid gap-3 sm:grid-cols-2">
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Tendencia recente
-										</p>
-										<p
-											class={`mt-2 text-sm font-black ${longitudinalTrendClass(subject.recent_trend)}`}
-										>
-											{longitudinalTrendLabel(subject.recent_trend)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Ultima avaliacao
-										</p>
-										<p class="mt-2 text-sm font-black text-slate-950">
-											{formatDate(subject.latest_assessment_date)}
-										</p>
-									</div>
+									<a
+										href={item.href}
+										class="inline-flex h-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
+										>{item.ctaLabel}</a
+									>
 								</div>
 							</article>
 						{/each}
@@ -553,22 +360,121 @@
 			</section>
 
 			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-				<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+				<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
 					<div>
 						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-							Cockpit de turmas
+							Leituras pedagogicas
 						</p>
 						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-							Turmas vivas, nao so cadastradas
+							O que mudou no desempenho
 						</h2>
-						<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-							Cobertura dos rascunhos, publicacoes, risco e tendencia agora nascem do modelo
-							academico novo.
+					</div>
+					<p class="max-w-xl text-sm leading-7 text-slate-600">
+						Aqui entram materias abaixo da meta, alunos em queda e gaps relevantes do recorte
+						publicado.
+					</p>
+				</div>
+
+				<div class="mt-5 grid gap-4 xl:grid-cols-3">
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Materias abaixo da referencia
 						</p>
+						{#if data.longitudinalSubjects.length === 0}
+							<p class="mt-3 text-sm leading-7 text-slate-600">
+								Nenhuma leitura suficiente publicada ainda.
+							</p>
+						{:else}
+							<div class="mt-3 space-y-3">
+								{#each data.longitudinalSubjects.slice(0, 3) as subject (subject.subject_id)}
+									<div class="rounded-2xl border border-slate-200 bg-white p-3">
+										<p class="text-sm font-black text-slate-950">{subject.subject_name}</p>
+										<p class="mt-1 text-sm leading-6 text-slate-600">
+											Media publicada: {formatGradeFromPercent(subject.average_percent)} / 10
+										</p>
+										<p class="mt-1 text-xs text-slate-500">
+											Tendencia: {subject.recent_trend === 'insufficient_data'
+												? 'Dados insuficientes'
+												: subject.recent_trend === 'declining'
+													? 'Em queda'
+													: subject.recent_trend === 'improving'
+														? 'Em melhora'
+														: 'Estavel'}
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Alunos em queda
+						</p>
+						{#if data.riskStudents.length === 0}
+							<p class="mt-3 text-sm leading-7 text-slate-600">
+								Nenhum aluno abaixo da meta no recorte atual.
+							</p>
+						{:else}
+							<div class="mt-3 space-y-3">
+								{#each data.riskStudents.slice(0, 3) as student (student.studentId)}
+									<div class="rounded-2xl border border-slate-200 bg-white p-3">
+										<div class="flex items-center justify-between gap-3">
+											<p class="text-sm font-black text-slate-950">{student.studentName}</p>
+											<span
+												class={`rounded-full border px-2 py-1 text-[11px] font-black uppercase tracking-widest ${riskLevelClass(student.riskLevel)}`}
+												>{riskLevelLabel(student.riskLevel)}</span
+											>
+										</div>
+										<p class="mt-1 text-sm leading-6 text-slate-600">
+											{student.className} - media publicada: {formatGradeFromPercent(
+												student.averagePercent
+											)} / 10
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+							Gaps relevantes
+						</p>
+						{#if data.studentComparisons.length === 0}
+							<p class="mt-3 text-sm leading-7 text-slate-600">
+								Tudo dentro do esperado em comparacao com a media das turmas.
+							</p>
+						{:else}
+							<div class="mt-3 space-y-3">
+								{#each data.studentComparisons.slice(0, 3) as item (item.studentId)}
+									<div class="rounded-2xl border border-slate-200 bg-white p-3">
+										<p class="text-sm font-black text-slate-950">{item.studentName}</p>
+										<p class="mt-1 text-sm leading-6 text-slate-600">
+											{item.className} - gap de {formatGap(item.gapPercent)} em relacao a turma
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+			</section>
+
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+				<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+					<div>
+						<p class="text-xs font-black uppercase tracking-widest text-slate-500">Turmas vivas</p>
+						<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+							Cada turma mostra o proximo clique
+						</h2>
+						<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
+							Media publicada, cobertura, tendencia e proximo passo aparecem sempre com referencia
+							clara.
+						</p>
+					</div>
 					<div class="flex flex-wrap gap-2">
-						{#each filterChips as chip (chip.filter)}
+						{#each classFilters as chip (chip.filter)}
 							<button
 								type="button"
 								class={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-bold transition ${filterButtonClass(chip.filter)}`}
@@ -583,28 +489,22 @@
 					</div>
 				</div>
 
-				{#if !hasClasses}
+				{#if data.classes.length === 0}
 					<div
 						class="mt-6 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center"
 					>
-						<div
-							class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900 text-xl font-black text-white shadow-sm"
-						>
-							CI
-						</div>
-						<h3 class="mt-4 text-2xl font-black tracking-tight text-slate-950">
-							Pronto para criar a primeira turma?
+						<h3 class="text-2xl font-black tracking-tight text-slate-950">
+							Sem turma por enquanto
 						</h3>
 						<p class="mx-auto mt-3 max-w-xl text-sm leading-7 text-slate-600">
-							Comece pelo fluxo essencial: turma, materias, alunos, avaliacoes e publicacao.
+							Crie a primeira turma para ativar materias, avaliacoes e leitura pedagógica. O import
+							legado fica como apoio, nao como fluxo principal.
 						</p>
 						<button
 							type="button"
 							class="mt-5 inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
-							onclick={() => (showCreateForm = true)}
+							onclick={() => (showCreateForm = true)}>Criar primeira turma</button
 						>
-							<span>Criar primeira turma</span>
-						</button>
 					</div>
 				{:else if visibleClasses.length === 0}
 					<div
@@ -612,195 +512,147 @@
 					>
 						<h3 class="text-lg font-black text-slate-950">Nenhuma turma nesse filtro</h3>
 						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Troque o filtro para visualizar outras turmas do workspace.
+							Troque o filtro para ver outras turmas do workspace.
 						</p>
 					</div>
 				{:else}
-					<div class="mt-6 grid gap-4">
-						{#each visibleClasses as c (c.id)}
-							<article class="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+					<div class="mt-6 space-y-4">
+						{#each visibleClasses as item (item.id)}
+							{@const primaryAction = classPrimaryAction(item)}
+							<article class={`rounded-3xl border p-5 ${prioritySurface(item.status)}`}>
 								<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 									<div class="min-w-0">
 										<div class="flex flex-wrap items-center gap-3">
-											<h3 class="text-2xl font-black tracking-tight text-slate-950">{c.name}</h3>
+											<h3 class="text-2xl font-black tracking-tight text-slate-950">{item.name}</h3>
 											<span
-												class={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-widest ${statusBadgeClass(c.status)}`}
-												>{statusLabel(c.status)}</span
+												class={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-widest ${statusClass(item.status)}`}
+												>{statusLabel(item.status)}</span
 											>
 										</div>
 										<p class="mt-2 text-sm leading-7 text-slate-600">
-											Criada em {formatDate(c.created_at)} � {c.scaleLabel}
+											Criada em {formatDate(item.created_at)} | Escala: {item.scaleLabel}
 										</p>
 									</div>
-
-									<details class="relative">
-										<summary
-											class="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-2xl border border-slate-200 bg-white text-lg font-black text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
-											>...</summary
+									<form method="POST" action="?/deleteClass">
+										<input type="hidden" name="classId" value={item.id} />
+										<button
+											type="submit"
+											class="inline-flex h-10 items-center justify-center rounded-2xl border border-red-200 bg-white px-4 text-sm font-bold text-red-700 transition hover:bg-red-50"
+											onclick={confirmDelete}>Excluir turma</button
 										>
-										<div
-											class="absolute right-0 top-12 z-10 w-40 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg"
-										>
-											<form method="POST" action="?/deleteClass">
-												<input type="hidden" name="classId" value={c.id} />
-												<button
-													type="submit"
-													class="flex h-11 w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 transition hover:bg-red-100"
-													onclick={confirmDelete}>Excluir turma</button
-												>
-											</form>
-										</div>
-									</details>
+									</form>
 								</div>
 
-								<div class="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-									<p class="text-sm font-semibold text-slate-900">{criticalHint(c)}</p>
+								<div class="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+									<p class="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+										Proximo passo
+									</p>
+									<p class="mt-2 text-sm font-semibold text-slate-900">{nextStepCopy(item)}</p>
 								</div>
 
-								<div class="mt-4 grid gap-4 lg:grid-cols-2">
-									<div class="rounded-2xl border border-slate-200 bg-white p-4">
-										<div class="flex items-center justify-between gap-3">
-											<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-												Cobertura dos rascunhos
-											</p>
-											<p class={`text-sm font-black ${coverageClass(c.draftCoveragePercent)}`}>
-												{c.draftCoveragePercent}%
-											</p>
-										</div>
-										<div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-											<div
-												class={`h-full rounded-full ${coverageBarClass(c.draftCoveragePercent)}`}
-												style={`width: ${Math.max(0, Math.min(100, c.draftCoveragePercent))}%`}
-											></div>
-										</div>
-										<p class="mt-3 text-sm leading-6 text-slate-600">
-											{c.filledResultsCount} de {c.totalExpectedResults} resultados esperados ja foram
-											salvos.
-										</p>
-									</div>
-
-									<div class="rounded-2xl border border-slate-200 bg-white p-4">
-										<div class="flex items-center justify-between gap-3">
-											<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-												Cobertura publicada
-											</p>
-											<p class={`text-sm font-black ${coverageClass(c.publishedCoveragePercent)}`}>
-												{c.publishedCoveragePercent}%
-											</p>
-										</div>
-										<div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
-											<div
-												class={`h-full rounded-full ${coverageBarClass(c.publishedCoveragePercent)}`}
-												style={`width: ${Math.max(0, Math.min(100, c.publishedCoveragePercent))}%`}
-											></div>
-										</div>
-										<p class="mt-3 text-sm leading-6 text-slate-600">
-											Leitura oficial do aluno e do longitudinal sai apenas do que ja foi publicado.
-										</p>
-									</div>
-								</div>
-
-								<div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+								<div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
 									<div class="rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
 											Media publicada
 										</p>
 										<p class="mt-2 text-2xl font-black text-slate-950">
-											{formatScore(c.averagePercent)}
+											{formatGradeFromPercent(item.averagePercent)} / 10
 										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-4">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">Risco</p>
-										<p class="mt-2 text-2xl font-black text-slate-950">{c.riskStudentsCount}</p>
 									</div>
 									<div class="rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Ultima publicacao
+											Cobertura publicada
 										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatDate(c.latestPublicationDate)}
+										<p class="mt-2 text-2xl font-black text-slate-950">
+											{formatCoverage(item.publishedCoveragePercent)}
 										</p>
+										<p class="mt-1 text-xs text-slate-500">dos resultados esperados</p>
 									</div>
 									<div class="rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
 											Tendencia
 										</p>
-										<p class={`mt-2 text-lg font-black ${deltaClass(c.trendDelta)}`}>
-											{formatDelta(c.trendDelta)}
+										<p class={`mt-2 text-sm font-black ${trendClass(item.trendDelta)}`}>
+											{formatTrend(item.trendDelta)}
 										</p>
-									</div>
-								</div>
-
-								<div class="mt-3 grid gap-3 sm:grid-cols-3">
-									<div class="rounded-2xl border border-slate-200 bg-white p-4">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Alunos
-										</p>
-										<p class="mt-2 text-xl font-black text-slate-950">{c.studentsCount}</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-4">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Materias
-										</p>
-										<p class="mt-2 text-xl font-black text-slate-950">{c.subjectsCount}</p>
 									</div>
 									<div class="rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
 											Pendencias
 										</p>
-										<p class="mt-2 text-xl font-black text-slate-950">{c.pendingResultsCount}</p>
+										<p class="mt-2 text-2xl font-black text-slate-950">
+											{item.pendingResultsCount}
+										</p>
+										<p class="mt-1 text-xs text-slate-500">resultado(s) ainda faltam</p>
 									</div>
 								</div>
 
-								{#if c.focusSubjects.length > 0}
+								<div class="mt-4 grid gap-3 md:grid-cols-3">
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Rascunhos abertos
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">
+											{item.draftAssessmentsCount}
+										</p>
+									</div>
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Materias
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">{item.subjectsCount}</p>
+									</div>
+									<div class="rounded-2xl border border-slate-200 bg-white p-4">
+										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
+											Alunos em risco
+										</p>
+										<p class="mt-2 text-xl font-black text-slate-950">{item.riskStudentsCount}</p>
+									</div>
+								</div>
+
+								{#if item.focusSubjects.length > 0}
 									<div class="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Materias pedindo mais atencao
+											Materias que mais pedem atencao
 										</p>
 										<div class="mt-3 flex flex-wrap gap-2">
-											{#each c.focusSubjects as subject (subject.subjectId)}
-												<div
-													class={`rounded-2xl border px-3 py-3 ${focusSubjectToneClass(subject.tone)}`}
-												>
-													<div class="flex items-start justify-between gap-3">
-														<div class="min-w-0">
-															<p class="text-sm font-black text-slate-950">{subject.subjectName}</p>
-															<p class="mt-1 text-xs leading-5 text-slate-600">
-																{subject.assessmentsCount} publicacao(oes)
-															</p>
-														</div>
-														<p class={`text-sm font-black ${focusSubjectToneText(subject.tone)}`}>
-															{formatScore(subject.averagePercent)}
-														</p>
-													</div>
-													<p class="mt-2 text-xs leading-5 text-slate-600">
-														Gap contra media da turma:
-														<strong class={focusSubjectToneText(subject.tone)}>
-															{subject.gapVsClassAverage === null
-																? '--'
-																: formatGap(subject.gapVsClassAverage)}
-														</strong>
+											{#each item.focusSubjects as subject (subject.subjectId)}
+												<div class={`rounded-2xl border px-3 py-3 ${focusToneClass(subject.tone)}`}>
+													<p class="text-sm font-black">{subject.subjectName}</p>
+													<p class="mt-1 text-xs">
+														Media: {formatGradeFromPercent(subject.averagePercent)} / 10
+													</p>
+													<p class="mt-1 text-xs">
+														Gap vs turma: {formatGap(subject.gapVsClassAverage)}
 													</p>
 												</div>
 											{/each}
 										</div>
 									</div>
+								{:else}
+									<div
+										class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm leading-7 text-slate-600"
+									>
+										Nenhuma materia em atencao nesta turma no recorte publicado atual.
+									</div>
 								{/if}
 
 								<div class="mt-5 flex flex-wrap gap-3">
-									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 									<a
-										href={`/teacher/${c.id}`}
+										href={primaryAction.href}
 										class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
-										><span class="text-white">Abrir turma</span></a
+										>{primaryAction.label}</a
 									>
-									<button
-										type="button"
-										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
-										onclick={() => goToImportForClass(c.id)}
+									<a
+										href={`/teacher/${item.id}`}
+										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+										>Abrir turma</a
 									>
-										<span>Import legado</span>
-									</button>
+									<a
+										href={resolve('/teacher/import') + `?classId=${item.id}`}
+										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-bold text-slate-600 transition hover:border-slate-300 hover:bg-white"
+										>Import legado</a
+									>
 								</div>
 							</article>
 						{/each}
@@ -810,6 +662,26 @@
 		</div>
 
 		<aside class="space-y-6 xl:sticky xl:top-6 xl:self-start">
+			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+				<p class="text-xs font-black uppercase tracking-widest text-slate-500">Acoes rapidas</p>
+				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+					Entre pelo fluxo principal
+				</h2>
+				<div class="mt-4 space-y-3">
+					{#each quickActions as action (action.label)}
+						<a
+							href={action.href}
+							class={`inline-flex h-12 w-full items-center justify-center rounded-2xl px-4 text-sm font-bold transition ${actionButtonClass(action.tone)}`}
+							>{action.label}</a
+						>
+					{/each}
+				</div>
+				<p class="mt-4 text-sm leading-7 text-slate-600">
+					Import legado segue como apoio. Nao deve competir com criar turma, abrir materia e fechar
+					avaliacao.
+				</p>
+			</section>
+
 			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" id="create-class">
 				<div class="flex items-center justify-between gap-3">
 					<div>
@@ -820,9 +692,8 @@
 						type="button"
 						class="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
 						onclick={() => (showCreateForm = !showCreateForm)}
+						>{showCreateForm ? 'Recolher' : 'Abrir'}</button
 					>
-						<span>{showCreateForm ? 'Recolher' : 'Abrir'}</span>
-					</button>
 				</div>
 
 				{#if showCreateForm}
@@ -838,7 +709,6 @@
 								class="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
 							/>
 						</div>
-
 						<div class="grid grid-cols-3 gap-3">
 							<div class="space-y-2">
 								<label for="score-min" class="block text-sm font-bold text-slate-700">Min</label>
@@ -877,17 +747,16 @@
 								/>
 							</div>
 						</div>
-
 						<div
 							class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600"
 						>
-							Escala padrao: <strong class="text-slate-950">{newMin}-{newMax}</strong> � dec
-							<strong class="text-slate-950">{newDecimals}</strong>
+							Escala padrao: <strong class="text-slate-950">{newMin}-{newMax}</strong> com
+							<strong class="text-slate-950">{newDecimals}</strong> decimal(is)
 						</div>
 						<button
 							type="submit"
 							class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-900 text-sm font-black text-white transition hover:bg-slate-800"
-							><span class="text-white">Criar turma</span></button
+							>Criar turma</button
 						>
 					</form>
 				{:else}
@@ -899,225 +768,63 @@
 
 			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
 				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Proximos movimentos
+					Estados de atencao
 				</p>
-				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">Guia rapido</h2>
-
-				<ul class="mt-4 space-y-3">
-					{#each quickGuidance as item (item)}
-						<li
-							class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700"
-						>
-							{item}
-						</li>
-					{/each}
-				</ul>
-
-				{#if firstPriorityAction}
-					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-					<a
-						href={firstPriorityAction.href}
-						class="mt-4 inline-flex h-12 w-full items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-sm font-bold text-amber-700 transition hover:bg-amber-100"
-						><span>Abrir prioridade atual</span></a
-					>
-				{/if}
-			</section>
-
-			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-				<p class="text-xs font-black uppercase tracking-widest text-slate-500">Ranking e risco</p>
-				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-					Alunos pedindo intervencao
-				</h2>
-
-				{#if data.riskStudents.length === 0}
-					<p class="mt-4 text-sm leading-7 text-slate-600">
-						Ainda nao ha alunos abaixo de 60% na leitura publicada atual do workspace.
-					</p>
-				{:else}
-					<div class="mt-4 space-y-3">
-						{#each data.riskStudents as student (student.studentId)}
-							<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-								<div class="flex items-start justify-between gap-3">
-									<div class="min-w-0">
-										<p class="text-base font-black text-slate-950">{student.studentName}</p>
-										<p class="mt-1 text-sm leading-6 text-slate-600">{student.className}</p>
-									</div>
-									<span
-										class={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-widest ${riskLevelClass(student.riskLevel)}`}
-									>
-										{riskLevelLabel(student.riskLevel)}
-									</span>
-								</div>
-
-								<div class="mt-4 grid grid-cols-2 gap-3">
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Media publicada
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(student.averagePercent)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Amostra
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{student.publishedAssessmentsCount} avaliacao(oes)
-										</p>
-									</div>
-								</div>
-
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-								<a
-									href={`/teacher/students/${student.studentId}`}
-									class="mt-4 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
-								>
-									Abrir perfil do aluno
-								</a>
-							</article>
-						{/each}
+				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">Resumo rapido</h2>
+				<div class="mt-4 space-y-3 text-sm leading-7 text-slate-600">
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+						{classesWithoutSubjects.length > 0
+							? `${classesWithoutSubjects.length} turma(s) ainda sem materia vinculada.`
+							: 'Nenhuma turma sem materia vinculada.'}
 					</div>
-				{/if}
-			</section>
-
-			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Comparativo aluno x turma
-				</p>
-				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-					Maiores gaps abaixo da media
-				</h2>
-
-				{#if data.studentComparisons.length === 0}
-					<p class="mt-4 text-sm leading-7 text-slate-600">
-						Ainda nao ha gaps relevantes abaixo da media da turma na leitura publicada atual.
-					</p>
-				{:else}
-					<div class="mt-4 space-y-3">
-						{#each data.studentComparisons as item (item.studentId)}
-							<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-								<div class="flex items-start justify-between gap-3">
-									<div class="min-w-0">
-										<p class="text-base font-black text-slate-950">{item.studentName}</p>
-										<p class="mt-1 text-sm leading-6 text-slate-600">{item.className}</p>
-									</div>
-									<span
-										class="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-red-700"
-									>
-										Gap {formatGap(item.gapPercent)}
-									</span>
-								</div>
-
-								<div class="mt-4 grid grid-cols-3 gap-3">
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">Aluno</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(item.studentAveragePercent)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">Turma</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(item.classAveragePercent)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Amostra
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{item.publishedAssessmentsCount} avaliacao(oes)
-										</p>
-									</div>
-								</div>
-
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-								<a
-									href={`/teacher/students/${item.studentId}`}
-									class="mt-4 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
-								>
-									Abrir perfil do aluno
-								</a>
-							</article>
-						{/each}
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+						{classesWithoutAssessments.length > 0
+							? `${classesWithoutAssessments.length} turma(s) ainda sem avaliacao criada.`
+							: 'Nenhuma turma sem avaliacao criada.'}
 					</div>
-				{/if}
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+						{data.summary.totalPendingPublications > 0
+							? `${data.summary.totalPendingPublications} publicacao(oes) pendente(s) de fechamento.`
+							: 'Nenhuma publicacao pendente agora.'}
+					</div>
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+						{data.longitudinalSubjects.length > 0
+							? `${data.longitudinalSubjects[0].subject_name} lidera a leitura pedagogica atual.`
+							: 'Nenhuma materia em atencao no longitudinal agora.'}
+					</div>
+				</div>
 			</section>
 
 			<section class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-				<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-					Queda entre avaliacoes
-				</p>
+				<p class="text-xs font-black uppercase tracking-widest text-slate-500">Quedas recentes</p>
 				<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-					Materias com pior recuo recente
+					Onde vale olhar mais fundo
 				</h2>
-
 				{#if data.assessmentDrops.length === 0}
 					<p class="mt-4 text-sm leading-7 text-slate-600">
-						Ainda nao ha quedas relevantes entre as duas publicacoes mais recentes por materia.
+						Nenhuma queda relevante entre as duas publicacoes mais recentes por materia.
 					</p>
 				{:else}
 					<div class="mt-4 space-y-3">
-						{#each data.assessmentDrops as item (`${item.classId}-${item.subjectName}-${item.latestAssessmentDate}`)}
+						{#each data.assessmentDrops.slice(0, 3) as item (item.latestAssessmentId)}
 							<article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-								<div class="flex items-start justify-between gap-3">
-									<div class="min-w-0">
-										<p class="text-base font-black text-slate-950">{item.subjectName}</p>
-										<p class="mt-1 text-sm leading-6 text-slate-600">{item.className}</p>
-									</div>
-									<span
-										class="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-red-700"
-									>
-										{formatDelta(item.dropPercent)}
-									</span>
-								</div>
-
-								<div class="mt-4 grid grid-cols-3 gap-3">
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Penultima
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(item.previousAveragePercent)}
-										</p>
-										<p class="mt-1 text-xs text-slate-500">
-											{formatDate(item.previousAssessmentDate)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Ultima
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{formatScore(item.latestAveragePercent)}
-										</p>
-										<p class="mt-1 text-xs text-slate-500">
-											{formatDate(item.latestAssessmentDate)}
-										</p>
-									</div>
-									<div class="rounded-2xl border border-slate-200 bg-white p-3">
-										<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-											Amostra
-										</p>
-										<p class="mt-2 text-lg font-black text-slate-950">
-											{item.sampleSize} resultado(s)
-										</p>
-									</div>
-								</div>
-
-								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+								<p class="text-base font-black text-slate-950">{item.subjectName}</p>
+								<p class="mt-1 text-sm leading-6 text-slate-600">{item.className}</p>
+								<p class="mt-3 text-sm font-semibold text-red-700">
+									Queda de {formatGap(item.dropPercent)} entre {formatDate(
+										item.previousAssessmentDate
+									)} e {formatDate(item.latestAssessmentDate)}
+								</p>
 								<a
-									href={`/teacher/${item.classId}`}
+									href={`/teacher/assessments/${item.latestAssessmentId}`}
 									class="mt-4 inline-flex h-10 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-100"
+									>Abrir avaliacao</a
 								>
-									Abrir turma
-								</a>
 							</article>
 						{/each}
 					</div>
 				{/if}
 			</section>
 		</aside>
-	</div>
+	</section>
 </div>

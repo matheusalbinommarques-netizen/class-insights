@@ -85,7 +85,7 @@ function parseIntegerInput(raw: FormDataEntryValue | null, fallback: number): nu
 }
 
 function buildScaleLabel(item: ClassRow): string {
-	return `${item.score_min}-${item.score_max} � dec ${item.score_decimals}`;
+	return `${item.score_min}-${item.score_max} / dec ${item.score_decimals}`;
 }
 
 function buildEmptySummary(displayName: string, message: string): TeacherDashboardSummary {
@@ -911,7 +911,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'generateClassSnapshot',
-			message: 'Snapshot gerado com sucesso.'
+			message: 'Leitura da turma atualizada com sucesso.'
 		};
 	}
 };

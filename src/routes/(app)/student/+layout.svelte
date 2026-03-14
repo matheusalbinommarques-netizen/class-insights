@@ -1,11 +1,14 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import { page } from '$app/stores';
+	import ciIcon from '$lib/assets/ci-icon.png';
+	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
 
 	let { children, data } = $props<{
 		children: () => unknown;
 		data: {
 			profile: {
+				id: string;
 				display_name: string;
 			};
 		};
@@ -50,17 +53,25 @@
 	const currentSection = $derived(sectionSummary($page.url.pathname));
 </script>
 
+<DisplayNamePrompt
+	profileId={data.profile.id}
+	displayName={data.profile.display_name}
+	tone="student"
+/>
+
 <svelte:head>
-	<title>Student - Class Insights</title>
+	<title>Class Insights - Aluno</title>
 </svelte:head>
 
 <div class="student-shell">
 	<header class="topbar">
 		<div class="brand">
-			<div class="brand-badge">CI</div>
+			<div class="brand-badge">
+				<img src={ciIcon} alt="" class="brand-icon" />
+			</div>
 			<div>
 				<h1>Class Insights</h1>
-				<p>Portal do aluno</p>
+				<p>Area do aluno</p>
 			</div>
 		</div>
 
@@ -177,6 +188,12 @@
 		color: white;
 		box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
 		flex-shrink: 0;
+	}
+
+	.brand-icon {
+		width: 1.65rem;
+		height: 1.65rem;
+		object-fit: contain;
 	}
 
 	.brand h1 {

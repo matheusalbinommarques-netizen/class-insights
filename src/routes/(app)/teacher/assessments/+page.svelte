@@ -110,7 +110,7 @@
 </script>
 
 <svelte:head>
-	<title>Avaliacoes - Class Insights</title>
+	<title>Class Insights - Avaliacoes</title>
 </svelte:head>
 
 <div class="space-y-6">

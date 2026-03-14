@@ -318,7 +318,7 @@
 </script>
 
 <svelte:head>
-	<title>Importacao - Class Insights</title>
+	<title>Class Insights - Importacao</title>
 </svelte:head>
 
 <section class="page-header">

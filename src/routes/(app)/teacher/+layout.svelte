@@ -1,6 +1,11 @@
 <script lang="ts">
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
+
+	import ciIcon from '$lib/assets/ci-icon.png';
+	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
+	import { supabase } from '$lib/services/supabaseClient';
 
 	type NavItem = {
 		label: string;
@@ -17,13 +22,13 @@
 		{
 			label: 'Dashboard',
 			path: '/teacher',
-			description: 'Workspace e cockpit',
+			description: 'Visao geral e prioridades',
 			match: (pathname) => pathname === '/teacher'
 		},
 		{
 			label: 'Importacao legada',
 			path: '/teacher/import',
-			description: 'Fluxo auxiliar por CSV com staging',
+			description: 'Fluxo auxiliar por CSV',
 			match: (pathname) => pathname.startsWith('/teacher/import')
 		},
 		{
@@ -41,6 +46,8 @@
 	];
 
 	const pathname = $derived($page.url.pathname);
+	const profile = $derived($page.data.profile as { id: string; display_name: string } | undefined);
+	const teacherName = $derived(profile?.display_name?.trim() || 'Professor');
 
 	const currentTitle = $derived(getCurrentTitle(pathname));
 	const currentSubtitle = $derived(getCurrentSubtitle(pathname));
@@ -49,14 +56,14 @@
 		if (path.startsWith('/teacher/subjects')) return 'Materias do professor';
 		if (path.startsWith('/teacher/assessments')) return 'Avaliacoes do professor';
 		if (path.startsWith('/teacher/import')) return 'Importacao legada';
-		if (path.startsWith('/teacher/')) return 'Workspace do professor';
-		return 'Workspace do professor';
+		if (path.startsWith('/teacher/')) return 'Painel do professor';
+		return 'Painel do professor';
 	}
 
 	function getCurrentSubtitle(path: string) {
 		if (path.startsWith('/teacher/subjects')) return 'Materias formais e vinculo por turma';
 		if (path.startsWith('/teacher/assessments')) return 'Avaliacoes, rascunho e publicacao';
-		if (path.startsWith('/teacher/import')) return 'Fluxo auxiliar legado por skill com staging';
+		if (path.startsWith('/teacher/import')) return 'Fluxo auxiliar legado com staging';
 		if (path.startsWith('/teacher/')) return 'Area interna';
 		return 'Area interna';
 	}
@@ -68,7 +75,19 @@
 	function closeMobileNav() {
 		mobileNavOpen = false;
 	}
+
+	async function handleLogout() {
+		await supabase.auth.signOut();
+		await invalidateAll();
+		await goto(resolve('/login'));
+	}
 </script>
+
+<DisplayNamePrompt
+	profileId={$page.data.profile.id}
+	displayName={$page.data.profile.display_name}
+	tone="teacher"
+/>
 
 <svelte:head>
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -88,14 +107,17 @@
 			<div class="border-b border-white/10 p-5">
 				<a href={resolve('/')} class="flex items-center gap-4">
 					<div
-						class="flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-blue-600 shadow-lg shadow-blue-950/30"
+						class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 shadow-lg shadow-blue-950/20"
 					>
-						<span class="text-lg font-black tracking-tight text-white">CI</span>
+						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
 					</div>
 
 					<div class="min-w-0">
-						<p class="truncate text-2xl font-black tracking-tight text-white">Class Insights</p>
-						<p class="mt-1 text-sm text-slate-300">Painel do professor</p>
+						<p class="text-[11px] font-black uppercase tracking-[0.22em] text-sky-200">
+							Class Insights
+						</p>
+						<p class="mt-1 text-xl font-black tracking-tight text-white">Painel do professor</p>
+						<p class="mt-1 text-sm text-slate-300">{teacherName}</p>
 					</div>
 				</a>
 			</div>
@@ -107,12 +129,20 @@
 							href={resolve(item.path)}
 							class={`block rounded-3xl border px-4 py-4 transition ${
 								isActive(item, pathname)
-									? 'border-sky-400/30 bg-sky-500/15 text-white shadow-sm'
+									? 'border-sky-300/50 bg-sky-400/20 text-white shadow-sm shadow-sky-950/20 ring-1 ring-sky-300/30'
 									: 'border-transparent bg-white/5 text-slate-200 hover:border-white/10 hover:bg-white/8'
 							}`}
 						>
-							<p class="text-xl font-black tracking-tight">{item.label}</p>
-							<p class="mt-1 text-sm text-slate-300">{item.description}</p>
+							<div class="flex items-start justify-between gap-3">
+								<div class="min-w-0">
+									<p class="truncate text-lg font-black tracking-tight">{item.label}</p>
+									<p class="mt-1 text-sm text-slate-300">{item.description}</p>
+								</div>
+
+								{#if isActive(item, pathname)}
+									<span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-300"></span>
+								{/if}
+							</div>
 						</a>
 					{/each}
 				</div>
@@ -120,12 +150,20 @@
 
 			<div class="p-5 pt-0">
 				<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
-					<p class="text-lg font-black tracking-tight text-white">MVP funcional</p>
+					<p class="text-lg font-black tracking-tight text-white">Sessao ativa</p>
 					<p class="mt-3 text-sm leading-7 text-slate-300">
-						O fluxo teacher ja opera com materias, avaliacoes e publicacao. O foco agora e fechar
-						UX, longitudinal e analytics no modelo novo.
+						Voce esta no ambiente do professor. Use o menu lateral para navegar entre turmas,
+						materias, avaliacoes e importacao legada.
 					</p>
 				</div>
+
+				<button
+					type="button"
+					class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+					onclick={handleLogout}
+				>
+					Sair da conta
+				</button>
 			</div>
 		</aside>
 
@@ -165,7 +203,7 @@
 							class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700"
 						>
 							<span class="h-3 w-3 rounded-full bg-emerald-500"></span>
-							Sessao ativa
+							{teacherName}
 						</div>
 					</div>
 				</div>
@@ -186,9 +224,9 @@
 						<div class="flex items-center justify-between border-b border-slate-200 p-5">
 							<a href={resolve('/')} class="flex items-center gap-3" onclick={closeMobileNav}>
 								<div
-									class="flex h-12 w-12 items-center justify-center rounded-2xl bg-linear-to-br from-sky-500 to-blue-600 shadow-sm"
+									class="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm"
 								>
-									<span class="text-base font-black tracking-tight text-white">CI</span>
+									<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
 								</div>
 
 								<div>
@@ -236,11 +274,19 @@
 
 						<div class="border-t border-slate-200 p-5">
 							<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-								<p class="text-base font-black text-slate-950">MVP funcional</p>
+								<p class="text-base font-black text-slate-950">{teacherName}</p>
 								<p class="mt-2 text-sm leading-7 text-slate-600">
-									Teacher core ativo no fluxo novo.
+									Voce pode sair da conta a qualquer momento por aqui.
 								</p>
 							</div>
+
+							<button
+								type="button"
+								class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+								onclick={handleLogout}
+							>
+								Sair da conta
+							</button>
 						</div>
 					</div>
 				</div>

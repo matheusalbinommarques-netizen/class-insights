@@ -1,7 +1,7 @@
 <script lang="ts">
 	let { variant = 'desktop', class: className = '' } = $props<{
-		variant?: 'mini' | 'desktop' | 'mobile';
-		class?: string;
+		variant: 'mini' | 'desktop' | 'mobile';
+		class: string;
 	}>();
 
 	type Tone = 'blue' | 'brand' | 'emerald' | 'amber';
@@ -20,8 +20,8 @@
 			id: '01',
 			actor: 'Professor',
 			tone: 'blue',
-			title: 'Cria turma e vincula matéria',
-			description: 'O trabalho começa organizando a estrutura da turma e o contexto da disciplina.',
+			title: 'Cria turma e vincula materia',
+			description: 'O trabalho comeca organizando a estrutura da turma e o contexto da disciplina.',
 			outcome: 'base de trabalho pronta'
 		},
 		{
@@ -30,42 +30,42 @@
 			tone: 'blue',
 			title: 'Cadastra ou importa alunos',
 			description:
-				'A entrada operacional precisa ser rápida, clara e segura para evitar retrabalho.',
+				'A entrada operacional precisa ser rapida, clara e segura para evitar retrabalho.',
 			outcome: 'alunos vinculados'
 		},
 		{
 			id: '03',
 			actor: 'Professor',
 			tone: 'blue',
-			title: 'Cria avaliação e lança notas',
+			title: 'Cria avaliacao e lanca notas',
 			description:
 				'A rotina do professor alimenta o sistema com o que realmente importa para a leitura.',
-			outcome: 'dados pedagógicos publicados'
+			outcome: 'dados pedagogicos publicados'
 		},
 		{
 			id: '04',
 			actor: 'Sistema',
 			tone: 'brand',
-			title: 'Atualiza o histórico longitudinal',
-			description: 'A nota deixa de ser pontual e passa a compor uma visão acumulada do aluno.',
-			outcome: 'histórico vivo'
+			title: 'Atualiza o historico longitudinal',
+			description: 'A nota deixa de ser pontual e passa a compor uma visao acumulada do aluno.',
+			outcome: 'historico vivo'
 		},
 		{
 			id: '05',
-			actor: 'Professor + Coordenação',
+			actor: 'Professor + Coordenacao',
 			tone: 'emerald',
 			title: 'Gera leitura e prioridades',
 			description:
-				'Médias, quedas, padrões e comparações passam a orientar intervenção de verdade.',
-			outcome: 'insight acionável'
+				'Medias, quedas, padroes e comparacoes passam a orientar intervencao de verdade.',
+			outcome: 'insight acionavel'
 		},
 		{
 			id: '06',
 			actor: 'Aluno',
 			tone: 'amber',
-			title: 'Acompanha evolução com clareza',
+			title: 'Acompanha evolucao com clareza',
 			description:
-				'O aluno recebe uma visão simples do próprio progresso, sem depender de leitura manual.',
+				'O aluno recebe uma visao simples do proprio progresso, sem depender de leitura manual.',
 			outcome: 'valor percebido'
 		}
 	];
@@ -116,7 +116,7 @@
 		<div
 			class="ml-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400"
 		>
-			operação → histórico → leitura
+			operacao historico leitura
 		</div>
 	</div>
 {:else if variant === 'desktop'}
@@ -130,9 +130,7 @@
 						></div>
 						<div
 							class="pointer-events-none absolute left-[calc(100%+0.6rem)] top-[2.02rem] hidden text-white/25 xl:block"
-						>
-							→
-						</div>
+						></div>
 					{/if}
 
 					<article class={`h-full rounded-[1.75rem] border p-5 ${tonePanel(step.tone)}`}>
@@ -170,15 +168,15 @@
 		<div class="mt-5 rounded-[1.75rem] border border-white/8 bg-slate-950/45 px-5 py-4">
 			<p class="text-sm text-slate-300">
 				<span class="font-bold text-white">Resumo:</span>
-				o professor alimenta uma vez, o sistema organiza o histórico e a plataforma devolve leitura útil
-				para professor, coordenação e aluno.
+				o professor alimenta uma vez, o sistema organiza o historico e a plataforma devolve leitura util
+				para professor, coordenacao e aluno.
 			</p>
 		</div>
 	</div>
 {:else if variant === 'mobile'}
 	<div class={`${className} space-y-3`}>
 		{#each steps as step, i (step.id)}
-			<div class="rounded-[1.5rem] border border-white/8 bg-slate-950/55 p-4">
+			<div class="rounded-2xl border border-white/8 bg-slate-950/55 p-4">
 				<div class="flex items-start gap-4">
 					<div class="flex flex-col items-center">
 						<div

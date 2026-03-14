@@ -6,6 +6,11 @@ import {
 	type StudentPortalEnrollment,
 	type StudentPortalParentData
 } from './student-portal.helpers.ts';
+import {
+	loadStudentEnrollments,
+	readPreferredEnrollmentId,
+	resolveStudentEnrollmentSelection
+} from './student-enrollments.ts';
 
 export {
 	buildPendingStudentPortalPayload,
@@ -59,44 +64,30 @@ export type StudentPortalPayload = {
 	enrollments: StudentPortalEnrollment[];
 };
 
-type EnrollmentRpcRow = {
-	enrollment_id: string;
-	student_id: string;
-	class_id: string;
-	teacher_id: string;
-	status: 'pending' | 'active' | 'archived';
-	joined_at: string | null;
-	left_at: string | null;
-	student_name: string;
-	class_name: string;
-};
-
-async function loadStudentEnrollments(
-	locals: App.Locals,
-	currentClassId: string | null
-): Promise<StudentPortalEnrollment[]> {
-	const { data, error } = await locals.supabase.rpc('get_my_student_enrollments');
-
-	if (error) {
-		return [];
-	}
-
-	return mapStudentPortalEnrollments((data ?? []) as EnrollmentRpcRow[], currentClassId);
-}
-
 export async function loadStudentPortalData(
 	locals: App.Locals,
-	parentData: StudentPortalParentData
+	parentData: StudentPortalParentData,
+	cookies?: import('@sveltejs/kit').Cookies
 ): Promise<StudentPortalPayload> {
 	const authUser = parentData.authUser;
+	const enrollmentRows = await loadStudentEnrollments(locals);
+	const preferredEnrollmentId = cookies ? readPreferredEnrollmentId(cookies) : null;
+	const enrollmentSelection = resolveStudentEnrollmentSelection(
+		enrollmentRows,
+		preferredEnrollmentId
+	);
 	const result = await loadStudentLongitudinalProfile(locals, {
 		kind: 'student-self',
 		authUserId: authUser.id,
-		fallbackDisplayName: parentData.profile.display_name
+		fallbackDisplayName: parentData.profile.display_name,
+		preferredEnrollmentId: enrollmentSelection.selectedEnrollmentId
 	});
 
 	if (!result.ok) {
-		const enrollments = await loadStudentEnrollments(locals, null);
+		const enrollments = mapStudentPortalEnrollments(
+			enrollmentRows,
+			enrollmentSelection.selectedEnrollmentId
+		);
 		return buildPendingStudentPortalPayload(
 			parentData,
 			enrollments,
@@ -107,7 +98,10 @@ export async function loadStudentPortalData(
 	}
 
 	const profile = result.profile;
-	const enrollments = await loadStudentEnrollments(locals, profile.student.classId);
+	const enrollments = mapStudentPortalEnrollments(
+		enrollmentRows,
+		enrollmentSelection.selectedEnrollmentId ?? profile.student.enrollmentId
+	);
 	const subjects: StudentPortalSubject[] = profile.subjects.map((subject) => ({
 		id: subject.id,
 		name: subject.name,

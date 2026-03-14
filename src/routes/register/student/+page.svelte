@@ -282,7 +282,7 @@
 </script>
 
 <svelte:head>
-	<title>Cadastro de aluno - Class Insights</title>
+	<title>Class Insights - Cadastro de aluno</title>
 	<meta
 		name="description"
 		content="Crie sua conta de aluno no Class Insights e conclua o vinculo com codigo agora ou depois."

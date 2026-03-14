@@ -14,13 +14,13 @@ type ParentData = {
 	};
 };
 
-export const load: PageServerLoad = async ({ locals, parent }) => {
+export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 	const parentData = (await parent()) as ParentData;
 	if (!parentData.authUser?.id) {
 		throw redirect(302, '/login');
 	}
 
-	const payload = await loadStudentPortalData(locals, parentData);
+	const payload = await loadStudentPortalData(locals, parentData, cookies);
 
 	return {
 		authUser: payload.authUser,

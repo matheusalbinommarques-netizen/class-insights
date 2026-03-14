@@ -4,6 +4,7 @@ export type OwnedClass = {
 	score_min: number;
 	score_max: number;
 	score_decimals: number;
+	access_code: string | null;
 };
 
 export type OwnedSkill = {
@@ -52,12 +53,19 @@ export async function getOwnedClass(
 
 	if (error || !data) return null;
 
+	const { data: accessCodeData } = await locals.supabase
+		.from('class_coord_access_codes')
+		.select('access_code')
+		.eq('class_id', classId)
+		.maybeSingle<{ access_code: string }>();
+
 	return {
 		id: data.id,
 		name: data.name,
 		score_min: data.score_min,
 		score_max: data.score_max,
-		score_decimals: data.score_decimals
+		score_decimals: data.score_decimals,
+		access_code: accessCodeData?.access_code ?? null
 	};
 }
 

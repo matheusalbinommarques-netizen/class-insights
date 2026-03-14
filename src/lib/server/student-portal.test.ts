@@ -33,7 +33,8 @@ test('buildPendingStudentPortalPayload preserves profile identity and pending st
 				leftAt: null,
 				studentName: 'Ana',
 				className: 'Turma A',
-				isCurrent: false
+				isCurrent: false,
+				isSelectable: false
 			}
 		],
 		'Conta sem vinculo academico.',
@@ -86,11 +87,13 @@ test('mapStudentPortalEnrollments marks only the active matching class as curren
 				class_name: 'Turma A'
 			}
 		],
-		'class-1'
+		'enrollment-1'
 	);
 
 	assert.equal(mapped.length, 3);
 	assert.equal(mapped[0]?.isCurrent, true);
 	assert.equal(mapped[1]?.isCurrent, false);
 	assert.equal(mapped[2]?.isCurrent, false);
+	assert.equal(mapped[0]?.isSelectable, true);
+	assert.equal(mapped[2]?.isSelectable, false);
 });

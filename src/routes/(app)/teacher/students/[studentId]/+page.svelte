@@ -80,7 +80,7 @@
 
 <svelte:head>
 	<title>
-		{data.student ? `${data.student.name} - Perfil longitudinal` : 'Perfil do aluno'} - Class Insights
+		{data.student ? `Class Insights - ${data.student.name}` : 'Class Insights - Perfil do aluno'}
 	</title>
 </svelte:head>
 

@@ -1,9 +1,17 @@
 <script lang="ts">
+	import ciIcon from '$lib/assets/ci-icon.png';
+	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
 	let { children, data } = $props();
 </script>
 
+<DisplayNamePrompt
+	profileId={data.profile?.id}
+	displayName={data.profile?.display_name}
+	tone="coord"
+/>
+
 <svelte:head>
-	<title>Coordenacao - Class Insights</title>
+	<title>Class Insights - Coordenacao</title>
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
@@ -21,9 +29,9 @@
 			<div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 				<div class="flex items-start gap-4">
 					<div
-						class="flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-amber-500 to-orange-500 text-lg font-black tracking-tight text-white shadow-lg shadow-amber-900/20"
+						class="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-200 bg-white shadow-lg shadow-amber-900/10"
 					>
-						CI
+						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
 					</div>
 
 					<div class="min-w-0">

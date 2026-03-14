@@ -52,6 +52,22 @@ test('getCurrentAuthUser returns null on auth error and normalized user data on 
 	});
 });
 
+test('getCurrentAuthUser uses the E2E profile when present', async () => {
+	const locals = {
+		e2eProfile: {
+			id: 'e2e-user',
+			role: 'teacher',
+			display_name: 'Teacher E2E',
+			email: 'teacher@e2e.local'
+		}
+	} as unknown as App.Locals;
+
+	assert.deepEqual(await getCurrentAuthUser(locals), {
+		id: 'e2e-user',
+		email: 'teacher@e2e.local'
+	});
+});
+
 test('getProfileByUserId returns null on query failure and profile data on success', async () => {
 	const failingLocals = {
 		supabase: {
@@ -93,5 +109,22 @@ test('getProfileByUserId returns null on query failure and profile data on succe
 		id: 'user-3',
 		role: 'student',
 		display_name: 'Ana'
+	});
+});
+
+test('getProfileByUserId uses the E2E profile when it matches the requested user', async () => {
+	const locals = {
+		e2eProfile: {
+			id: 'e2e-user',
+			role: 'coord',
+			display_name: 'Coord E2E',
+			email: 'coord@e2e.local'
+		}
+	} as unknown as App.Locals;
+
+	assert.deepEqual(await getProfileByUserId(locals, 'e2e-user'), {
+		id: 'e2e-user',
+		role: 'coord',
+		display_name: 'Coord E2E'
 	});
 });
