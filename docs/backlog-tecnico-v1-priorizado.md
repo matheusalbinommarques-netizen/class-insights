@@ -1,516 +1,321 @@
-# Backlog Prioritário — Class Insights
+﻿# Backlog Prioritario - Class Insights
 
-Atualizado em 2026-03-14 para refletir a ordem recomendada de execução do produto antes de polimento visual mais amplo.
+Atualizado em 2026-03-14 para refletir uma ordem de execucao mais pragmatica: confianca primeiro, base visual minima cedo, home por ultimo.
 
-## Progresso registrado
+## Regras do projeto para esta fase
 
-### 2026-03-14 — rodada 1
+- `subject -> assessment -> assessment_result` continua como modelo oficial da V1
+- apenas resultados publicados entram nas leituras de professor, coordenacao e aluno
+- `/teacher/import` continua como fluxo auxiliar e legado, nunca como caminho principal
+- aluno precisa suportar vinculo posterior, multi-vinculo e selecao clara de turma ativa
+- `diretor`, no MVP, continua sendo visao da coordenacao, nao role nova
 
-- `P0.2` parcialmente concluído com ajuste do redirect pós-login por role sem depender de F5 manual
-- `P0.1` iniciado com limpeza das strings mais visíveis em `home` e `login`
-- `home` e `login` passaram a usar o ícone oficial `src/lib/assets/ci-icon.png`
-- `npm run check`, `npm run lint` e `npm run build` passaram após essas mudanças
+## Regra de done para qualquer item
 
-### 2026-03-14 — rodada 2
+Nenhum item deste backlog deve ser considerado pronto apenas por "parecer melhor". Para fechar uma frente, a rota alterada precisa respeitar:
 
-- `P0.3` avançado com restauração da navegação estrutural do `teacher`
-- sidebar do `teacher` passou a usar o ícone oficial, estado ativo mais claro e botão de logout
-- `P0.5` iniciado com prompt leve para capturar nome ausente ou genérico em `teacher`, `student` e `coord`
-- `npm run check` e `npm run lint` seguiram verdes após essas mudanças
+- `npm run check`
+- `npm run lint`
+- `npm test` quando a mudanca afetar regra, dado, fluxo critico ou comportamento reutilizavel
+- `npm run build`
+- fluxo principal validado manualmente
+- loading, empty state e error state minimamente coerentes
+- CTA principal claro
+- consistencia visual minima com o resto do produto
 
-### Próxima frente imediata
+## Principio de priorizacao
 
-- concluir a limpeza de encoding/acentuação nas demais telas críticas
-- revisar escala, cálculo e formatação numérica em `teacher` e `student`
+Esta ordem prioriza primeiro o que afeta confianca, semantica de dado e coerencia estrutural. Polimento visual amplo vem depois que o produto ja estiver confiavel.
 
-## Princípio de priorização
+## P0 - Confianca do produto
 
-Esta ordem prioriza primeiro o que afeta confiança, legibilidade e funcionamento real do produto. Estética vem depois da base confiável.
+### 1. Limpar encoding, acentuacao e texto quebrado nas rotas criticas
 
-## Regras de produto para esta fase
+**Objetivo:** eliminar qualquer sensacao de produto corrompido ou provisoriamente montado.
 
-- `subject`, `assessment` e `assessment_result` continuam como modelo oficial da V1
-- apenas resultados publicados entram nas leituras de professor, coordenação e aluno
-- `/teacher/import` continua como fluxo auxiliar e legado
-- para o MVP, `diretor` deve ser tratado como visão da coordenação, não como role nova
+**Escopo inicial:**
 
-## P0 — Crítico: confiança e funcionamento
+- `home`
+- `login`
+- `register/*`
+- `forgot-password`
+- `reset-password`
+- rotas principais de `teacher`, `student` e `coord`
 
-### 1. Corrigir acentuação e encoding em todo o app
+**Acoes:**
 
-**Objetivo:** eliminar qualquer sensação de produto quebrado por texto corrompido.
+- garantir UTF-8 nas rotas principais
+- revisar strings fixas visiveis
+- padronizar pt-BR, capitalizacao e titulos
+- remover copy antiga, placeholder e termos herdados sem funcao real
 
-**Áreas:** home, login, teacher, student e futuros fluxos de coordenação.
+**Criterio de pronto:**
 
-**Ações:**
+- zero texto quebrado visivel
+- zero strings como `EdTech Platform`
+- labels e titulos coerentes nas rotas principais
 
-- garantir UTF-8 em todos os arquivos
-- revisar strings fixas do front
-- validar fonte e renderização de caracteres pt-BR
-- padronizar formatação pt-BR no front
-- revisar dados vindos do banco e seed
+### 2. Corrigir semantica e formatacao numerica do aluno
 
-**Critério de pronto:**
+**Objetivo:** impedir leituras absurdas e garantir confianca no dado exibido.
 
-- nenhuma palavra com caractere corrompido
-- textos legíveis em todas as páginas principais
+**Acoes:**
 
-### 2. Corrigir login para entrar sem precisar de F5
+- revisar origem da media geral e do progresso por materia
+- distinguir claramente percentual normalizado de nota em escala real
+- parar de assumir `/ 10` quando a escala for variavel
+- padronizar locale e casas decimais no portal do aluno
 
-**Objetivo:** garantir que o acesso funcione de forma imediata e previsível.
+**Arquivos provaveis:**
 
-**Áreas:** login, auth, sessão e redirecionamento por role.
+- `src/routes/(app)/student/+page.server.ts`
+- `src/routes/(app)/student/+page.svelte`
+- `src/lib/server/student-portal.ts`
+- `src/lib/utils/format.ts`
 
-**Ações:**
+**Criterio de pronto:**
 
-- revisar fluxo de sessão após sign-in
-- atualizar corretamente o estado do usuário no client
-- garantir redirecionamento imediato por perfil
-- revisar `load`, hooks, invalidação de sessão e hidratação
-- exibir estado de loading claro durante a entrada
+- media exibida sempre coerente com a escala real
+- percentual e nota nao se misturam visualmente
+- nenhuma tela do aluno mostra numero fora da realidade
 
-**Critério de pronto:**
+### 3. Eliminar duplicacoes estruturais mais gritantes
 
-- usuário entra e cai direto na área correta
-- nenhum refresh manual é necessário
-- estado de carregamento fica claro durante o login
+**Objetivo:** remover elementos repetidos que deixam o produto com cara de prototipo.
 
-### 3. Restaurar a navegação estrutural do teacher
+**Acoes:**
 
-**Objetivo:** devolver estabilidade e orientação na área interna do professor.
+- remover branding redundante em `home` e `login`
+- remover CTA duplicado no dashboard do professor
+- remover navegacao duplicada no shell do aluno
+- garantir uma navegacao principal por contexto
 
-**Áreas:** teacher.
+**Criterio de pronto:**
 
-**Ações:**
+- nenhum bloco principal com CTA repetido
+- aluno com uma navegacao principal clara
+- topo publico sem repeticao desnecessaria de marca
 
-- tornar a sidebar fixa e estável
-- inserir o ícone oficial do app na navegação: `src/lib/assets/ci-icon.png`
-- corrigir truncamentos como `Clas Insig...`
-- destacar claramente o item ativo do menu
-- adicionar botão de logout
+### 4. Rebaixar o import legado de forma definitiva
 
-**Critério de pronto:**
+**Objetivo:** alinhar a interface com o ADR que define o import como fluxo auxiliar.
 
-- a sidebar não desaparece sem motivo
-- o usuário entende onde está
-- o logout está sempre acessível
+**Acoes:**
 
-### 4. Corrigir formatação numérica e regras erradas de leitura
+- reduzir destaque visual de `import` na navegacao do `teacher`
+- revisar a copy da tela para reforcar que o fluxo e legado
+- impedir que `import` concorra com `materias` e `avaliacoes`
+- manter qualquer dependencia residual do legado encapsulada
 
-**Objetivo:** garantir coerência pedagógica e credibilidade nos dados exibidos.
+**Criterio de pronto:**
 
-**Áreas:** student e teacher.
+- o professor novo nao confunde `import` com caminho principal
+- o teacher gira em torno de materia e avaliacao
 
-**Ações:**
+## P1 - Base visual minima compartilhada
 
-- padronizar escala das notas
-- padronizar locale pt-BR
-- revisar cálculo de média, prioridade, risco e gap
-- ajustar regra para exibir `Tudo dentro do esperado` quando não houver item abaixo da meta
+### 5. Travar um mini design system aplicavel agora
 
-**Critério de pronto:**
+**Objetivo:** parar de corrigir cada tela como se fosse um produto diferente.
 
-- números exibidos fazem sentido
-- prioridades refletem a situação real
-- não há alertas falsos
+**Acoes:**
 
-### 5. Capturar e salvar nome do usuário quando faltar
+- definir escala tipografica minima
+- padronizar botao, pill, card, header, radius e espacamento
+- padronizar tamanho e uso do icone oficial
+- revisar `src/lib/styles/base.css` para servir como fundacao real
+- reduzir divergencia entre Tailwind e CSS local do portal do aluno
 
-**Objetivo:** substituir mensagens genéricas por uma experiência mais pessoal e adequada.
+**Criterio de pronto:**
 
-**Áreas:** login, onboarding, teacher e student.
+- home, login, teacher, student e coord parecem partes do mesmo produto
+- componentes base compartilham densidade, hierarquia e comportamento
 
-**Ações:**
+### 6. Padronizar branding real
 
-- se `display_name` estiver vazio, abrir prompt leve de preenchimento
-- salvar nome no perfil
-- usar o nome nas áreas internas
+**Objetivo:** fazer a marca parecer intencional em toda a experiencia.
 
-**Critério de pronto:**
+**Acoes:**
 
-- o usuário sempre vê o próprio nome
-- não existem mensagens genéricas como `Usuário`
+- definir tamanho padrao de container e icone
+- revisar headers, sidebars e telas publicas
+- remover subtitulos de marca sem funcao
 
-## P1 — Clareza de produto e posicionamento
+**Criterio de pronto:**
 
-### 6. Refazer o hero da home
+- icone equilibrado em todos os contextos
+- nada de `Class Insights` duplicado no mesmo bloco
 
-**Objetivo:** deixar a proposta clara já no primeiro bloco da página.
+## P2 - Fluxo publico com cara de produto
 
-**Ações:**
+### 7. Consolidar login, registros e recuperacao como uma familia visual
 
-- remover `edtech platform`
-- usar o ícone oficial
-- escrever headline e subheadline mais diretas
-- trabalhar com um CTA principal e um CTA secundário
-- mostrar uma prova visual do produto com mais foco
+**Objetivo:** fazer o fluxo de acesso parecer um sistema unico, nao paginas avulsas.
 
-**Direção de copy:**
+**Acoes:**
 
-- headline: `Acompanhe a aprendizagem com clareza, não só com notas soltas.`
-- subheadline: `O Class Insights ajuda professores, coordenação e alunos a transformar avaliações em leitura pedagógica acionável.`
-- CTAs: `Entrar` e `Ver como funciona`
+- alinhar visual e copy de `login`, `register/*`, `forgot-password` e `reset-password`
+- simplificar blocos laterais
+- revisar contraste entre login e primeiro acesso
+- limpar copy institucional sobrando
 
-### 7. Reduzir repetição e excesso de explicação na home
+**Criterio de pronto:**
 
-**Objetivo:** tornar a home mais convincente e menos cansativa.
+- todo o fluxo de acesso parece da mesma aplicacao
+- primeiro acesso e facil de entender
+- recuperacao de senha nao destoa visualmente
 
-**Ações:**
+### 8. Refinar a home sem abrir escopo novo
 
-- cortar cards redundantes
-- reduzir texto institucional
-- diminuir elementos decorativos sem função
-- concentrar a página em poucas seções fortes
+**Objetivo:** deixar a home mais clara, mais leve e mais convincente.
 
-**Estrutura ideal:**
+**Estrutura alvo:**
 
 - hero
 - como funciona em 3 passos
-- três leituras do produto
+- leitura por persona
 - CTA final
 
-### 8. Melhorar a seção de perfis
+**Acoes:**
 
-**Objetivo:** deixar claro o valor para cada público.
+- reduzir decoracao sem funcao
+- melhorar hierarquia e espacamento
+- enxugar slogans, badges e copy sobrando
+- manter a proposta entendivel em poucos segundos
 
-**Ações:**
+**Criterio de pronto:**
 
-- trocar texto genérico por benefícios concretos
-- mostrar 3 entregas objetivas para cada persona
-- tornar coordenação consistente com o produto real
-- definir se `diretor` é nome comercial ou role separada
+- a proposta do produto fica clara rapido
+- a home nao parece montagem de cards independentes
 
-### 9. Refazer a tela de login para parecer produto, não formulário
+## P3 - Teacher como cockpit limpo
 
-**Objetivo:** aumentar clareza e percepção de valor já no acesso.
+### 9. Enxugar a dashboard do professor
 
-**Ações:**
+**Objetivo:** reforcar acao e reduzir ruido sem reabrir arquitetura.
 
-- remover `edtech platform`
-- usar o ícone oficial
-- simplificar o bloco lateral
-- dar mais contraste entre login e primeiro acesso
+**Acoes:**
 
-**Estrutura sugerida:**
+- manter um CTA principal por bloco
+- tornar `proximo passo` mais dominante
+- reduzir textos operacionais longos
+- revisar se todos os cards justificam existir
 
-- lado esquerdo: proposta curta + 3 bullets de valor
-- lado direito: login + opções de primeiro acesso
+**Criterio de pronto:**
 
-### 10. Reescrever os textos da home e do login
+- o professor sempre entende o proximo clique
+- a dashboard parece cockpit, nao vitrine
 
-**Objetivo:** remover linguagem genérica, abstrata ou artificial.
+### 10. Revisar labels e microcopy do teacher
 
-**Ações:**
+**Objetivo:** deixar a operacao mais direta e menos verbalmente pesada.
 
-- trocar frases vagas por linguagem humana
-- remover exageros e jargões
-- priorizar clareza operacional
+**Acoes:**
 
-**Exemplos de direção:**
+- revisar sidebar
+- revisar dashboard
+- revisar pagina de turma
+- revisar pagina de materias
+- encurtar labels e alinhar termos
 
-- em vez de `acesso inteligente`, usar `Entre na sua área`
-- em vez de `produto orientado à ação`, usar `Menos retrabalho. Mais leitura clara.`
+**Criterio de pronto:**
 
-### 11. Adicionar fluxo de cadastro para coordenação
+- menos ruido verbal
+- menos repeticao
+- menos linguagem de sistema interno
 
-**Objetivo:** alinhar a proposta do produto com o acesso real.
+## P4 - Portal do aluno coerente com o produto
 
-**Ações:**
+### 11. Refazer o shell do aluno para ficar simples e unico
 
-- criar opção de primeiro acesso para coordenação
-- definir se haverá convite, vínculo institucional ou aprovação
-- garantir redirecionamento correto após entrada
+**Objetivo:** acabar com dupla navegacao e com a sensacao de que o aluno vive em outro sistema.
 
-### 12. Definir `diretor` antes de implementar
+**Acoes:**
 
-**Objetivo:** evitar abrir uma frente de permissão e navegação antes da hora.
+- escolher uma unica navegacao principal
+- simplificar topo e bloco de contexto
+- aproximar o shell do design system comum
+- preservar leveza e foco mobile-first
 
-**Recomendação para MVP:**
+**Criterio de pronto:**
 
-- tratar `diretor` como uma visão da coordenação, não como role nova
+- o aluno entende a navegacao de primeira
+- nao ha redundancia entre menu e overview
 
-**Motivo:**
+### 12. Tornar multi-vinculo e turma ativa explicitos na UX
 
-- evita complexidade prematura em permissão, navegação e RLS
+**Objetivo:** fazer a capacidade de produto aparecer claramente na interface.
 
-## P2 — Teacher como cockpit de trabalho
+**Acoes:**
 
-### 13. Reorganizar a dashboard do professor em torno de ação
+- exibir seletor claro de turma ativa quando houver mais de uma
+- tratar `pending-link` e ausencia de vinculo sem parecer erro
+- deixar claro qual turma esta ativa no momento
 
-**Objetivo:** transformar a home do teacher em uma tela de prioridade, não em uma vitrine de cards.
+**Criterio de pronto:**
 
-**Blocos sugeridos:**
+- aluno troca de turma sem friccao
+- estado atual da turma fica obvio
+- vinculo posterior funciona com clareza
 
-- pendências operacionais
-- leituras pedagógicas
-- ações rápidas
-- turmas vivas
+### 13. Corrigir a regra de `onde vale revisar`
 
-### 14. Criar orientação contextual de próximo passo
+**Objetivo:** so chamar atencao quando houver motivo real.
 
-**Objetivo:** dizer claramente o que o professor deve fazer em seguida.
+**Acoes:**
 
-**Exemplos:**
+- mostrar prioridade apenas quando houver referencia rompida
+- alinhar esse card com `situacao geral`
+- usar estado positivo claro quando tudo estiver dentro do esperado
 
-- `Você tem 1 rascunho pronto para publicar`
-- `2 matérias ainda sem avaliação nesta turma`
-- `Nenhum aluno abaixo da meta nesta matéria`
+**Criterio de pronto:**
 
-**Critério de pronto:**
+- sem prioridade falsa
+- sem contradicao entre cards
 
-- o professor nunca fica sem saber qual é o próximo clique
+## P5 - Coordenacao com leitura institucional
 
-### 15. Enxugar e padronizar pills e cards
+### 14. Reposicionar a coordenacao como visao macro
 
-**Objetivo:** melhorar legibilidade e reduzir ruído visual.
+**Objetivo:** diferenciar coordenacao de professor de forma clara.
 
-**Ações:**
+**Acoes:**
 
-- limitar o tamanho dos textos
-- usar labels curtas
-- padronizar altura dos cards
-- reduzir variações decorativas
+- reforcar comparativo entre turmas
+- destacar materias criticas e tendencias
+- tratar pendencia operacional como leitura institucional, nao operacional detalhada
+- facilitar drill-down para turma e aluno
 
-### 16. Dar contexto aos números
+**Criterio de pronto:**
 
-**Objetivo:** fazer cada métrica ser imediatamente compreensível.
+- coordenacao enxerga panorama
+- a tela nao parece `teacher em outra cor`
 
-**Ações:**
+### 15. Revisar copy e hierarquia visual da coordenacao
 
-- sempre exibir escala e referência
-- mostrar comparação quando houver
+**Objetivo:** dar tom mais institucional e menos operacional.
 
-**Exemplos:**
+**Acoes:**
 
-- `Média publicada: 6,4 / 10`
-- `Cobertura: 86% dos resultados esperados`
-- `Tendência: -0,2 em relação à avaliação anterior`
+- reduzir ruido
+- melhorar densidade e tipografia
+- revisar cores e pesos de cards
+- padronizar linguagem institucional
 
-### 17. Melhorar empty states e estados de atenção
+**Criterio de pronto:**
 
-**Objetivo:** evitar que telas vazias pareçam erro ou quebra.
+- coordenacao parece uma persona propria
 
-**Criar estados para:**
+## Ordem recomendada de execucao em lotes
 
-- sem turma
-- sem matéria vinculada
-- sem avaliação criada
-- sem publicação pendente
-- nenhuma matéria em atenção
-- nenhum aluno abaixo da meta
+Para evitar PRs grandes demais e retrabalho, a sequencia recomendada e:
 
-### 18. Rebaixar visualmente o import legado
-
-**Objetivo:** manter essa ação como apoio, sem competir com o fluxo principal.
-
-**Ações:**
-
-- tratar como ação secundária
-- mover para menu ou área menos central
-
-## P3 — Student simples, claro e confiável
-
-### 19. Reorganizar a página do aluno com foco em progresso
-
-**Objetivo:** deixar a leitura simples e útil para quem está estudando.
-
-**Topo da página:**
-
-- média atual
-- situação geral
-- matéria que precisa de atenção, se existir
-- evolução recente
-
-**Abaixo:**
-
-- jornada ou histórico
-- matérias
-- últimas avaliações
-
-### 20. Manter só a pill de jornada
-
-**Objetivo:** remover redundâncias que pesam a leitura.
-
-**Ação:**
-
-- se a pill superior já resolve, eliminar duplicações com botões ou blocos antigos
-
-### 21. Corrigir a lógica de matéria prioritária
-
-**Objetivo:** só chamar atenção quando houver motivo real.
-
-**Regra:**
-
-- só mostrar prioridade se houver matéria abaixo da meta ou referência
-- caso contrário, mostrar `Tudo dentro do esperado` ou `Nenhuma matéria exige atenção agora`
-
-### 22. Trocar linguagem técnica por linguagem de aluno
-
-**Objetivo:** falar com clareza, sem termos institucionais.
-
-**Evitar:**
-
-- dispersão
-- cobertura
-- leitura institucional
-- prioridade macro
-
-**Preferir:**
-
-- seu progresso
-- onde você foi melhor
-- onde vale revisar
-- como você vem evoluindo
-
-### 23. Melhorar o mobile-first do aluno
-
-**Objetivo:** fazer dessa a área mais leve, direta e confortável no celular.
-
-**Ações:**
-
-- reduzir tamanho de cards
-- evitar muitos blocos lado a lado
-- tornar a jornada mais linear
-- focar no que realmente muda a vida do aluno
-
-## P4 — Coordenação
-
-### 24. Fechar escopo da coordenação antes da camada visual
-
-**Objetivo:** definir claramente quais perguntas essa área precisa responder.
-
-**Perguntas-chave:**
-
-- quais turmas estão piores?
-- quais matérias mais exigem atenção?
-- onde a tendência está caindo?
-- quais professores ou turmas têm pendências operacionais?
-
-### 25. Criar dashboard institucional de leitura
-
-**Objetivo:** diferenciar coordenação de professor.
-
-**Coordenação deve ver:**
-
-- comparativo entre turmas
-- matérias críticas
-- tendências
-- pendências de publicação e cobertura
-- leitura macro institucional
-
-## P5 — Acabamento de produto maduro
-
-### 26. Padronizar ícone e branding em toda a experiência
-
-**Objetivo:** dar unidade visual ao produto.
-
-**Áreas:** home, login, sidebar, favicon e abas.
-
-**Asset oficial:** `src/lib/assets/ci-icon.png`
-
-### 27. Melhorar títulos das abas
-
-**Objetivo:** reforçar contexto e consistência.
-
-**Exemplos:**
-
-- `Class Insights — Início`
-- `Class Insights — Login`
-- `Class Insights — Professor`
-- `Class Insights — Avaliações`
-
-### 28. Padronizar o sistema visual
-
-**Objetivo:** parar de parecer que cada bloco foi feito separadamente.
-
-**Definir:**
-
-- grid
-- espaçamentos
-- altura de cards
-- radius
-- hierarquia tipográfica
-- cores por status
-- estilo de pills
-- estilo de botões
-
-### 29. Melhorar microcopy e feedbacks
-
-**Objetivo:** deixar ações e respostas do sistema mais claras e humanas.
-
-**Exemplos:**
-
-- `Turma criada com sucesso`
-- `Avaliação salva como rascunho`
-- `Publicação concluída`
-- `Você saiu da conta`
-
-### 30. Criar checklist de qualidade por tela
-
-**Objetivo:** garantir consistência antes de considerar uma página pronta.
-
-**Checklist por página:**
-
-- texto com acento correto
-- loading adequado
-- empty state adequado
-- error state adequado
-- CTA principal claro
-- branding consistente
-- responsividade validada
-
-### 2026-03-14 - rodada 3
-
-- `P0` concluido com limpeza de caracteres corrompidos nas areas principais, login sem F5, teacher com navegacao estavel, padronizacao numerica e captura de nome ausente
-- busca por `�` em `src/routes` e `src/lib` voltou vazia ao final da rodada
-- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P0
-
-### 2026-03-14 - rodada 4
-
-- `P1` concluido com nova home enxuta em 4 blocos: hero, como funciona em 3 passos, leituras por perfil e CTA final
-- `login` reposicionado com copy mais direta e primeiro acesso explicito para professor, aluno e coordenacao
-- criado `register/coord` para dar visibilidade real ao acesso de coordenacao
-- mantida a decisao de produto: `diretor` segue como visao da coordenacao no MVP, sem role nova
-
-### 2026-03-14 - rodada 5
-
-- `P2` concluido com a dashboard do professor reorganizada como cockpit de trabalho em `pendencias operacionais`, `leituras pedagogicas`, `acoes rapidas` e `turmas vivas`
-- cada turma agora mostra contexto claro para numeros, `proximo passo`, cobertura, tendencia, gaps e estado de atencao
-- criados empty states e estados de atencao para setup, falta de materia, falta de avaliacao e ausencia de riscos reais
-- `import legado` foi rebaixado visualmente para nao competir com o fluxo principal do professor
-- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P2
-
-### 2026-03-14 - rodada 6
-
-- `P3` concluido com a experiencia do aluno simplificada em progresso, jornada e materias, com foco em leitura direta e mobile-first
-- a home do aluno agora prioriza apenas `media atual`, `situacao geral`, `onde vale revisar` e `evolucao recente`
-- a `materia prioritaria` so aparece quando ha algo realmente em atencao; caso contrario a interface mostra `Tudo dentro do esperado`
-- a jornada ficou linear e centrada em historico de publicacoes, e a tela de materias trocou linguagem tecnica por linguagem de aluno
-- `npm run check`, `npm run lint` e `npm run build` passaram apos o fechamento do P3
-
-### 2026-03-14 - rodada 7
-
-- `P4` concluido com a area de coordenacao reposicionada como dashboard institucional, focada em comparativo entre turmas, materias criticas, tendencias de queda e pendencias operacionais
-- a tela de coordenacao agora responde explicitamente quais turmas estao piores, quais materias mais exigem atencao, onde a tendencia esta caindo e quais professores ou turmas ainda pedem acompanhamento
-- o fluxo de `codigo da turma` foi mantido como apoio para ampliar escopo, mas deixou de ser o centro da experiencia
-- `npm run check` e `npm run build` passaram apos o fechamento do P4
-- `npm run lint` seguiu bloqueado por um crash da regra `@typescript-eslint/no-unused-vars` ao analisar o arquivo `.svelte` da coordenacao, apesar de o arquivo estar formatado e sem erros no `check`
-
-### 2026-03-14 - rodada 8
-
-- corrigido o teacher para exibir o `codigo da turma` na pagina detalhada da turma, usando o `access_code` ja gerado no banco
-- removida a dependencia obrigatoria de `SUPABASE_SERVICE_ROLE_KEY` na leitura da coordenacao; o dashboard institucional agora tenta montar os dados com `locals.supabase`
-- `npm run check` e `npm run build` passaram apos esse ajuste de bloqueio previo ao `P5`
-
-### 2026-03-14 - rodada 9
-
-- corrigida a leitura incompleta da coordenacao: a tela mostrava medias publicadas, mas ainda zerava `turmas no escopo` porque faltava uma fonte segura para turmas e alunos do escopo
-- criado o snapshot institucional via RPCs `coord_scope_classes()` e `coord_scope_students()` para a coordenacao ler turmas e alunos do proprio escopo sem depender de `service role`
-- aplicada a migration `20260314195000_coord_scope_snapshot_rpc.sql` com `npx supabase db push --include-all`
-
-### 2026-03-14 - rodada 10
-
-- `P5` concluido com padronizacao do branding em favicon, abas e layouts internos, usando o icone oficial tambem na coordenacao
-- titulos das paginas internas foram alinhados para o padrao `Class Insights - ...` em professor, coordenacao, cadastro e recuperacao de senha
-- criado o documento `docs/checklist-qualidade-por-tela.md` para travar o criterio de pronto visual e funcional por pagina
-- mantida a base visual compartilhada em `src/lib/styles/base.css` para reduzir a sensacao de blocos independentes
+1. sanidade textual e encoding
+2. semantica numerica do aluno
+3. duplicacoes estruturais
+4. base visual minima compartilhada
+5. fluxo publico como familia unica
+6. teacher como cockpit limpo
+7. portal do aluno coerente
+8. coordenacao como leitura institucional
+9. home final

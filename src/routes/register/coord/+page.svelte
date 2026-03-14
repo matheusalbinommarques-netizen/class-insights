@@ -158,7 +158,7 @@
 						<p class="text-[11px] font-black uppercase tracking-widest text-amber-700/80">
 							Class Insights
 						</p>
-						<p class="text-2xl font-black tracking-tight text-slate-900">Class Insights</p>
+						<p class="text-2xl font-black tracking-tight text-slate-900">Primeiro acesso</p>
 					</div>
 				</a>
 

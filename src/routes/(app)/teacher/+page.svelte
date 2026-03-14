@@ -519,6 +519,7 @@
 					<div class="mt-6 space-y-4">
 						{#each visibleClasses as item (item.id)}
 							{@const primaryAction = classPrimaryAction(item)}
+							{@const classDetailsHref = `/teacher/${item.id}`}
 							<article class={`rounded-3xl border p-5 ${prioritySurface(item.status)}`}>
 								<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 									<div class="min-w-0">
@@ -643,11 +644,13 @@
 										class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
 										>{primaryAction.label}</a
 									>
-									<a
-										href={`/teacher/${item.id}`}
-										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
-										>Abrir turma</a
-									>
+									{#if primaryAction.href !== classDetailsHref}
+										<a
+											href={classDetailsHref}
+											class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+											>Abrir turma</a
+										>
+									{/if}
 									<a
 										href={resolve('/teacher/import') + `?classId=${item.id}`}
 										class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-5 text-sm font-bold text-slate-600 transition hover:border-slate-300 hover:bg-white"

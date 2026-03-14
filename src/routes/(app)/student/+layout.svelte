@@ -107,19 +107,17 @@
 				{/if}
 			</p>
 		</div>
-		<div class="overview-steps" aria-label="Etapas do portal do aluno">
-			{#each links as link (link.href)}
-				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-				<a
-					href={link.href}
-					class="overview-step"
-					class:active={isActive(link.href)}
-					aria-current={isActive(link.href) ? 'page' : undefined}
-				>
-					<span>{link.label}</span>
-					<small>{link.description}</small>
-				</a>
-			{/each}
+		<div class="overview-status" aria-label="Resumo da secao atual">
+			<div class="status-card">
+				<span class="status-label">Voce esta aqui</span>
+				<strong>{currentSection.title}</strong>
+				<small>{currentSection.description}</small>
+			</div>
+			<div class="status-card muted">
+				<span class="status-label">Proximo passo</span>
+				<strong>{currentSection.nextLabel}</strong>
+				<small>Use a navegacao acima para aprofundar a leitura quando quiser.</small>
+			</div>
 		</div>
 	</section>
 
@@ -312,36 +310,38 @@
 		color: #334155;
 	}
 
-	.overview-steps {
+	.overview-status {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.75rem;
 	}
 
-	.overview-step {
-		display: block;
+	.status-card {
+		display: grid;
+		gap: 0.3rem;
 		padding: 0.9rem;
 		border-radius: 1rem;
-		text-decoration: none;
 		background: rgba(255, 255, 255, 0.76);
 		border: 1px solid rgba(148, 163, 184, 0.16);
 	}
 
-	.overview-step.active {
+	.status-card.muted {
 		background: linear-gradient(180deg, rgba(14, 165, 233, 0.16), rgba(14, 165, 233, 0.08));
 		border-color: rgba(14, 165, 233, 0.32);
 	}
 
-	.overview-step span {
-		display: block;
+	.status-label {
 		font-size: 0.94rem;
 		font-weight: 800;
+		color: #0369a1;
+	}
+
+	.status-card strong {
+		font-size: 0.98rem;
 		color: #0f172a;
 	}
 
-	.overview-step small {
-		display: block;
-		margin-top: 0.22rem;
+	.status-card small {
 		font-size: 0.8rem;
 		line-height: 1.45;
 		color: #475569;
@@ -359,7 +359,7 @@
 	@media (max-width: 800px) {
 		.nav,
 		.overview,
-		.overview-steps {
+		.overview-status {
 			grid-template-columns: 1fr;
 		}
 	}

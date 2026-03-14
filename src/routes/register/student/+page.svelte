@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 
+	import ciIcon from '$lib/assets/ci-icon.png';
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type ClaimStudentRpcRow = {
@@ -307,28 +308,16 @@
 			>
 				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
 					<div
-						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white shadow-sm"
 					>
-						<svg
-							class="h-6 w-6"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-							stroke-width="2.2"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z"
-							/>
-						</svg>
+						<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
 					</div>
 
 					<div>
-						<p class="text-xs font-black uppercase tracking-widest text-emerald-700/80">
-							EdTech Platform
+						<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
+							Class Insights
 						</p>
-						<p class="text-2xl font-black tracking-tight text-slate-900">Class Insights</p>
+						<p class="text-2xl font-black tracking-tight text-slate-900">Primeiro acesso</p>
 					</div>
 				</a>
 
