@@ -63,7 +63,7 @@
 		<h2
 			class="max-w-3xl text-[1.85rem] font-extrabold leading-[1.05] tracking-tight text-slate-950 lg:text-[2rem]"
 		>
-			O que exige ação agora, {teacherName}
+			O que exige ação agora
 		</h2>
 
 		<button

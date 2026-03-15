@@ -91,8 +91,8 @@
 		return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
 	}
 
-	const displayName = data.profile?.display_name?.trim() || 'Professor';
-	const avatarInitials = initialsFromName(displayName);
+	const displayName = $derived(data.profile?.display_name?.trim() || 'Professor');
+	const avatarInitials = $derived(initialsFromName(displayName));
 	const pathname = $derived($page.url.pathname);
 	const hash = $derived($page.url.hash);
 </script>
@@ -115,10 +115,15 @@
 	</div>
 
 	{#if mobileNavOpen}
-		<div class="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" on:click={closeMobileNav}></div>
+		<button
+			type="button"
+			class="fixed inset-0 z-50 bg-slate-950/30 lg:hidden"
+			onclick={closeMobileNav}
+			aria-label="Fechar navegação"
+		></button>
 
 		<div
-			class="fixed left-4 right-4 top-[92px] z-[60] rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl lg:hidden"
+			class="fixed left-4 right-4 top-23 z-60 rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl lg:hidden"
 		>
 			<nav class="space-y-2">
 				{#each navItems as item (item.label)}
@@ -131,7 +136,7 @@
 								? 'bg-slate-100 text-slate-950'
 								: 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
 						}`}
-						on:click={closeMobileNav}
+						onclick={closeMobileNav}
 					>
 						<span
 							class={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
@@ -149,7 +154,7 @@
 				<button
 					type="button"
 					class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-					on:click={handleLogout}
+					onclick={handleLogout}
 				>
 					Sair da conta
 				</button>
@@ -159,12 +164,12 @@
 
 	<div class="flex min-h-screen flex-col">
 		<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-			<div class="flex min-h-[92px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+			<div class="flex min-h-23 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
 				<div class="flex min-w-0 items-center gap-3">
 					<button
 						type="button"
 						class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
-						on:click={() => (mobileNavOpen = !mobileNavOpen)}
+						onclick={() => (mobileNavOpen = !mobileNavOpen)}
 						aria-label="Abrir navegação"
 					>
 						<svg
@@ -179,7 +184,7 @@
 					</button>
 
 					<a href={teacherDashboardHref} class="flex shrink-0 items-center gap-3">
-						<img src={ciIcon} alt="Class Insights" class="h-10 w-auto object-contain" />
+						<img src={ciIcon} alt="Class Insights" class="h-25 w-auto object-contain" />
 					</a>
 
 					<nav class="ml-3 hidden min-w-0 items-center gap-7 lg:flex">
@@ -224,7 +229,7 @@
 					<button
 						type="button"
 						class="hidden text-[1rem] font-medium text-slate-700 transition hover:text-slate-950 sm:inline-flex"
-						on:click={handleLogout}
+						onclick={handleLogout}
 					>
 						Sair
 					</button>

@@ -87,14 +87,15 @@ export type TeacherDashboardPageData = {
 export type TeacherSubjectAssessment = {
 	id: string;
 	title: string;
-	name: string;
 	status: 'draft' | 'published';
-	assessment_date: string | null;
-	published_at: string | null;
-	raw_score?: number | null;
-	score_min?: number | null;
-	score_max?: number | null;
-	is_excused?: boolean;
+	assessmentDate: string | null;
+	publishedAt: string | null;
+	weight: number;
+	resultsCount: number;
+	rawScore?: number | null;
+	scoreMin?: number | null;
+	scoreMax?: number | null;
+	isExcused?: boolean;
 	[key: string]: unknown;
 };
 

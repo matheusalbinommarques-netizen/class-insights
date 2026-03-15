@@ -845,7 +845,7 @@ export async function buildTeacherDashboardPageData(
 			(assessment) => assessment.class_id === classId
 		);
 
-		const classStudentAverages = classStudents
+		const studentPublishedAverages = classStudents
 			.map((student) => {
 				const scores = classPublishedAssessments.flatMap((assessment) =>
 					(resultsByAssessmentId.get(assessment.id) ?? [])
@@ -859,8 +859,8 @@ export async function buildTeacherDashboardPageData(
 			.filter((value): value is number => typeof value === 'number');
 
 		return {
-			rangeLabel: 'Turma',
-			buckets: buildAnalyticsBuckets(classStudentAverages)
+			rangeLabel: 'Média por aluno',
+			buckets: buildAnalyticsBuckets(studentPublishedAverages)
 		};
 	};
 

@@ -43,13 +43,10 @@
 		return 'bg-sky-500';
 	}
 
-	function bucketHeightPercent(value: number) {
-		if (value <= 0) return 0;
-
-		const cappedValue = Math.min(value, 10);
-		const percent = (cappedValue / 10) * 100;
-
-		return Math.max(percent, 8);
+	function bucketStyle(heightPercent: number, value: number) {
+		if (value <= 0) return 'height: 0%';
+		const safeHeight = Math.max(14, Math.min(100, Math.round(heightPercent)));
+		return `height: ${safeHeight}%`;
 	}
 </script>
 
@@ -83,34 +80,34 @@
 		</div>
 	</div>
 
-	<div class="mt-4 grid grid-cols-3 gap-3">
+	<div class="mt-5 grid grid-cols-3 gap-4">
 		<div>
-			<p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
 				Média publicada
 			</p>
-			<p class="mt-2 text-[1.1rem] font-semibold text-slate-950">
-				<span class="text-[2rem] font-extrabold tracking-tight text-slate-950">
-					{classItem.publishedAverageLabel.split(' / ')[0]}
+			<p class="mt-2 text-[2.25rem] font-extrabold tracking-tight text-slate-950">
+				{classItem.publishedAverageLabel.split('/')[0].trim()}
+				<span class="text-[1.25rem] font-bold text-slate-700">
+					/ {classItem.publishedAverageLabel.split('/')[1]?.trim() ?? '10'}
 				</span>
-				<span class="ml-1 text-[1.1rem] font-medium text-slate-700">/ 10</span>
 			</p>
 		</div>
 
 		<div>
-			<p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
 				Cobertura
 			</p>
-			<p class="mt-2 text-[2rem] font-extrabold tracking-tight text-slate-950">
+			<p class="mt-2 text-[2.25rem] font-extrabold tracking-tight text-slate-950">
 				{classItem.coverageLabel}
 			</p>
 		</div>
 
 		<div>
-			<p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
+			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
 				Tendência
 			</p>
 			<p
-				class={`mt-2 text-[2rem] font-extrabold tracking-tight ${trendClass(classItem.trendTone)}`}
+				class={`mt-2 text-[2.25rem] font-extrabold tracking-tight ${trendClass(classItem.trendTone)}`}
 			>
 				{classItem.trendLabel}
 			</p>
@@ -119,9 +116,9 @@
 
 	{#if classItem.tags.length > 0}
 		<div class="mt-4 flex flex-wrap gap-2">
-			{#each classItem.tags as tag, index (tag)}
+			{#each classItem.tags as tag, index (`${tag}-${index}`)}
 				<span
-					class={`inline-flex h-8 items-center justify-center rounded-xl px-3 text-sm font-semibold ${tagClass(index)}`}
+					class={`inline-flex items-center rounded-full px-3 py-1.5 text-sm font-semibold ${tagClass(index)}`}
 				>
 					{tag}
 				</span>
@@ -129,58 +126,54 @@
 		</div>
 	{/if}
 
-	<div class="mt-4 rounded-2xl bg-white/70 px-3 py-3">
-		<div class="mb-3">
-			<p class="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-slate-500">
-				Resumo analítico da turma
-			</p>
-		</div>
+	<div class="mt-6">
+		<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+			Resumo analítico da turma
+		</p>
 
-		<div class="grid grid-cols-[28px_minmax(0,1fr)] gap-3">
-			<div class="grid h-40 grid-rows-10">
-				{#each axisLevels as level (level)}
-					<div class="relative">
-						<span
-							class="absolute right-0 -top-2 text-[10px] font-semibold leading-none text-slate-400"
-						>
-							{level}
-						</span>
-					</div>
-				{/each}
-			</div>
+		<div class="mt-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-4">
+			<div class="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
+				<div class="flex h-44 flex-col justify-between pb-8 pt-2">
+					{#each axisLevels as level (level)}
+						<span class="text-[11px] font-medium leading-none text-slate-400">{level}</span>
+					{/each}
+				</div>
 
-			<div class="min-w-0">
-				<div class="relative h-40">
-					<div class="absolute inset-0 grid grid-rows-10">
-						{#each axisLevels as level (level)}
-							<div class="border-t border-dashed border-slate-200"></div>
-						{/each}
-					</div>
+				<div>
+					<div class="relative h-44">
+						<div class="absolute inset-0 flex flex-col justify-between pb-8 pt-2">
+							{#each axisLevels as level (level)}
+								<div class="border-t border-dashed border-slate-200"></div>
+							{/each}
+						</div>
 
-					<div class="relative z-10 flex h-full items-end gap-3 px-1">
-						{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
-							<div class="flex flex-1 flex-col items-center justify-end">
-								<div class="flex h-full w-full items-end">
-									<div
-										class={`w-full rounded-t-lg ${bucketBarClass(bucket.label)}`}
-										style={`height: ${bucketHeightPercent(bucket.value)}%`}
-										aria-label={`${bucket.label}: ${bucket.value}`}
-										title={`${bucket.label}: ${bucket.value}`}
-									></div>
+						<div class="relative z-10 grid h-full grid-cols-4 gap-3 pb-8 pt-2">
+							{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
+								<div class="flex h-full min-w-0 flex-col items-center">
+									<p class="mb-2 shrink-0 text-xs font-bold text-slate-600">{bucket.value}</p>
+
+									<div class="flex min-h-0 w-full flex-1 items-end">
+										<div
+											class={`w-full rounded-t-lg ${bucketBarClass(bucket.label)}`}
+											style={bucketStyle(bucket.heightPercent, bucket.value)}
+											aria-label={`${bucket.label}: ${bucket.value}`}
+											title={`${bucket.label}: ${bucket.value}`}
+										></div>
+									</div>
 								</div>
+							{/each}
+						</div>
+					</div>
+
+					<div class="mt-2 grid grid-cols-4 gap-3">
+						{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
+							<div class="text-center">
+								<p class="text-[11px] font-semibold leading-4 text-slate-600">
+									{bucket.label}
+								</p>
 							</div>
 						{/each}
 					</div>
-				</div>
-
-				<div class="mt-2 grid grid-cols-4 gap-3 px-1">
-					{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
-						<div class="text-center">
-							<p class="text-[11px] font-semibold leading-4 text-slate-600">
-								{bucket.label}
-							</p>
-						</div>
-					{/each}
 				</div>
 			</div>
 		</div>
