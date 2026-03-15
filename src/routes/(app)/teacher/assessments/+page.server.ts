@@ -14,8 +14,14 @@ import {
 } from '$lib/server/teacher-analytics';
 import { getOwnedClass, getOwnedClassSubject } from '$lib/server/teacher';
 import type {
+	TeacherAssessmentActionItem,
 	TeacherAssessmentAnalyticsCard,
 	TeacherAssessmentCard,
+	TeacherAssessmentStatusBadgeTone,
+	TeacherAssessmentTableRow,
+	TeacherAssessmentsMetricTone,
+	TeacherAssessmentsPageData,
+	TeacherAssessmentsSummaryMetric,
 	TeacherClassOption,
 	TeacherSchemaState,
 	TeacherSubjectOption
@@ -52,6 +58,12 @@ type ResultSummaryRow = {
 	score_max: number;
 };
 
+type AssessmentResultSummary = {
+	totalResults: number;
+	filledResults: number;
+	excusedResults: number;
+};
+
 function buildSchemaState(
 	error: { code?: string; message?: string; details?: string } | null
 ): TeacherSchemaState {
@@ -59,13 +71,210 @@ function buildSchemaState(
 		return {
 			ready: false,
 			message:
-				'O schema academico da V1 ainda nao esta disponivel neste ambiente. As tabelas de subjects/class_subjects/assessments precisam existir para esta area funcionar.'
+				'O schema acadêmico da V1 ainda não está disponível neste ambiente. As tabelas de subjects, class_subjects e assessments precisam existir para esta área funcionar.'
 		};
 	}
 
 	return {
 		ready: false,
-		message: error?.message ?? 'Nao foi possivel carregar a area de avaliacoes.'
+		message: error?.message ?? 'Não foi possível carregar a área de avaliações.'
+	};
+}
+
+function formatPtBrNumber(value: number, decimals = 1) {
+	return new Intl.NumberFormat('pt-BR', {
+		minimumFractionDigits: decimals,
+		maximumFractionDigits: decimals
+	}).format(value);
+}
+
+function formatGradeFromPercent(value: number | null, withSuffix = false) {
+	if (typeof value !== 'number') return '--';
+
+	const normalized = formatPtBrNumber(value / 10, 1);
+	return withSuffix ? `${normalized} / 10` : normalized;
+}
+
+function formatDateLabel(value: string | null) {
+	if (!value) return '—';
+
+	const normalized = value.includes('T') ? value : `${value}T00:00:00`;
+	const date = new Date(normalized);
+
+	if (Number.isNaN(date.getTime())) return value;
+
+	return new Intl.DateTimeFormat('pt-BR', {
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric'
+	}).format(date);
+}
+
+function buildSummaryMetric(
+	label: string,
+	value: string,
+	tone: TeacherAssessmentsMetricTone = 'neutral'
+): TeacherAssessmentsSummaryMetric {
+	return { label, value, tone };
+}
+
+function actionPriority(input: {
+	status: 'draft' | 'published';
+	statusTone: TeacherAssessmentStatusBadgeTone;
+	coveragePercent: number;
+	pendingResultsCount: number;
+	averagePercent: number | null;
+}) {
+	if (input.status === 'draft' && input.pendingResultsCount > 0) {
+		return 1000 - input.coveragePercent;
+	}
+
+	if (input.statusTone === 'critical') {
+		return 900;
+	}
+
+	if (input.statusTone === 'attention') {
+		return 800;
+	}
+
+	if (input.statusTone === 'ready') {
+		return 700;
+	}
+
+	if (input.status === 'draft') {
+		return 600;
+	}
+
+	if (typeof input.averagePercent === 'number') {
+		return Math.round(500 - input.averagePercent);
+	}
+
+	return 100;
+}
+
+function buildStatus(input: {
+	status: 'draft' | 'published';
+	coveragePercent: number;
+	pendingResultsCount: number;
+	analyticsTone: TeacherAssessmentAnalyticsCard['tone'];
+}): {
+	label: string;
+	tone: TeacherAssessmentStatusBadgeTone;
+} {
+	const readyToPublish =
+		input.status === 'draft' && input.coveragePercent === 100 && input.pendingResultsCount === 0;
+
+	if (readyToPublish) {
+		return {
+			label: 'Pronta para publicar',
+			tone: 'ready'
+		};
+	}
+
+	if (input.status === 'draft') {
+		return {
+			label: 'Rascunho',
+			tone: 'draft'
+		};
+	}
+
+	if (input.analyticsTone === 'critical') {
+		return {
+			label: 'Publicada com alerta',
+			tone: 'critical'
+		};
+	}
+
+	if (input.analyticsTone === 'attention') {
+		return {
+			label: 'Publicada com atenção',
+			tone: 'attention'
+		};
+	}
+
+	return {
+		label: 'Publicada',
+		tone: 'published'
+	};
+}
+
+function buildInsight(input: {
+	status: 'draft' | 'published';
+	coveragePercent: number;
+	pendingResultsCount: number;
+	averagePercent: number | null;
+	analyticsTone: TeacherAssessmentAnalyticsCard['tone'];
+}) {
+	if (input.status === 'draft' && input.pendingResultsCount > 0) {
+		return `Faltam ${input.pendingResultsCount} resultado(s) para fechar esta avaliação.`;
+	}
+
+	if (input.status === 'draft' && input.coveragePercent === 100) {
+		return 'Cobertura completa; vale revisar a distribuição e publicar quando estiver pronta.';
+	}
+
+	if (input.status === 'published' && input.analyticsTone === 'critical') {
+		return 'Publicada com sinal forte de risco; vale revisar a distribuição e os alunos em maior queda.';
+	}
+
+	if (input.status === 'published' && input.analyticsTone === 'attention') {
+		return 'Publicada com atenção; há sinais que merecem leitura mais cuidadosa.';
+	}
+
+	if (typeof input.averagePercent === 'number' && isBelowAttentionThreshold(input.averagePercent)) {
+		return 'A média publicada ficou abaixo da referência de atenção.';
+	}
+
+	return 'Sem alerta relevante no momento.';
+}
+
+function buildNextStepText(input: {
+	status: 'draft' | 'published';
+	pendingResultsCount: number;
+	coveragePercent: number;
+	analyticsTone: TeacherAssessmentAnalyticsCard['tone'];
+	averagePercent: number | null;
+}) {
+	if (input.status === 'draft' && input.pendingResultsCount > 0) {
+		return `Você ainda tem ${input.pendingResultsCount} resultado(s) pendente(s) nesta avaliação.`;
+	}
+
+	if (input.status === 'draft' && input.coveragePercent === 100) {
+		return 'Cobertura completa. Revise a distribuição antes de publicar.';
+	}
+
+	if (input.status === 'published' && input.analyticsTone === 'critical') {
+		return 'A avaliação já foi publicada e trouxe um alerta forte. Vale abrir e revisar os alunos mais vulneráveis.';
+	}
+
+	if (input.status === 'published' && input.analyticsTone === 'attention') {
+		return 'A avaliação pede leitura complementar. Confira cobertura, média e dispersão para decidir a próxima ação.';
+	}
+
+	if (typeof input.averagePercent === 'number' && isBelowAttentionThreshold(input.averagePercent)) {
+		return 'A média ficou abaixo da referência. Vale abrir a avaliação e conferir o que puxou o resultado para baixo.';
+	}
+
+	return 'A avaliação está estável e pode servir como referência para comparação com as demais.';
+}
+
+function emptyAssessmentsPageData(): TeacherAssessmentsPageData {
+	return {
+		schema: {
+			ready: false,
+			message: 'Sessão inválida. Faça login novamente.'
+		},
+		classes: [],
+		subjects: [],
+		summaryMetrics: [
+			buildSummaryMetric('Avaliações', '0'),
+			buildSummaryMetric('Em rascunho', '0'),
+			buildSummaryMetric('Publicadas', '0'),
+			buildSummaryMetric('Pendentes', '0'),
+			buildSummaryMetric('Cobertura média', '--')
+		],
+		actionItems: [],
+		rows: []
 	};
 }
 
@@ -73,21 +282,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const userId = getAuthenticatedUserId(locals);
 
 	if (!userId) {
-		return {
-			schema: {
-				ready: false,
-				message: 'Sessao invalida. Faca login novamente.'
-			} as TeacherSchemaState,
-			classes: [] as TeacherClassOption[],
-			subjects: [] as TeacherSubjectOption[],
-			assessments: [] as TeacherAssessmentCard[],
-			analytics: [] as TeacherAssessmentAnalyticsCard[],
-			summary: {
-				total: 0,
-				draft: 0,
-				published: 0
-			}
-		};
+		return emptyAssessmentsPageData();
 	}
 
 	const { data: classesData, error: classesError } = await locals.supabase
@@ -98,16 +293,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (classesError) {
 		return {
-			schema: buildSchemaState(classesError),
-			classes: [] as TeacherClassOption[],
-			subjects: [] as TeacherSubjectOption[],
-			assessments: [] as TeacherAssessmentCard[],
-			analytics: [] as TeacherAssessmentAnalyticsCard[],
-			summary: {
-				total: 0,
-				draft: 0,
-				published: 0
-			}
+			...emptyAssessmentsPageData(),
+			schema: buildSchemaState(classesError)
 		};
 	}
 
@@ -119,16 +306,18 @@ export const load: PageServerLoad = async ({ locals }) => {
 			schema: {
 				ready: true,
 				message: null
-			} as TeacherSchemaState,
+			},
 			classes,
-			subjects: [] as TeacherSubjectOption[],
-			assessments: [] as TeacherAssessmentCard[],
-			analytics: [] as TeacherAssessmentAnalyticsCard[],
-			summary: {
-				total: 0,
-				draft: 0,
-				published: 0
-			}
+			subjects: [],
+			summaryMetrics: [
+				buildSummaryMetric('Avaliações', '0'),
+				buildSummaryMetric('Em rascunho', '0'),
+				buildSummaryMetric('Publicadas', '0'),
+				buildSummaryMetric('Pendentes', '0'),
+				buildSummaryMetric('Cobertura média', '--')
+			],
+			actionItems: [],
+			rows: []
 		};
 	}
 
@@ -140,16 +329,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (classSubjectsError) {
 		return {
+			...emptyAssessmentsPageData(),
 			schema: buildSchemaState(classSubjectsError),
-			classes,
-			subjects: [] as TeacherSubjectOption[],
-			assessments: [] as TeacherAssessmentCard[],
-			analytics: [] as TeacherAssessmentAnalyticsCard[],
-			summary: {
-				total: 0,
-				draft: 0,
-				published: 0
-			}
+			classes
 		};
 	}
 
@@ -161,26 +343,21 @@ export const load: PageServerLoad = async ({ locals }) => {
 		const { data: subjectsData, error: subjectsError } = await locals.supabase
 			.from('subjects')
 			.select('id, name, code')
-			.in('id', subjectIds);
+			.in('id', subjectIds)
+			.order('name', { ascending: true });
 
 		if (subjectsError) {
 			return {
+				...emptyAssessmentsPageData(),
 				schema: buildSchemaState(subjectsError),
-				classes,
-				subjects: [] as TeacherSubjectOption[],
-				assessments: [] as TeacherAssessmentCard[],
-				analytics: [] as TeacherAssessmentAnalyticsCard[],
-				summary: {
-					total: 0,
-					draft: 0,
-					published: 0
-				}
+				classes
 			};
 		}
 
 		const bySubjectId = new Map(
 			classSubjects.reduce<[string, string[]][]>((acc, row) => {
 				const current = acc.find(([subjectId]) => subjectId === row.subject_id);
+
 				if (current) {
 					current[1].push(row.class_id);
 					return acc;
@@ -207,28 +384,20 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 	if (assessmentsError) {
 		return {
+			...emptyAssessmentsPageData(),
 			schema: buildSchemaState(assessmentsError),
 			classes,
-			subjects,
-			assessments: [] as TeacherAssessmentCard[],
-			analytics: [] as TeacherAssessmentAnalyticsCard[],
-			summary: {
-				total: 0,
-				draft: 0,
-				published: 0
-			}
+			subjects
 		};
 	}
 
 	const classNameById = new Map(classes.map((item) => [item.id, item.name]));
 	const subjectNameById = new Map(subjects.map((item) => [item.id, item.name]));
+
 	const assessmentRows = (assessmentsData ?? []) as AssessmentRow[];
 	const assessmentIds = assessmentRows.map((assessment) => assessment.id);
 
-	const resultsByAssessmentId = new Map<
-		string,
-		{ totalResults: number; filledResults: number; excusedResults: number }
-	>();
+	const resultsByAssessmentId = new Map<string, AssessmentResultSummary>();
 	const detailedResultsByAssessmentId = new Map<string, ResultSummaryRow[]>();
 
 	if (assessmentIds.length > 0) {
@@ -260,7 +429,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		}
 	}
 
-	const assessments = assessmentRows.map((assessment) => ({
+	const assessments: TeacherAssessmentCard[] = assessmentRows.map((assessment) => ({
 		id: assessment.id,
 		title: assessment.title,
 		assessmentDate: assessment.assessment_date,
@@ -270,7 +439,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		classId: assessment.class_id,
 		className: classNameById.get(assessment.class_id) ?? 'Turma',
 		subjectId: assessment.subject_id,
-		subjectName: subjectNameById.get(assessment.subject_id) ?? 'Materia',
+		subjectName: subjectNameById.get(assessment.subject_id) ?? 'Matéria',
 		filledResults: resultsByAssessmentId.get(assessment.id)?.filledResults ?? 0,
 		excusedResults: resultsByAssessmentId.get(assessment.id)?.excusedResults ?? 0,
 		totalResults: resultsByAssessmentId.get(assessment.id)?.totalResults ?? 0
@@ -282,13 +451,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 			filledResults: 0,
 			excusedResults: 0
 		};
+
 		const normalizedScores = (detailedResultsByAssessmentId.get(assessment.id) ?? [])
 			.filter((result) => !result.is_excused)
 			.map((result) => normalizeResultPercent(result))
 			.filter((value): value is number => typeof value === 'number');
+
 		const averagePercentValue = average(normalizedScores);
 		const averagePercent =
 			averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1)));
+
 		const dispersionPercent = buildDispersion(normalizedScores);
 		const riskStudentsCount = normalizedScores.filter((value) =>
 			isBelowHighRiskThreshold(value)
@@ -318,7 +490,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			assessmentDate: assessment.assessment_date,
 			status: assessment.status,
 			className: classNameById.get(assessment.class_id) ?? 'Turma',
-			subjectName: subjectNameById.get(assessment.subject_id) ?? 'Materia',
+			subjectName: subjectNameById.get(assessment.subject_id) ?? 'Matéria',
 			coveragePercent,
 			averagePercent,
 			riskStudentsCount,
@@ -329,22 +501,130 @@ export const load: PageServerLoad = async ({ locals }) => {
 		};
 	});
 
+	const analyticsById = new Map(analytics.map((item) => [item.id, item]));
+
+	const rows: TeacherAssessmentTableRow[] = assessments.map((assessment) => {
+		const analyticsItem = analyticsById.get(assessment.id);
+		const coveragePercent = analyticsItem?.coveragePercent ?? 0;
+		const averagePercent = analyticsItem?.averagePercent ?? null;
+		const pendingResultsCount = Math.max(assessment.totalResults - assessment.filledResults, 0);
+
+		const statusInfo = buildStatus({
+			status: assessment.status,
+			coveragePercent,
+			pendingResultsCount,
+			analyticsTone: analyticsItem?.tone ?? 'pending'
+		});
+
+		const priorityRank = actionPriority({
+			status: assessment.status,
+			statusTone: statusInfo.tone,
+			coveragePercent,
+			pendingResultsCount,
+			averagePercent
+		});
+
+		return {
+			id: assessment.id,
+			title: assessment.title,
+			classId: assessment.classId,
+			className: assessment.className,
+			subjectId: assessment.subjectId,
+			subjectName: assessment.subjectName,
+			status: assessment.status,
+			statusLabel: statusInfo.label,
+			statusTone: statusInfo.tone,
+			assessmentDate: assessment.assessmentDate,
+			assessmentDateLabel: formatDateLabel(assessment.assessmentDate),
+			coveragePercent,
+			coverageLabel: `${coveragePercent}%`,
+			averagePercent,
+			averageLabel: formatGradeFromPercent(averagePercent),
+			insightLabel: buildInsight({
+				status: assessment.status,
+				coveragePercent,
+				pendingResultsCount,
+				averagePercent,
+				analyticsTone: analyticsItem?.tone ?? 'pending'
+			}),
+			pendingResultsCount,
+			primaryActionHref: `/teacher/assessments/${assessment.id}`,
+			primaryActionLabel: assessment.status === 'draft' ? 'Abrir lançamento' : 'Ver avaliação',
+			priorityRank
+		};
+	});
+
+	const actionItems: TeacherAssessmentActionItem[] = [...rows]
+		.sort((left, right) => {
+			if (left.priorityRank !== right.priorityRank) {
+				return right.priorityRank - left.priorityRank;
+			}
+
+			return right.assessmentDate.localeCompare(left.assessmentDate);
+		})
+		.slice(0, 2)
+		.map((row) => ({
+			id: row.id,
+			title: row.title,
+			className: row.className,
+			subjectName: row.subjectName,
+			statusLabel: row.statusLabel,
+			statusTone: row.statusTone,
+			coverageLabel: row.coverageLabel,
+			averageLabel: row.averageLabel,
+			dateLabel: row.assessmentDateLabel,
+			nextStepText: buildNextStepText({
+				status: row.status,
+				pendingResultsCount: row.pendingResultsCount,
+				coveragePercent: row.coveragePercent,
+				analyticsTone: analyticsById.get(row.id)?.tone ?? 'pending',
+				averagePercent: row.averagePercent
+			}),
+			actionHref: row.primaryActionHref,
+			actionLabel: row.primaryActionLabel
+		}));
+
+	const draftCount = rows.filter((item) => item.status === 'draft').length;
+	const publishedCount = rows.filter((item) => item.status === 'published').length;
+	const pendingCount = rows.filter(
+		(item) => item.status === 'draft' || item.pendingResultsCount > 0
+	).length;
+
+	const averageCoverage =
+		rows.length > 0
+			? Math.round(rows.reduce((sum, item) => sum + item.coveragePercent, 0) / rows.length)
+			: null;
+
+	const summaryMetrics: TeacherAssessmentsSummaryMetric[] = [
+		buildSummaryMetric('Avaliações', String(rows.length)),
+		buildSummaryMetric('Em rascunho', String(draftCount), draftCount > 0 ? 'attention' : 'neutral'),
+		buildSummaryMetric(
+			'Publicadas',
+			String(publishedCount),
+			publishedCount > 0 ? 'positive' : 'neutral'
+		),
+		buildSummaryMetric(
+			'Pendentes',
+			String(pendingCount),
+			pendingCount > 0 ? 'attention' : 'neutral'
+		),
+		buildSummaryMetric(
+			'Cobertura média',
+			averageCoverage === null ? '--' : `${averageCoverage}%`,
+			'neutral'
+		)
+	];
+
 	return {
 		schema: {
 			ready: true,
 			message: null
-		} as TeacherSchemaState,
+		},
 		classes,
 		subjects,
-		assessments,
-		analytics: [...analytics]
-			.sort((a, b) => a.assessmentDate.localeCompare(b.assessmentDate))
-			.reverse(),
-		summary: {
-			total: assessments.length,
-			draft: assessments.filter((item) => item.status === 'draft').length,
-			published: assessments.filter((item) => item.status === 'published').length
-		}
+		summaryMetrics,
+		actionItems,
+		rows
 	};
 };
 
@@ -352,7 +632,7 @@ export const actions: Actions = {
 	createAssessment: async ({ request, locals }) => {
 		const userId = getAuthenticatedUserId(locals);
 		if (!userId) {
-			return fail(401, { action: 'createAssessment', message: 'Voce precisa estar logado.' });
+			return fail(401, { action: 'createAssessment', message: 'Você precisa estar logado.' });
 		}
 
 		const form = await request.formData();
@@ -376,14 +656,14 @@ export const actions: Actions = {
 
 		const ownedClass = await getOwnedClass(locals, classId, userId);
 		if (!ownedClass) {
-			return fail(404, { action: 'createAssessment', message: 'Turma nao encontrada.' });
+			return fail(404, { action: 'createAssessment', message: 'Turma não encontrada.' });
 		}
 
 		const classSubject = await getOwnedClassSubject(locals, classId, subjectId, userId);
 		if (!classSubject) {
 			return fail(400, {
 				action: 'createAssessment',
-				message: 'A materia selecionada nao esta vinculada a esta turma.'
+				message: 'A matéria selecionada não está vinculada a esta turma.'
 			});
 		}
 
@@ -401,7 +681,7 @@ export const actions: Actions = {
 				return fail(400, {
 					action: 'createAssessment',
 					message:
-						'O schema academico da V1 ainda nao esta disponivel neste ambiente para criar avaliacoes.'
+						'O schema acadêmico da V1 ainda não está disponível neste ambiente para criar avaliações.'
 				});
 			}
 
@@ -411,7 +691,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'createAssessment',
-			message: 'Avaliacao salva como rascunho.'
+			message: 'Avaliação salva como rascunho.'
 		};
 	}
 };

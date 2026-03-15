@@ -15,7 +15,7 @@
 		label: string;
 		href: string;
 		icon: NavIcon;
-		match: (pathname: string, hash: string) => boolean;
+		match: (pathname: string) => boolean;
 	};
 
 	type Props = {
@@ -33,19 +33,20 @@
 	let mobileNavOpen = $state(false);
 
 	const teacherDashboardHref = resolve('/teacher');
+	const teacherClassesHref = resolve('/teacher/classes');
 
 	const navItems: NavItem[] = [
 		{
 			label: 'Dashboard',
 			href: teacherDashboardHref,
 			icon: 'dashboard',
-			match: (pathname, hash) => pathname === '/teacher' && hash !== '#teacher-classes-section'
+			match: (pathname) => pathname === '/teacher'
 		},
 		{
 			label: 'Turmas',
-			href: `${teacherDashboardHref}#teacher-classes-section`,
+			href: teacherClassesHref,
 			icon: 'classes',
-			match: (pathname, hash) => pathname === '/teacher' && hash === '#teacher-classes-section'
+			match: (pathname) => pathname.startsWith('/teacher/classes')
 		},
 		{
 			label: 'Avaliações',
@@ -58,17 +59,11 @@
 			href: resolve('/teacher/subjects'),
 			icon: 'subjects',
 			match: (pathname) => pathname.startsWith('/teacher/subjects')
-		},
-		{
-			label: 'Importação legada',
-			href: resolve('/teacher/import'),
-			icon: 'legacy',
-			match: (pathname) => pathname.startsWith('/teacher/import')
 		}
 	];
 
-	function isActive(item: NavItem, pathname: string, hash: string) {
-		return item.match(pathname, hash);
+	function isActive(item: NavItem, pathname: string) {
+		return item.match(pathname);
 	}
 
 	function closeMobileNav() {
@@ -94,7 +89,6 @@
 	const displayName = $derived(data.profile?.display_name?.trim() || 'Professor');
 	const avatarInitials = $derived(initialsFromName(displayName));
 	const pathname = $derived($page.url.pathname);
-	const hash = $derived($page.url.hash);
 </script>
 
 <DisplayNamePrompt
@@ -127,7 +121,7 @@
 		>
 			<nav class="space-y-2">
 				{#each navItems as item (item.label)}
-					{@const active = isActive(item, pathname, hash)}
+					{@const active = isActive(item, pathname)}
 					<a
 						href={item.href}
 						aria-current={active ? 'page' : undefined}
@@ -164,112 +158,118 @@
 
 	<div class="flex min-h-screen flex-col">
 		<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-			<div class="flex min-h-23 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-				<div class="flex min-w-0 items-center gap-3">
-					<button
-						type="button"
-						class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
-						onclick={() => (mobileNavOpen = !mobileNavOpen)}
-						aria-label="Abrir navegação"
-					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
+			<div class="mx-auto w-full max-w-295 px-4 sm:px-6 lg:px-8">
+				<div class="flex min-h-23 items-center justify-between gap-4">
+					<div class="flex min-w-0 items-center gap-3">
+						<button
+							type="button"
+							class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
+							onclick={() => (mobileNavOpen = !mobileNavOpen)}
+							aria-label="Abrir navegação"
 						>
-							<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-						</svg>
-					</button>
-
-					<a href={teacherDashboardHref} class="flex shrink-0 items-center gap-3">
-						<img src={ciIcon} alt="Class Insights" class="h-25 w-auto object-contain" />
-					</a>
-
-					<nav class="ml-3 hidden min-w-0 items-center gap-7 lg:flex">
-						{#each navItems as item (item.label)}
-							{@const active = isActive(item, pathname, hash)}
-							<a
-								href={item.href}
-								aria-current={active ? 'page' : undefined}
-								class={`inline-flex items-center gap-2 text-[1rem] font-semibold transition ${
-									active ? 'text-slate-950' : 'text-slate-600 hover:text-slate-950'
-								}`}
+							<svg
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
 							>
-								<span
-									class={`flex h-5 w-5 items-center justify-center ${
-										active ? 'text-slate-900' : 'text-slate-500'
+								<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+							</svg>
+						</button>
+
+						<a href={teacherDashboardHref} class="flex shrink-0 items-center">
+							<img
+								src={ciIcon}
+								alt="Class Insights"
+								class="block h-20 w-auto shrink-0 object-contain"
+							/>
+						</a>
+
+						<nav class="ml-3 hidden min-w-0 items-center gap-7 lg:flex">
+							{#each navItems as item (item.label)}
+								{@const active = isActive(item, pathname)}
+								<a
+									href={item.href}
+									aria-current={active ? 'page' : undefined}
+									class={`inline-flex items-center gap-2 text-[1rem] font-semibold transition ${
+										active ? 'text-slate-950' : 'text-slate-600 hover:text-slate-950'
 									}`}
 								>
-									<TeacherNavItemIcon icon={item.icon} />
-								</span>
-								<span>{item.label}</span>
-							</a>
-						{/each}
-					</nav>
-				</div>
-
-				<div class="ml-auto flex items-center gap-3">
-					<div
-						class="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm sm:flex"
-					>
-						<div
-							class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white"
-						>
-							{avatarInitials}
-						</div>
-
-						<div class="leading-tight">
-							<p class="text-[1rem] font-bold text-slate-950">{displayName}</p>
-							<p class="mt-1 text-xs font-medium text-slate-500">Sessão ativa</p>
-						</div>
+									<span
+										class={`flex h-5 w-5 items-center justify-center ${
+											active ? 'text-slate-900' : 'text-slate-500'
+										}`}
+									>
+										<TeacherNavItemIcon icon={item.icon} />
+									</span>
+									<span>{item.label}</span>
+								</a>
+							{/each}
+						</nav>
 					</div>
 
-					<button
-						type="button"
-						class="hidden text-[1rem] font-medium text-slate-700 transition hover:text-slate-950 sm:inline-flex"
-						onclick={handleLogout}
-					>
-						Sair
-					</button>
-
-					<button
-						type="button"
-						class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-						aria-label="Notificações"
-					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
+					<div class="ml-auto flex items-center gap-3">
+						<div
+							class="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm sm:flex"
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"
-							/>
-							<path stroke-linecap="round" stroke-linejoin="round" d="M10 17a2 2 0 0 0 4 0" />
-						</svg>
-					</button>
+							<div
+								class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white"
+							>
+								{avatarInitials}
+							</div>
 
-					<button
-						type="button"
-						class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
-						aria-label="Mais opções"
-					>
-						<svg
-							class="h-5 w-5"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
+							<div class="leading-tight">
+								<p class="text-[1rem] font-bold text-slate-950">{displayName}</p>
+								<p class="mt-1 text-xs font-medium text-slate-500">Sessão ativa</p>
+							</div>
+						</div>
+
+						<button
+							type="button"
+							class="hidden text-[1rem] font-medium text-slate-700 transition hover:text-slate-950 sm:inline-flex"
+							onclick={handleLogout}
 						>
-							<path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
-						</svg>
-					</button>
+							Sair
+						</button>
+
+						<button
+							type="button"
+							class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+							aria-label="Notificações"
+						>
+							<svg
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"
+								/>
+								<path stroke-linecap="round" stroke-linejoin="round" d="M10 17a2 2 0 0 0 4 0" />
+							</svg>
+						</button>
+
+						<button
+							type="button"
+							class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+							aria-label="Mais opções"
+						>
+							<svg
+								class="h-5 w-5"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
+							</svg>
+						</button>
+					</div>
 				</div>
 			</div>
 		</header>

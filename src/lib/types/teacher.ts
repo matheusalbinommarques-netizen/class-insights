@@ -103,6 +103,7 @@ export type TeacherSubjectOption = {
 	id: string;
 	name: string;
 	code: string | null;
+	classIds: string[];
 };
 
 export type TeacherClassStudent = {
@@ -149,4 +150,181 @@ export type TeacherClassPageData = {
 	subjectOptions: TeacherSubjectOption[];
 	error: string | null;
 	[key: string]: unknown;
+};
+
+/**
+ * Tipos compartilhados do núcleo acadêmico do teacher
+ */
+
+export type TeacherSchemaState = {
+	ready: boolean;
+	message: string | null;
+};
+
+export type TeacherClassOption = {
+	id: string;
+	name: string;
+};
+
+export type TeacherSubjectCard = TeacherSubjectOption & {
+	classNames: string[];
+};
+
+export type TeacherAssessmentStatus = 'draft' | 'published';
+export type TeacherAssessmentTone = 'healthy' | 'attention' | 'critical' | 'pending';
+export type TeacherAssessmentConsistencyBand = 'consistent' | 'mixed' | 'spread' | 'pending';
+
+export type TeacherAssessmentCard = {
+	id: string;
+	title: string;
+	assessmentDate: string;
+	weight: number;
+	status: TeacherAssessmentStatus;
+	publishedAt: string | null;
+	classId: string;
+	className: string;
+	subjectId: string;
+	subjectName: string;
+	filledResults: number;
+	excusedResults: number;
+	totalResults: number;
+};
+
+export type TeacherAssessmentAnalyticsCard = {
+	id: string;
+	title: string;
+	assessmentDate: string;
+	status: TeacherAssessmentStatus;
+	className: string;
+	subjectName: string;
+	coveragePercent: number;
+	averagePercent: number | null;
+	riskStudentsCount: number;
+	belowTargetCount: number;
+	dispersionPercent: number | null;
+	consistencyBand: TeacherAssessmentConsistencyBand;
+	tone: TeacherAssessmentTone;
+};
+
+export type TeacherAssessmentsMetricTone = 'neutral' | 'attention' | 'critical' | 'positive';
+
+export type TeacherAssessmentsSummaryMetric = {
+	label: string;
+	value: string;
+	tone: TeacherAssessmentsMetricTone;
+};
+
+export type TeacherAssessmentStatusBadgeTone =
+	| 'draft'
+	| 'ready'
+	| 'published'
+	| 'attention'
+	| 'critical';
+
+export type TeacherAssessmentActionItem = {
+	id: string;
+	title: string;
+	className: string;
+	subjectName: string;
+	statusLabel: string;
+	statusTone: TeacherAssessmentStatusBadgeTone;
+	coverageLabel: string;
+	averageLabel: string;
+	dateLabel: string;
+	nextStepText: string;
+	actionHref: string;
+	actionLabel: string;
+};
+
+export type TeacherAssessmentTableRow = {
+	id: string;
+	title: string;
+	classId: string;
+	className: string;
+	subjectId: string;
+	subjectName: string;
+	status: TeacherAssessmentStatus;
+	statusLabel: string;
+	statusTone: TeacherAssessmentStatusBadgeTone;
+	assessmentDate: string;
+	assessmentDateLabel: string;
+	coveragePercent: number;
+	coverageLabel: string;
+	averagePercent: number | null;
+	averageLabel: string;
+	insightLabel: string;
+	pendingResultsCount: number;
+	primaryActionHref: string;
+	primaryActionLabel: string;
+	priorityRank: number;
+};
+
+export type TeacherAssessmentsPageData = {
+	schema: TeacherSchemaState;
+	classes: TeacherClassOption[];
+	subjects: TeacherSubjectOption[];
+	summaryMetrics: TeacherAssessmentsSummaryMetric[];
+	actionItems: TeacherAssessmentActionItem[];
+	rows: TeacherAssessmentTableRow[];
+};
+
+export type TeacherSubjectStatusTone = 'healthy' | 'attention' | 'critical' | 'pending';
+export type TeacherSubjectsMetricTone = 'neutral' | 'attention' | 'critical' | 'positive';
+
+export type TeacherSubjectsSummaryMetric = {
+	label: string;
+	value: string;
+	tone: TeacherSubjectsMetricTone;
+};
+
+export type TeacherSubjectActionItem = {
+	id: string;
+	name: string;
+	code: string | null;
+	statusLabel: string;
+	statusTone: TeacherSubjectStatusTone;
+	classNames: string[];
+	linkedClassesLabel: string;
+	assessmentsLabel: string;
+	coverageLabel: string;
+	averageLabel: string;
+	nextStepText: string;
+	primaryActionHref: string;
+	primaryActionLabel: string;
+	secondaryActionHref: string | null;
+	secondaryActionLabel: string | null;
+};
+
+export type TeacherSubjectCatalogItem = {
+	id: string;
+	name: string;
+	code: string | null;
+	classIds: string[];
+	classNames: string[];
+	statusLabel: string;
+	statusTone: TeacherSubjectStatusTone;
+	linkedClassesCount: number;
+	assessmentsCount: number;
+	publishedAssessmentsCount: number;
+	draftAssessmentsCount: number;
+	coveragePercent: number | null;
+	coverageLabel: string;
+	averagePercent: number | null;
+	averageLabel: string;
+	insightLabel: string;
+	nextStepLabel: string;
+	primaryActionHref: string;
+	primaryActionLabel: string;
+	secondaryActionHref: string | null;
+	secondaryActionLabel: string | null;
+	priorityRank: number;
+};
+
+export type TeacherSubjectsPageData = {
+	schema: TeacherSchemaState;
+	classes: TeacherClassOption[];
+	subjectOptions: TeacherSubjectOption[];
+	summaryMetrics: TeacherSubjectsSummaryMetric[];
+	actionItems: TeacherSubjectActionItem[];
+	catalog: TeacherSubjectCatalogItem[];
 };
