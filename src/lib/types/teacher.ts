@@ -141,6 +141,87 @@ export type TeacherDashboardSummary = {
 	message: string;
 };
 
+export type TeacherDashboardRiskTone = 'critical' | 'attention' | 'neutral';
+export type TeacherDashboardTrendTone = 'positive' | 'neutral' | 'negative';
+
+export type TeacherDashboardActionNow = {
+	draftClasses: number;
+	belowReferenceSubjects: number;
+	fallingStudents: number;
+	classesWithoutSubject: number;
+	nextStepTitle: string;
+	nextStepText: string;
+	nextStepHref: string;
+};
+
+export type TeacherDashboardPerformanceSubjectItem = {
+	subjectName: string;
+	scoreLabel: string;
+	helperText: string;
+	href: string;
+};
+
+export type TeacherDashboardPerformanceStudentItem = {
+	studentName: string;
+	publishedAverageLabel: string;
+	riskLabel: string;
+	riskTone: TeacherDashboardRiskTone;
+	helperText: string;
+	href: string;
+};
+
+export type TeacherDashboardPerformanceGapItem = {
+	studentName: string;
+	gapLabel: string;
+	riskLabel: string;
+	riskTone: TeacherDashboardRiskTone;
+	helperText: string;
+	subjects: string[];
+	href: string;
+};
+
+export type TeacherDashboardPerformanceChanges = {
+	belowReferenceSubjects: TeacherDashboardPerformanceSubjectItem[];
+	belowReferenceSubjectsHref: string;
+	fallingStudents: TeacherDashboardPerformanceStudentItem[];
+	fallingStudentsHref: string;
+	relevantGaps: TeacherDashboardPerformanceGapItem[];
+	relevantGapsHref: string;
+};
+
+export type TeacherDashboardClassSummaryItem = {
+	classId: string;
+	className: string;
+	publishedAverageLabel: string;
+	coverageLabel: string;
+	trendLabel: string;
+	trendTone: TeacherDashboardTrendTone;
+	tags: string[];
+	statusTone: TeacherDashboardRiskTone;
+	openHref: string;
+};
+
+export type TeacherDashboardAnalyticsBucket = {
+	label: string;
+	value: number;
+	heightPercent: number;
+};
+
+export type TeacherDashboardAnalyticsSummary = {
+	rangeLabel: string;
+	buckets: TeacherDashboardAnalyticsBucket[];
+};
+
+export type TeacherDashboardPageData = {
+	teacherName: string;
+	syncLabel: string;
+	actionNow: TeacherDashboardActionNow;
+	performanceChanges: TeacherDashboardPerformanceChanges;
+	classesSummary: TeacherDashboardClassSummaryItem[];
+	analyticsSummary: TeacherDashboardAnalyticsSummary;
+	error: string | null;
+};
+
 export type TeacherRiskStudentCard = {
 	studentId: string;
 	studentName: string;

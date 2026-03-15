@@ -5,71 +5,72 @@
 
 	import ciIcon from '$lib/assets/ci-icon.png';
 	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
+	import TeacherNavItemIcon from '$lib/components/teacher/TeacherNavItemIcon.svelte';
 	import { supabase } from '$lib/services/supabaseClient';
 
+	type NavIcon = 'dashboard' | 'classes' | 'assessments' | 'subjects' | 'legacy';
 	type NavItem = {
 		label: string;
-		path: '/teacher' | '/teacher/import' | '/teacher/assessments' | '/teacher/subjects';
+		href: string;
 		description: string;
-		match: (pathname: string) => boolean;
+		icon: NavIcon;
+		match: (pathname: string, hash: string) => boolean;
 	};
 
 	let { children } = $props();
 
 	let mobileNavOpen = $state(false);
 
+	const teacherDashboardHref = resolve('/teacher');
 	const navItems: NavItem[] = [
 		{
 			label: 'Dashboard',
-			path: '/teacher',
-			description: 'Visao geral e prioridades',
-			match: (pathname) => pathname === '/teacher'
+			href: teacherDashboardHref,
+			description: 'Visao geral do professor',
+			icon: 'dashboard',
+			match: (pathname, hash) => pathname === '/teacher' && hash !== '#teacher-classes-section'
 		},
 		{
-			label: 'Importacao legada',
-			path: '/teacher/import',
-			description: 'Fluxo auxiliar por CSV',
-			match: (pathname) => pathname.startsWith('/teacher/import')
+			label: 'Turmas',
+			href: `${teacherDashboardHref}#teacher-classes-section`,
+			description: 'Cards e operacao por turma',
+			icon: 'classes',
+			match: (pathname, hash) => pathname === '/teacher' && hash === '#teacher-classes-section'
 		},
 		{
 			label: 'Avaliacoes',
-			path: '/teacher/assessments',
-			description: 'Rascunho, publicacao e fechamento',
+			href: resolve('/teacher/assessments'),
+			description: 'Rascunho, revisao e publicacao',
+			icon: 'assessments',
 			match: (pathname) => pathname.startsWith('/teacher/assessments')
 		},
 		{
 			label: 'Materias',
-			path: '/teacher/subjects',
-			description: 'Catalogo e vinculo com turmas',
+			href: resolve('/teacher/subjects'),
+			description: 'Catalogo e vinculos formais',
+			icon: 'subjects',
 			match: (pathname) => pathname.startsWith('/teacher/subjects')
+		},
+		{
+			label: 'Importacao legada',
+			href: resolve('/teacher/import'),
+			description: 'Fluxo auxiliar por CSV',
+			icon: 'legacy',
+			match: (pathname) => pathname.startsWith('/teacher/import')
 		}
 	];
 
 	const pathname = $derived($page.url.pathname);
+	const hash = $derived($page.url.hash);
 	const profile = $derived($page.data.profile as { id: string; display_name: string } | undefined);
 	const teacherName = $derived(profile?.display_name?.trim() || 'Professor');
+	const teacherInitials = $derived.by(() => {
+		const parts = teacherName.split(/\s+/).filter(Boolean).slice(0, 2);
+		return parts.map((part) => part[0]?.toUpperCase() ?? '').join('') || 'PR';
+	});
 
-	const currentTitle = $derived(getCurrentTitle(pathname));
-	const currentSubtitle = $derived(getCurrentSubtitle(pathname));
-
-	function getCurrentTitle(path: string) {
-		if (path.startsWith('/teacher/subjects')) return 'Materias do professor';
-		if (path.startsWith('/teacher/assessments')) return 'Avaliacoes do professor';
-		if (path.startsWith('/teacher/import')) return 'Importacao legada';
-		if (path.startsWith('/teacher/')) return 'Painel do professor';
-		return 'Painel do professor';
-	}
-
-	function getCurrentSubtitle(path: string) {
-		if (path.startsWith('/teacher/subjects')) return 'Materias formais e vinculo por turma';
-		if (path.startsWith('/teacher/assessments')) return 'Avaliacoes, rascunho e publicacao';
-		if (path.startsWith('/teacher/import')) return 'Fluxo auxiliar legado com staging';
-		if (path.startsWith('/teacher/')) return 'Area interna';
-		return 'Area interna';
-	}
-
-	function isActive(item: NavItem, path: string) {
-		return item.match(path);
+	function isActive(item: NavItem, currentPathname: string, currentHash: string) {
+		return item.match(currentPathname, currentHash);
 	}
 
 	function closeMobileNav() {
@@ -94,72 +95,59 @@
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
-	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-		<div
-			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/35 blur-3xl"
-		></div>
-		<div class="absolute -right-24 top-40 h-72 w-72 rounded-full bg-sky-200/35 blur-3xl"></div>
-		<div class="absolute -left-24 top-96 h-72 w-72 rounded-full bg-indigo-200/25 blur-3xl"></div>
-	</div>
-
-	<div class="grid min-h-screen lg:grid-cols-[280px_1fr]">
-		<aside class="hidden border-r border-slate-200 bg-slate-950 text-white lg:flex lg:flex-col">
-			<div class="border-b border-white/10 p-5">
+	<div class="grid min-h-screen lg:grid-cols-[272px_1fr]">
+		<aside class="hidden border-r border-slate-200 bg-white lg:flex lg:flex-col">
+			<div class="border-b border-slate-200 p-6">
 				<a href={resolve('/')} class="flex items-center gap-4">
 					<div
-						class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 shadow-lg shadow-blue-950/20"
+						class="flex h-14 w-14 items-center justify-center rounded-3xl border border-slate-200 bg-slate-50 shadow-sm"
 					>
 						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
 					</div>
 
 					<div class="min-w-0">
-						<p class="text-[11px] font-black uppercase tracking-[0.22em] text-sky-200">
-							Class Insights
-						</p>
-						<p class="mt-1 text-xl font-black tracking-tight text-white">Painel do professor</p>
-						<p class="mt-1 text-sm text-slate-300">{teacherName}</p>
+						<p class="text-xl font-black tracking-tight text-slate-950">Class Insights</p>
+						<p class="mt-1 text-sm font-semibold text-slate-500">Painel do professor</p>
 					</div>
 				</a>
 			</div>
 
-			<nav class="flex-1 p-5">
-				<div class="space-y-3">
-					{#each navItems as item (item.path)}
+			<nav class="flex-1 px-4 py-6">
+				<div class="space-y-2">
+					{#each navItems as item (item.label)}
+						{@const active = isActive(item, pathname, hash)}
 						<a
-							href={resolve(item.path)}
-							class={`block rounded-3xl border px-4 py-4 transition ${
-								isActive(item, pathname)
-									? 'border-sky-300/50 bg-sky-400/20 text-white shadow-sm shadow-sky-950/20 ring-1 ring-sky-300/30'
-									: 'border-transparent bg-white/5 text-slate-200 hover:border-white/10 hover:bg-white/8'
+							href={item.href}
+							aria-current={active ? 'page' : undefined}
+							class={`group flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${
+								active
+									? 'border-slate-200 bg-slate-100 text-slate-950 shadow-sm'
+									: 'border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
 							}`}
 						>
-							<div class="flex items-start justify-between gap-3">
-								<div class="min-w-0">
-									<p class="truncate text-lg font-black tracking-tight">{item.label}</p>
-									<p class="mt-1 text-sm text-slate-300">{item.description}</p>
-								</div>
+							<span
+								class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition ${
+									active
+										? 'bg-slate-900 text-white'
+										: 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
+								}`}
+							>
+								<TeacherNavItemIcon icon={item.icon} />
+							</span>
 
-								{#if isActive(item, pathname)}
-									<span class="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-sky-300"></span>
-								{/if}
+							<div class="min-w-0">
+								<p class="truncate text-base font-bold tracking-tight">{item.label}</p>
+								<p class="mt-1 text-sm text-slate-500">{item.description}</p>
 							</div>
 						</a>
 					{/each}
 				</div>
 			</nav>
 
-			<div class="p-5 pt-0">
-				<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
-					<p class="text-lg font-black tracking-tight text-white">Sessao ativa</p>
-					<p class="mt-3 text-sm leading-7 text-slate-300">
-						Voce esta no ambiente do professor. Use o menu lateral para navegar entre turmas,
-						materias, avaliacoes e importacao legada.
-					</p>
-				</div>
-
+			<div class="mt-auto border-t border-slate-200 p-4">
 				<button
 					type="button"
-					class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-bold text-slate-100 transition hover:border-white/20 hover:bg-white/10"
+					class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
 					onclick={handleLogout}
 				>
 					Sair da conta
@@ -168,12 +156,12 @@
 		</aside>
 
 		<div class="flex min-w-0 flex-col">
-			<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur-xl">
+			<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
 				<div class="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
 					<div class="flex min-w-0 items-center gap-3">
 						<button
 							type="button"
-							class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 lg:hidden"
+							class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
 							onclick={() => (mobileNavOpen = true)}
 							aria-label="Abrir navegacao"
 						>
@@ -188,23 +176,52 @@
 							</svg>
 						</button>
 
-						<div class="min-w-0">
-							<p class="text-xs font-black uppercase tracking-widest text-slate-500">
-								{currentSubtitle}
-							</p>
-							<h1 class="truncate text-2xl font-medium tracking-tight text-slate-800 sm:text-4xl">
-								{currentTitle}
-							</h1>
+						<div class="lg:hidden">
+							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Professor</p>
+							<p class="text-lg font-black tracking-tight text-slate-950">Class Insights</p>
 						</div>
+
+						<nav class="hidden lg:flex lg:flex-wrap lg:items-center lg:gap-2">
+							{#each navItems as item (item.label)}
+								{@const active = isActive(item, pathname, hash)}
+								<a
+									href={item.href}
+									aria-current={active ? 'page' : undefined}
+									class={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
+										active
+											? 'border-slate-200 bg-slate-100 text-slate-950'
+											: 'border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+									}`}
+								>
+									<TeacherNavItemIcon icon={item.icon} class="h-4 w-4" />
+									<span>{item.label}</span>
+								</a>
+							{/each}
+						</nav>
 					</div>
 
-					<div class="hidden sm:flex">
+					<div class="flex items-center gap-3">
 						<div
-							class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-slate-700"
+							class="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex"
 						>
-							<span class="h-3 w-3 rounded-full bg-emerald-500"></span>
-							{teacherName}
+							<span
+								class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-white"
+							>
+								{teacherInitials}
+							</span>
+							<div class="min-w-0">
+								<p class="text-sm font-bold text-slate-950">{teacherName}</p>
+								<p class="text-xs text-slate-500">Sessao ativa</p>
+							</div>
 						</div>
+
+						<button
+							type="button"
+							class="hidden sm:inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+							onclick={handleLogout}
+						>
+							Sair
+						</button>
 					</div>
 				</div>
 			</header>
@@ -224,7 +241,7 @@
 						<div class="flex items-center justify-between border-b border-slate-200 p-5">
 							<a href={resolve('/')} class="flex items-center gap-3" onclick={closeMobileNav}>
 								<div
-									class="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-sm"
+									class="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
 								>
 									<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
 								</div>
@@ -237,7 +254,7 @@
 
 							<button
 								type="button"
-								class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+								class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
 								onclick={closeMobileNav}
 								aria-label="Fechar navegacao"
 							>
@@ -255,18 +272,27 @@
 
 						<nav class="flex-1 p-5">
 							<div class="space-y-3">
-								{#each navItems as item (item.path)}
+								{#each navItems as item (item.label)}
+									{@const active = isActive(item, pathname, hash)}
 									<a
-										href={resolve(item.path)}
-										class={`block rounded-3xl border px-4 py-4 transition ${
-											isActive(item, pathname)
-												? 'border-sky-200 bg-sky-50 text-sky-700'
-												: 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+										href={item.href}
+										class={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${
+											active
+												? 'border-slate-200 bg-slate-100 text-slate-950'
+												: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
 										}`}
 										onclick={closeMobileNav}
 									>
-										<p class="text-lg font-black tracking-tight">{item.label}</p>
-										<p class="mt-1 text-sm text-slate-500">{item.description}</p>
+										<span
+											class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"
+										>
+											<TeacherNavItemIcon icon={item.icon} />
+										</span>
+
+										<div class="min-w-0">
+											<p class="text-base font-bold tracking-tight">{item.label}</p>
+											<p class="mt-1 text-sm text-slate-500">{item.description}</p>
+										</div>
 									</a>
 								{/each}
 							</div>
@@ -282,7 +308,7 @@
 
 							<button
 								type="button"
-								class="mt-4 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+								class="mt-4 inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
 								onclick={handleLogout}
 							>
 								Sair da conta

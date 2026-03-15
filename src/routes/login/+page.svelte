@@ -4,10 +4,19 @@
 	import { page } from '$app/stores';
 
 	import ciIcon from '$lib/assets/ci-icon.png';
+
+	import homeHeroMockup from '$lib/assets/home/home-hero-mockup.png';
+	import stepPublish from '$lib/assets/home/step-publish.png';
+	import loginReadByRole from '$lib/assets/home/login-read-by-role.png';
+	import loginProgressClear from '$lib/assets/home/login-progress-clear.png';
+
+	import personaProfessorMini from '$lib/assets/home/persona-professor-mini.png';
+	import personaCoordenacaoMini from '$lib/assets/home/persona-coordenacao-mini.png';
+	import personaAlunoMini from '$lib/assets/home/persona-aluno-mini.png';
+
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type ProfileRole = 'teacher' | 'student' | 'coord';
-	type Tone = 'sky' | 'emerald' | 'amber';
 
 	type ProfileRow = {
 		id: string;
@@ -23,59 +32,55 @@
 
 	type Benefit = {
 		title: string;
-		text: string;
-		tone: Tone;
+		image: string;
 	};
 
-	type RoleCard = {
+	type RegisterCard = {
 		title: string;
 		label: string;
-		text: string;
-		tone: Tone;
-		items: string[];
+		href: string;
+		image: string;
+		cardClass: string;
 	};
 
 	const PENDING_STUDENT_INVITE_CODE_KEY = 'pendingStudentInviteCode';
 
 	const benefits: Benefit[] = [
 		{
-			title: 'Entre na sua area',
-			text: 'Professor, coordenacao e aluno entram no lugar certo sem desvio nem retrabalho.',
-			tone: 'sky'
+			title: 'Publicação com contexto',
+			image: stepPublish
 		},
 		{
-			title: 'Leitura com contexto',
-			text: 'A mesma base vira leitura operacional, institucional ou de progresso, conforme o perfil.',
-			tone: 'emerald'
+			title: 'Leitura por perfil',
+			image: loginReadByRole
 		},
 		{
-			title: 'Menos retrabalho',
-			text: 'O acesso ja nasce alinhado ao uso real do produto, com historico e acoes mais claras.',
-			tone: 'amber'
+			title: 'Acompanhamento claro',
+			image: loginProgressClear
 		}
 	];
 
-	const roleCards: RoleCard[] = [
-		{
-			title: 'Professor',
-			label: 'Nucleo operacional',
-			text: 'Foco em rotina pedagogica e decisao rapida.',
-			tone: 'sky',
-			items: ['turmas e materias', 'avaliacoes e notas', 'prioridades da turma']
-		},
-		{
-			title: 'Coordenacao',
-			label: 'Nucleo analitico',
-			text: 'Foco em padroes e leitura institucional.',
-			tone: 'emerald',
-			items: ['comparacao entre turmas', 'visao por materia', 'prioridades macro']
-		},
+	const registerCards: RegisterCard[] = [
 		{
 			title: 'Aluno',
-			label: 'Nucleo de valor',
-			text: 'Foco em progresso claro e simples.',
-			tone: 'amber',
-			items: ['historico recente', 'melhor e pior materia', 'evolucao ao longo do tempo']
+			label: 'Progressão e histórico',
+			href: resolve('/register/student'),
+			image: personaAlunoMini,
+			cardClass: 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300 hover:bg-emerald-50'
+		},
+		{
+			title: 'Professor',
+			label: 'Turmas e avaliações',
+			href: resolve('/register/teacher'),
+			image: personaProfessorMini,
+			cardClass: 'border-sky-200 bg-sky-50/60 hover:border-sky-300 hover:bg-sky-50'
+		},
+		{
+			title: 'Coordenação',
+			label: 'Leitura institucional',
+			href: resolve('/register/coord'),
+			image: personaCoordenacaoMini,
+			cardClass: 'border-amber-200 bg-amber-50/60 hover:border-amber-300 hover:bg-amber-50'
 		}
 	];
 
@@ -84,6 +89,7 @@
 	let errorMessage = '';
 	let loading = false;
 	let showPassword = false;
+	let rememberMe = false;
 
 	$: redirectToParam = $page.url.searchParams.get('redirectTo');
 
@@ -147,7 +153,7 @@
 		const fromEmail = user.email?.split('@')[0]?.trim();
 		if (fromEmail) return fromEmail;
 
-		return 'Usuario';
+		return 'Usuário';
 	}
 
 	function extractErrorMessage(error: unknown): string {
@@ -160,25 +166,7 @@
 			}
 		}
 
-		return 'Nao foi possivel concluir a autenticacao.';
-	}
-
-	function toneIconClasses(tone: Tone) {
-		if (tone === 'sky') return 'bg-sky-100 text-sky-700';
-		if (tone === 'emerald') return 'bg-emerald-100 text-emerald-700';
-		return 'bg-amber-100 text-amber-700';
-	}
-
-	function toneCardClasses(tone: Tone) {
-		if (tone === 'sky') return 'border-sky-200 bg-sky-50';
-		if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50';
-		return 'border-amber-200 bg-amber-50';
-	}
-
-	function toneTextClasses(tone: Tone) {
-		if (tone === 'sky') return 'text-sky-700';
-		if (tone === 'emerald') return 'text-emerald-700';
-		return 'text-amber-700';
+		return 'Não foi possível concluir a autenticação.';
 	}
 
 	async function tryCompleteStudentLink(inviteCode: string) {
@@ -237,7 +225,7 @@
 		const role = getRoleFromUserMetadata(user);
 		if (!role) {
 			throw new Error(
-				'Perfil nao encontrado e o role do usuario nao esta disponivel. Verifique a configuracao do cadastro.'
+				'Perfil não encontrado e o role do usuário não está disponível. Verifique a configuração do cadastro.'
 			);
 		}
 
@@ -260,7 +248,7 @@
 
 		const createdProfile = await getExistingProfile(user.id);
 		if (!createdProfile) {
-			throw new Error('Nao foi possivel carregar o perfil apos o upsert.');
+			throw new Error('Não foi possível carregar o perfil após o upsert.');
 		}
 
 		return createdProfile;
@@ -272,12 +260,12 @@
 		const trimmedEmail = email.trim().toLowerCase();
 
 		if (!trimmedEmail) {
-			errorMessage = 'E-mail e obrigatorio.';
+			errorMessage = 'E-mail é obrigatório.';
 			return;
 		}
 
 		if (!password) {
-			errorMessage = 'Senha e obrigatoria.';
+			errorMessage = 'Senha é obrigatória.';
 			return;
 		}
 
@@ -295,7 +283,7 @@
 
 			const user = signInData.user;
 			if (!user) {
-				throw new Error('Nao foi possivel identificar o usuario apos o login.');
+				throw new Error('Não foi possível identificar o usuário após o login.');
 			}
 
 			const profile = await ensureProfileForAuthenticatedUser(user);
@@ -332,178 +320,97 @@
 </script>
 
 <svelte:head>
-	<title>Class Insights - Login</title>
+	<title>Class Insights - Entrar</title>
 	<meta
 		name="description"
-		content="Entre no Class Insights para acessar sua area de professor, coordenacao ou aluno."
+		content="Entre no Class Insights para acessar sua área de professor, coordenação ou aluno."
 	/>
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
 	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
 		<div
-			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"
+			class="absolute left-1/2 -top-32 h-80 w-80 -translate-x-1/2 rounded-full bg-emerald-200/45 blur-3xl"
 		></div>
-		<div class="absolute -right-24 top-48 h-80 w-80 rounded-full bg-sky-200/50 blur-3xl"></div>
-		<div class="absolute -left-24 top-96 h-80 w-80 rounded-full bg-amber-200/40 blur-3xl"></div>
+		<div class="absolute -right-20 top-40 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl"></div>
+		<div class="absolute -left-20 bottom-10 h-72 w-72 rounded-full bg-amber-200/30 blur-3xl"></div>
 	</div>
 
 	<div class="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 lg:px-8">
 		<div
-			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.08fr_0.92fr]"
+			class="grid w-full overflow-hidden rounded-4xl border border-slate-200 bg-white/80 shadow-[0_24px_80px_rgba(15,23,42,0.08)] backdrop-blur lg:grid-cols-[1.05fr_0.95fr]"
 		>
 			<section
-				class="order-2 flex flex-col border-t border-slate-200 bg-linear-to-br from-emerald-50 via-white to-sky-50 p-6 text-slate-900 lg:order-1 lg:border-t-0 lg:border-r lg:border-r-slate-200 lg:p-10"
+				class="order-2 border-t border-slate-200 bg-linear-to-br from-white via-slate-50 to-sky-50/70 p-6 lg:order-1 lg:border-r lg:border-t-0 lg:p-10"
 			>
-				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
-					<div
-						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white shadow-sm"
-					>
-						<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
-					</div>
-
-					<div>
-						<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-							Class Insights
-						</p>
-						<p class="text-2xl font-black tracking-tight text-slate-900">Class Insights</p>
-					</div>
-				</a>
-
-				<div class="mt-10 max-w-xl">
-					<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">Acesso</p>
+				<div class="max-w-2xl">
 					<h1
-						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
+						class="text-4xl font-black leading-[1.02] tracking-tight text-slate-950 sm:text-5xl lg:text-[3.6rem]"
 					>
-						Entre na sua area.
+						Entre no <span class="text-emerald-600">Class Insights</span>
 					</h1>
-					<p class="mt-5 text-base leading-8 text-slate-600">
-						O Class Insights identifica seu perfil e leva voce direto para a experiencia certa:
-						professor, coordenacao ou aluno.
+
+					<p class="mt-5 text-lg leading-8 text-slate-700">
+						Acompanhe a aprendizagem com leitura pedagógica clara.
+					</p>
+
+					<p class="mt-4 max-w-xl text-base leading-8 text-slate-600 sm:text-lg">
+						Professores publicam com clareza. Coordenação acompanha tendências. Alunos sabem onde
+						revisar.
 					</p>
 				</div>
 
-				<div class="mt-8 grid gap-3">
+				<div class="mt-8 flex max-w-2xl flex-wrap gap-3">
 					{#each benefits as benefit (benefit.title)}
 						<div
-							class="flex items-start gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+							class="inline-flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
 						>
-							<div
-								class={`mt-1 flex h-10 w-10 items-center justify-center rounded-xl ${toneIconClasses(benefit.tone)}`}
-							>
-								{#if benefit.tone === 'sky'}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M4 7h16M7 12h10M9 17h6"
-										/>
-									</svg>
-								{:else if benefit.tone === 'emerald'}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											d="M3 12h6l3 8 4-16 3 8h2"
-										/>
-									</svg>
-								{:else}
-									<svg
-										class="h-5 w-5"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m6-6H6" />
-									</svg>
-								{/if}
-							</div>
-
-							<div>
-								<p class="text-sm font-black text-slate-900">{benefit.title}</p>
-								<p class="mt-1 text-sm leading-6 text-slate-600">{benefit.text}</p>
-							</div>
+							<img src={benefit.image} alt={benefit.title} class="h-16 w-16 object-contain" />
+							<span class="text-sm font-semibold text-slate-700 sm:text-base">{benefit.title}</span>
 						</div>
 					{/each}
 				</div>
 
-				<div class="mt-8 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-					<div class="flex items-center justify-between gap-3">
-						<div>
-							<p class="text-[11px] font-black uppercase tracking-widest text-slate-500">
-								Como o produto se organiza
-							</p>
-							<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
-								Um sistema, tres leituras
-							</h2>
-						</div>
-
+				<div class="mt-10">
+					<div
+						class="relative overflow-hidden rounded-4xl border border-slate-200 bg-white/70 p-4 shadow-sm"
+					>
 						<div
-							class="hidden rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600 sm:block"
-						>
-							historico longitudinal
-						</div>
-					</div>
-
-					<div class="mt-5 grid gap-4 md:grid-cols-3">
-						{#each roleCards as card (card.title)}
-							<div class={`rounded-2xl border p-4 ${toneCardClasses(card.tone)}`}>
-								<p
-									class={`text-[11px] font-black uppercase tracking-widest ${toneTextClasses(card.tone)}`}
-								>
-									{card.label}
-								</p>
-
-								<h3 class="mt-2 text-lg font-black text-slate-950">{card.title}</h3>
-								<p class="mt-2 text-sm leading-6 text-slate-700">{card.text}</p>
-
-								<div class="mt-4 space-y-2">
-									{#each card.items as item (`${card.title}-${item}`)}
-										<div
-											class="rounded-xl border border-white/70 bg-white/80 px-3 py-2 text-sm text-slate-800"
-										>
-											{item}
-										</div>
-									{/each}
-								</div>
-							</div>
-						{/each}
+							class="pointer-events-none absolute inset-x-8 bottom-0 h-16 rounded-full bg-sky-100/60 blur-2xl"
+						></div>
+						<img
+							src={homeHeroMockup}
+							alt="Visão do painel do Class Insights"
+							class="relative z-10 w-full object-contain"
+						/>
 					</div>
 				</div>
 			</section>
 
 			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
 				<div class="w-full max-w-md">
-					<div class="mb-8 flex items-center justify-between lg:hidden">
-						<a href={resolve('/')} class="text-sm font-bold text-slate-600 hover:text-slate-900">
+					<div class="mb-6 lg:hidden">
+						<a
+							href={resolve('/')}
+							class="text-sm font-semibold text-slate-600 transition hover:text-slate-900"
+						>
 							Voltar para home
 						</a>
 					</div>
 
-					<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+					<div
+						class="rounded-4xl border border-slate-200 bg-white p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:p-8"
+					>
+						<div class="mb-6 flex justify-center">
+							<a href={resolve('/')} aria-label="Voltar para a home">
+								<img src={ciIcon} alt="Class Insights" class="h-36 w-auto object-contain sm:h-36" />
+							</a>
+						</div>
+
 						<div class="mb-6">
-							<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-								Acesso
-							</p>
-							<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-								Entre na sua area
-							</h2>
-							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Entre com seu e-mail para acessar sua area. O sistema direciona voce automaticamente
-								para professor, coordenacao ou aluno.
+							<h2 class="text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">Entrar</h2>
+							<p class="mt-3 text-base leading-7 text-slate-600">
+								Acesse sua conta para continuar.
 							</p>
 						</div>
 
@@ -511,70 +418,151 @@
 							<div
 								class="mb-5 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
 							>
-								Voce sera redirecionado para a pagina solicitada apos o login.
+								Você será redirecionado para a página solicitada após o login.
 							</div>
 						{/if}
 
-						<form class="space-y-5" onsubmit={handleSubmit}>
+						<form class="space-y-5" on:submit={handleSubmit}>
 							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700"> E-mail </label>
+								<label for="email" class="block text-sm font-semibold text-slate-700">E-mail</label>
 
-								<input
-									id="email"
-									name="email"
-									type="email"
-									bind:value={email}
-									placeholder="voce@email.com"
-									autocomplete="email"
-									autocapitalize="off"
-									autocorrect="off"
-									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-									disabled={loading}
-								/>
+								<div class="relative">
+									<div
+										class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16v12H4z" />
+											<path stroke-linecap="round" stroke-linejoin="round" d="m4 8 8 6 8-6" />
+										</svg>
+									</div>
+
+									<input
+										id="email"
+										name="email"
+										type="email"
+										bind:value={email}
+										placeholder="voce@email.com"
+										autocomplete="email"
+										autocapitalize="off"
+										autocorrect="off"
+										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+										disabled={loading}
+									/>
+								</div>
 							</div>
 
 							<div class="space-y-2">
-								<div class="flex items-center justify-between gap-3">
-									<label for="password" class="block text-sm font-bold text-slate-700">
-										Senha
-									</label>
-
-									<a
-										href={resolve('/forgot-password')}
-										class="text-sm font-bold text-sky-700 hover:text-sky-800 hover:underline"
-									>
-										Esqueceu a senha?
-									</a>
-								</div>
+								<label for="password" class="block text-sm font-semibold text-slate-700"
+									>Senha</label
+								>
 
 								<div class="relative">
+									<div
+										class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+									>
+										<svg
+											class="h-5 w-5"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+										>
+											<rect x="5" y="11" width="14" height="9" rx="2" />
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M8 11V8a4 4 0 1 1 8 0v3"
+											/>
+										</svg>
+									</div>
+
 									<input
 										id="password"
 										name="password"
 										type={showPassword ? 'text' : 'password'}
 										bind:value={password}
-										placeholder="........"
+										placeholder="Digite sua senha"
 										autocomplete="current-password"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-14 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
 										disabled={loading}
 									/>
 
 									<button
 										type="button"
-										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
+										class="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
 										aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-										onclick={() => (showPassword = !showPassword)}
+										on:click={() => (showPassword = !showPassword)}
 										disabled={loading}
 									>
-										{showPassword ? 'Ocultar' : 'Mostrar'}
+										{#if showPassword}
+											<svg
+												class="h-5 w-5"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+											>
+												<path stroke-linecap="round" stroke-linejoin="round" d="M3 3l18 18" />
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M10.58 10.58a2 2 0 0 0 2.83 2.83"
+												/>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M9.88 5.09A10.94 10.94 0 0 1 12 5c5 0 9.27 3.11 11 7-0.55 1.23-1.35 2.35-2.33 3.31M6.61 6.61C4.62 7.86 3.15 9.73 2 12c0.92 2.04 2.46 3.76 4.39 4.99A10.78 10.78 0 0 0 12 19c1.74 0 3.39-0.39 4.86-1.08"
+												/>
+											</svg>
+										{:else}
+											<svg
+												class="h-5 w-5"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"
+												/>
+												<circle cx="12" cy="12" r="3" />
+											</svg>
+										{/if}
 									</button>
 								</div>
+							</div>
+
+							<div class="flex items-center justify-between gap-4">
+								<label class="inline-flex items-center gap-3 text-sm text-slate-600">
+									<input
+										type="checkbox"
+										bind:checked={rememberMe}
+										class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-sky-200"
+										disabled={loading}
+									/>
+									<span>Lembrar de mim</span>
+								</label>
+
+								<a
+									href={resolve('/forgot-password')}
+									class="text-sm font-semibold text-sky-700 transition hover:text-sky-800 hover:underline"
+								>
+									Esqueci minha senha
+								</a>
 							</div>
 
 							<button
 								type="submit"
 								disabled={loading}
-								class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+								class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
 							>
 								{#if loading}
 									<span class="flex items-center gap-3">
@@ -610,46 +598,38 @@
 							</div>
 						{/if}
 
-						<div class="my-6 flex items-center gap-3 text-sm font-bold text-slate-400">
+						<div class="my-7 flex items-center gap-3 text-sm text-slate-400">
 							<div class="h-px flex-1 bg-slate-200"></div>
-							<span>Primeiro acesso</span>
+							<span class="font-semibold text-slate-500">
+								Novo por aqui? <span class="text-slate-900">Cadastre-se como:</span>
+							</span>
 							<div class="h-px flex-1 bg-slate-200"></div>
 						</div>
 
-						<div class="space-y-3">
-							<a
-								href={resolve('/register/teacher')}
-								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
-							>
-								<p class="text-sm font-black text-slate-900">Primeiro acesso de professor</p>
-								<p class="mt-1 text-sm leading-6 text-slate-600">
-									Criar acesso para turmas, avaliacoes e acompanhamento pedagogico.
-								</p>
-							</a>
-
-							<a
-								href={resolve('/register/student')}
-								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
-							>
-								<p class="text-sm font-black text-slate-900">Primeiro acesso de aluno</p>
-								<p class="mt-1 text-sm leading-6 text-slate-600">
-									Entrar com ou sem vinculo inicial e acompanhar progresso e historico.
-								</p>
-							</a>
-
-							<a
-								href={resolve('/register/coord')}
-								class="block rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-slate-300 hover:bg-white"
-							>
-								<p class="text-sm font-black text-slate-900">Primeiro acesso de coordenacao</p>
-								<p class="mt-1 text-sm leading-6 text-slate-600">
-									Criar acesso institucional para comparar turmas, materias e tendencias.
-								</p>
-							</a>
+						<div class="grid gap-3 sm:grid-cols-3">
+							{#each registerCards as card (card.title)}
+								<a
+									href={card.href}
+									class={`group rounded-2xl border p-4 text-center transition hover:-translate-y-0.5 hover:shadow-sm ${card.cardClass}`}
+								>
+									<img
+										src={card.image}
+										alt={card.title}
+										class="mx-auto h-16 w-16 object-contain"
+										loading="lazy"
+									/>
+									<p class="mt-3 text-lg font-bold tracking-tight text-slate-900">{card.title}</p>
+									<p class="mt-1 text-xs leading-5 text-slate-600">{card.label}</p>
+								</a>
+							{/each}
 						</div>
 
 						<p class="mt-6 text-center text-sm leading-6 text-slate-500">
-							Seu perfil define automaticamente a area de destino apos o login.
+							Seu perfil define automaticamente a área de destino após o login.
+						</p>
+
+						<p class="mt-3 text-center text-sm leading-6 text-slate-500">
+							Seus dados são usados apenas para acesso e acompanhamento pedagógico.
 						</p>
 					</div>
 				</div>
