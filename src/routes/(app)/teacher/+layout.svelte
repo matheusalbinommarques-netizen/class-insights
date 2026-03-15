@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
+	import type { Snippet } from 'svelte';
 
 	import ciIcon from '$lib/assets/ci-icon.png';
 	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
@@ -9,68 +10,65 @@
 	import { supabase } from '$lib/services/supabaseClient';
 
 	type NavIcon = 'dashboard' | 'classes' | 'assessments' | 'subjects' | 'legacy';
+
 	type NavItem = {
 		label: string;
 		href: string;
-		description: string;
 		icon: NavIcon;
 		match: (pathname: string, hash: string) => boolean;
 	};
 
-	let { children } = $props();
+	type Props = {
+		children: Snippet;
+		data: {
+			profile?: {
+				id?: string;
+				display_name?: string | null;
+			};
+		};
+	};
+
+	let { children, data }: Props = $props();
 
 	let mobileNavOpen = $state(false);
 
 	const teacherDashboardHref = resolve('/teacher');
+
 	const navItems: NavItem[] = [
 		{
 			label: 'Dashboard',
 			href: teacherDashboardHref,
-			description: 'Visao geral do professor',
 			icon: 'dashboard',
 			match: (pathname, hash) => pathname === '/teacher' && hash !== '#teacher-classes-section'
 		},
 		{
 			label: 'Turmas',
 			href: `${teacherDashboardHref}#teacher-classes-section`,
-			description: 'Cards e operacao por turma',
 			icon: 'classes',
 			match: (pathname, hash) => pathname === '/teacher' && hash === '#teacher-classes-section'
 		},
 		{
-			label: 'Avaliacoes',
+			label: 'Avaliações',
 			href: resolve('/teacher/assessments'),
-			description: 'Rascunho, revisao e publicacao',
 			icon: 'assessments',
 			match: (pathname) => pathname.startsWith('/teacher/assessments')
 		},
 		{
-			label: 'Materias',
+			label: 'Matérias',
 			href: resolve('/teacher/subjects'),
-			description: 'Catalogo e vinculos formais',
 			icon: 'subjects',
 			match: (pathname) => pathname.startsWith('/teacher/subjects')
 		},
 		{
-			label: 'Importacao legada',
+			label: 'Importação legada',
 			href: resolve('/teacher/import'),
-			description: 'Fluxo auxiliar por CSV',
 			icon: 'legacy',
 			match: (pathname) => pathname.startsWith('/teacher/import')
 		}
 	];
 
-	const pathname = $derived($page.url.pathname);
-	const hash = $derived($page.url.hash);
-	const profile = $derived($page.data.profile as { id: string; display_name: string } | undefined);
-	const teacherName = $derived(profile?.display_name?.trim() || 'Professor');
-	const teacherInitials = $derived.by(() => {
-		const parts = teacherName.split(/\s+/).filter(Boolean).slice(0, 2);
-		return parts.map((part) => part[0]?.toUpperCase() ?? '').join('') || 'PR';
-	});
-
-	function isActive(item: NavItem, currentPathname: string, currentHash: string) {
-		return item.match(currentPathname, currentHash);
+	function isActive(item: NavItem, pathname: string, hash: string) {
+		return item.match(pathname, hash);
 	}
 
 	function closeMobileNav() {
@@ -80,247 +78,199 @@
 	async function handleLogout() {
 		await supabase.auth.signOut();
 		await invalidateAll();
-		await goto(resolve('/login'));
+		await goto('/login');
 	}
+
+	function initialsFromName(name: string | null | undefined) {
+		const safe = name?.trim();
+		if (!safe) return 'P';
+
+		const parts = safe.split(/\s+/).filter(Boolean);
+		if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+
+		return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+	}
+
+	const displayName = data.profile?.display_name?.trim() || 'Professor';
+	const avatarInitials = initialsFromName(displayName);
+	const pathname = $derived($page.url.pathname);
+	const hash = $derived($page.url.hash);
 </script>
 
 <DisplayNamePrompt
-	profileId={$page.data.profile.id}
-	displayName={$page.data.profile.display_name}
+	profileId={data.profile?.id}
+	displayName={data.profile?.display_name}
 	tone="teacher"
 />
 
 <svelte:head>
-	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Class Insights - Professor</title>
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
-	<div class="grid min-h-screen lg:grid-cols-[272px_1fr]">
-		<aside class="hidden border-r border-slate-200 bg-white lg:flex lg:flex-col">
-			<div class="border-b border-slate-200 p-6">
-				<a href={resolve('/')} class="flex items-center gap-4">
-					<div
-						class="flex h-14 w-14 items-center justify-center rounded-3xl border border-slate-200 bg-slate-50 shadow-sm"
+	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+		<div
+			class="absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-sky-200/20 blur-3xl"
+		></div>
+	</div>
+
+	{#if mobileNavOpen}
+		<div class="fixed inset-0 z-50 bg-slate-950/30 lg:hidden" on:click={closeMobileNav}></div>
+
+		<div
+			class="fixed left-4 right-4 top-[92px] z-[60] rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl lg:hidden"
+		>
+			<nav class="space-y-2">
+				{#each navItems as item (item.label)}
+					{@const active = isActive(item, pathname, hash)}
+					<a
+						href={item.href}
+						aria-current={active ? 'page' : undefined}
+						class={`flex items-center gap-3 rounded-2xl px-4 py-3 text-[1rem] font-semibold transition ${
+							active
+								? 'bg-slate-100 text-slate-950'
+								: 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+						}`}
+						on:click={closeMobileNav}
 					>
-						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
-					</div>
-
-					<div class="min-w-0">
-						<p class="text-xl font-black tracking-tight text-slate-950">Class Insights</p>
-						<p class="mt-1 text-sm font-semibold text-slate-500">Painel do professor</p>
-					</div>
-				</a>
-			</div>
-
-			<nav class="flex-1 px-4 py-6">
-				<div class="space-y-2">
-					{#each navItems as item (item.label)}
-						{@const active = isActive(item, pathname, hash)}
-						<a
-							href={item.href}
-							aria-current={active ? 'page' : undefined}
-							class={`group flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${
-								active
-									? 'border-slate-200 bg-slate-100 text-slate-950 shadow-sm'
-									: 'border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
+						<span
+							class={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+								active ? 'bg-slate-900 text-white' : 'text-slate-500'
 							}`}
 						>
-							<span
-								class={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition ${
-									active
-										? 'bg-slate-900 text-white'
-										: 'bg-slate-100 text-slate-500 group-hover:bg-slate-200'
-								}`}
-							>
-								<TeacherNavItemIcon icon={item.icon} />
-							</span>
-
-							<div class="min-w-0">
-								<p class="truncate text-base font-bold tracking-tight">{item.label}</p>
-								<p class="mt-1 text-sm text-slate-500">{item.description}</p>
-							</div>
-						</a>
-					{/each}
-				</div>
+							<TeacherNavItemIcon icon={item.icon} />
+						</span>
+						<span class="truncate">{item.label}</span>
+					</a>
+				{/each}
 			</nav>
 
-			<div class="mt-auto border-t border-slate-200 p-4">
+			<div class="mt-4 border-t border-slate-200 pt-4">
 				<button
 					type="button"
-					class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-					onclick={handleLogout}
+					class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+					on:click={handleLogout}
 				>
 					Sair da conta
 				</button>
 			</div>
-		</aside>
+		</div>
+	{/if}
 
-		<div class="flex min-w-0 flex-col">
-			<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-				<div class="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-					<div class="flex min-w-0 items-center gap-3">
-						<button
-							type="button"
-							class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
-							onclick={() => (mobileNavOpen = true)}
-							aria-label="Abrir navegacao"
-						>
-							<svg
-								class="h-5 w-5"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke="currentColor"
-								stroke-width="2"
-							>
-								<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
-							</svg>
-						</button>
-
-						<div class="lg:hidden">
-							<p class="text-xs font-black uppercase tracking-widest text-slate-500">Professor</p>
-							<p class="text-lg font-black tracking-tight text-slate-950">Class Insights</p>
-						</div>
-
-						<nav class="hidden lg:flex lg:flex-wrap lg:items-center lg:gap-2">
-							{#each navItems as item (item.label)}
-								{@const active = isActive(item, pathname, hash)}
-								<a
-									href={item.href}
-									aria-current={active ? 'page' : undefined}
-									class={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition ${
-										active
-											? 'border-slate-200 bg-slate-100 text-slate-950'
-											: 'border-transparent bg-white text-slate-600 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900'
-									}`}
-								>
-									<TeacherNavItemIcon icon={item.icon} class="h-4 w-4" />
-									<span>{item.label}</span>
-								</a>
-							{/each}
-						</nav>
-					</div>
-
-					<div class="flex items-center gap-3">
-						<div
-							class="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-sm sm:flex"
-						>
-							<span
-								class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-white"
-							>
-								{teacherInitials}
-							</span>
-							<div class="min-w-0">
-								<p class="text-sm font-bold text-slate-950">{teacherName}</p>
-								<p class="text-xs text-slate-500">Sessao ativa</p>
-							</div>
-						</div>
-
-						<button
-							type="button"
-							class="hidden sm:inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-							onclick={handleLogout}
-						>
-							Sair
-						</button>
-					</div>
-				</div>
-			</header>
-
-			{#if mobileNavOpen}
-				<div class="fixed inset-0 z-40 lg:hidden">
+	<div class="flex min-h-screen flex-col">
+		<header class="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
+			<div class="flex min-h-[92px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+				<div class="flex min-w-0 items-center gap-3">
 					<button
 						type="button"
-						class="absolute inset-0 bg-slate-950/35 backdrop-blur-sm"
-						onclick={closeMobileNav}
-						aria-label="Fechar navegacao"
-					></button>
-
-					<div
-						class="absolute left-0 top-0 flex h-full w-[320px] max-w-[88vw] flex-col border-r border-slate-200 bg-white shadow-2xl"
+						class="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50 lg:hidden"
+						on:click={() => (mobileNavOpen = !mobileNavOpen)}
+						aria-label="Abrir navegação"
 					>
-						<div class="flex items-center justify-between border-b border-slate-200 p-5">
-							<a href={resolve('/')} class="flex items-center gap-3" onclick={closeMobileNav}>
-								<div
-									class="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 shadow-sm"
-								>
-									<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
-								</div>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h16" />
+						</svg>
+					</button>
 
-								<div>
-									<p class="text-lg font-black tracking-tight text-slate-950">Class Insights</p>
-									<p class="text-sm text-slate-500">Painel do professor</p>
-								</div>
-							</a>
+					<a href={teacherDashboardHref} class="flex shrink-0 items-center gap-3">
+						<img src={ciIcon} alt="Class Insights" class="h-10 w-auto object-contain" />
+					</a>
 
-							<button
-								type="button"
-								class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:bg-slate-50"
-								onclick={closeMobileNav}
-								aria-label="Fechar navegacao"
+					<nav class="ml-3 hidden min-w-0 items-center gap-7 lg:flex">
+						{#each navItems as item (item.label)}
+							{@const active = isActive(item, pathname, hash)}
+							<a
+								href={item.href}
+								aria-current={active ? 'page' : undefined}
+								class={`inline-flex items-center gap-2 text-[1rem] font-semibold transition ${
+									active ? 'text-slate-950' : 'text-slate-600 hover:text-slate-950'
+								}`}
 							>
-								<svg
-									class="h-5 w-5"
-									fill="none"
-									viewBox="0 0 24 24"
-									stroke="currentColor"
-									stroke-width="2"
+								<span
+									class={`flex h-5 w-5 items-center justify-center ${
+										active ? 'text-slate-900' : 'text-slate-500'
+									}`}
 								>
-									<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-								</svg>
-							</button>
+									<TeacherNavItemIcon icon={item.icon} />
+								</span>
+								<span>{item.label}</span>
+							</a>
+						{/each}
+					</nav>
+				</div>
+
+				<div class="ml-auto flex items-center gap-3">
+					<div
+						class="hidden items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 shadow-sm sm:flex"
+					>
+						<div
+							class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white"
+						>
+							{avatarInitials}
 						</div>
 
-						<nav class="flex-1 p-5">
-							<div class="space-y-3">
-								{#each navItems as item (item.label)}
-									{@const active = isActive(item, pathname, hash)}
-									<a
-										href={item.href}
-										class={`flex items-center gap-3 rounded-2xl border px-4 py-3 transition ${
-											active
-												? 'border-slate-200 bg-slate-100 text-slate-950'
-												: 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-										}`}
-										onclick={closeMobileNav}
-									>
-										<span
-											class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"
-										>
-											<TeacherNavItemIcon icon={item.icon} />
-										</span>
-
-										<div class="min-w-0">
-											<p class="text-base font-bold tracking-tight">{item.label}</p>
-											<p class="mt-1 text-sm text-slate-500">{item.description}</p>
-										</div>
-									</a>
-								{/each}
-							</div>
-						</nav>
-
-						<div class="border-t border-slate-200 p-5">
-							<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-								<p class="text-base font-black text-slate-950">{teacherName}</p>
-								<p class="mt-2 text-sm leading-7 text-slate-600">
-									Voce pode sair da conta a qualquer momento por aqui.
-								</p>
-							</div>
-
-							<button
-								type="button"
-								class="mt-4 inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
-								onclick={handleLogout}
-							>
-								Sair da conta
-							</button>
+						<div class="leading-tight">
+							<p class="text-[1rem] font-bold text-slate-950">{displayName}</p>
+							<p class="mt-1 text-xs font-medium text-slate-500">Sessão ativa</p>
 						</div>
 					</div>
-				</div>
-			{/if}
 
-			<main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-				{@render children()}
-			</main>
-		</div>
+					<button
+						type="button"
+						class="hidden text-[1rem] font-medium text-slate-700 transition hover:text-slate-950 sm:inline-flex"
+						on:click={handleLogout}
+					>
+						Sair
+					</button>
+
+					<button
+						type="button"
+						class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+						aria-label="Notificações"
+					>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5"
+							/>
+							<path stroke-linecap="round" stroke-linejoin="round" d="M10 17a2 2 0 0 0 4 0" />
+						</svg>
+					</button>
+
+					<button
+						type="button"
+						class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+						aria-label="Mais opções"
+					>
+						<svg
+							class="h-5 w-5"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
+						</svg>
+					</button>
+				</div>
+			</div>
+		</header>
+
+		<main class="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+			{@render children()}
+		</main>
 	</div>
 </div>

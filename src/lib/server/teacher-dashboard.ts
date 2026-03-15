@@ -97,6 +97,28 @@ type ActionStep = {
 	priority: number;
 };
 
+type FallingStudentInternal = {
+	studentName: string;
+	publishedAverageLabel: string;
+	riskLabel: string;
+	riskTone: TeacherDashboardRiskTone;
+	helperText: string;
+	href: string;
+	sortTrend: number;
+	sortAverage: number;
+};
+
+type RelevantGapInternal = {
+	studentName: string;
+	gapLabel: string;
+	riskLabel: string;
+	riskTone: TeacherDashboardRiskTone;
+	helperText: string;
+	subjects: string[];
+	href: string;
+	sortGap: number;
+};
+
 const GAP_HIGH_RISK_DELTA = 10;
 const TREND_NEUTRAL_DELTA = 1;
 
@@ -215,6 +237,7 @@ function buildAnalyticsBuckets(values: number[]) {
 	}
 
 	const maxValue = Math.max(...buckets.map((bucket) => bucket.value), 0);
+
 	return buckets.map((bucket) => ({
 		...bucket,
 		heightPercent: maxValue === 0 ? 0 : Math.max(14, Math.round((bucket.value / maxValue) * 100))
@@ -225,6 +248,7 @@ export async function buildTeacherDashboardPageData(
 	locals: App.Locals
 ): Promise<TeacherDashboardPageData> {
 	const userId = getAuthenticatedUserId(locals);
+
 	if (!userId) {
 		return buildEmptyDashboard(
 			'Professor',
@@ -257,6 +281,7 @@ export async function buildTeacherDashboardPageData(
 
 	const classRows = (classesData ?? []) as ClassRow[];
 	const classIds = classRows.map((item) => item.id);
+
 	if (classIds.length === 0) {
 		return {
 			...buildEmptyDashboard(
@@ -298,6 +323,7 @@ export async function buildTeacherDashboardPageData(
 
 	const firstDataError =
 		studentsRes.error ?? classSubjectsRes.error ?? assessmentsRes.error ?? null;
+
 	if (firstDataError) {
 		return buildEmptyDashboard(
 			displayName,
@@ -323,10 +349,12 @@ export async function buildTeacherDashboardPageData(
 				subject_name: string;
 			} => item !== null
 		);
+
 	const assessments = (assessmentsRes.data ?? []) as AssessmentRow[];
 
 	const assessmentIds = assessments.map((assessment) => assessment.id);
 	let assessmentResults: AssessmentResultSummaryRow[] = [];
+
 	if (assessmentIds.length > 0) {
 		const { data, error } = await locals.supabase
 			.from('assessment_results')
@@ -366,10 +394,12 @@ export async function buildTeacherDashboardPageData(
 			...(subjectsByClass.get(classSubject.class_id) ?? []),
 			{ subjectId: classSubject.subject_id, subjectName: classSubject.subject_name }
 		]);
+
 		subjectsCountByClass.set(
 			classSubject.class_id,
 			(subjectsCountByClass.get(classSubject.class_id) ?? 0) + 1
 		);
+
 		subjectNameByClassAndId.set(
 			`${classSubject.class_id}:${classSubject.subject_id}`,
 			classSubject.subject_name
@@ -400,37 +430,47 @@ export async function buildTeacherDashboardPageData(
 	const dashboardClasses = classRows.map<DashboardClassStats>((classRow) => {
 		const classStudents = studentsByClass.get(classRow.id) ?? [];
 		const classAssessments = assessmentsByClass.get(classRow.id) ?? [];
-		const publishedAssessments = classAssessments.filter((item) => item.status === 'published');
+		const classPublishedAssessments = classAssessments.filter(
+			(item) => item.status === 'published'
+		);
 		const draftAssessments = classAssessments.filter((item) => item.status === 'draft');
+
 		const readyToPublishCount = draftAssessments.filter(
 			(item) => (filledAssessmentResultsById.get(item.id) ?? 0) > 0
 		).length;
+
 		const totalExpectedResults = classStudents.length * classAssessments.length;
 		const totalExpectedDraftResults = classStudents.length * draftAssessments.length;
-		const totalExpectedPublishedResults = classStudents.length * publishedAssessments.length;
+		const totalExpectedPublishedResults = classStudents.length * classPublishedAssessments.length;
+
 		const filledResultsCount = classAssessments.reduce(
 			(sum, item) => sum + (filledAssessmentResultsById.get(item.id) ?? 0),
 			0
 		);
+
 		const filledDraftResultsCount = draftAssessments.reduce(
 			(sum, item) => sum + (filledAssessmentResultsById.get(item.id) ?? 0),
 			0
 		);
-		const filledPublishedResultsCount = publishedAssessments.reduce(
+
+		const filledPublishedResultsCount = classPublishedAssessments.reduce(
 			(sum, item) => sum + (filledAssessmentResultsById.get(item.id) ?? 0),
 			0
 		);
-		const publishedScores = publishedAssessments.flatMap((assessment) =>
+
+		const publishedScores = classPublishedAssessments.flatMap((assessment) =>
 			(resultsByAssessmentId.get(assessment.id) ?? [])
 				.map((result) => normalizeResultPercent(result))
 				.filter((value): value is number => typeof value === 'number')
 		);
+
 		const publishedStudentScores = new Map<string, number[]>();
 
-		for (const assessment of publishedAssessments) {
+		for (const assessment of classPublishedAssessments) {
 			for (const result of resultsByAssessmentId.get(assessment.id) ?? []) {
 				const normalized = normalizeResultPercent(result);
 				if (normalized === null) continue;
+
 				publishedStudentScores.set(result.student_id, [
 					...(publishedStudentScores.get(result.student_id) ?? []),
 					normalized
@@ -438,12 +478,13 @@ export async function buildTeacherDashboardPageData(
 			}
 		}
 
-		const trendSeries = [...publishedAssessments]
+		const trendSeries = [...classPublishedAssessments]
 			.sort((a, b) => a.assessment_date.localeCompare(b.assessment_date))
 			.map((assessment) => {
 				const scores = (resultsByAssessmentId.get(assessment.id) ?? [])
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number');
+
 				return average(scores);
 			})
 			.filter((value): value is number => typeof value === 'number');
@@ -465,7 +506,7 @@ export async function buildTeacherDashboardPageData(
 			studentsCount: classStudents.length,
 			subjectsCount: subjectsCountByClass.get(classRow.id) ?? 0,
 			assessmentsCount: classAssessments.length,
-			publishedAssessmentsCount: publishedAssessments.length,
+			publishedAssessmentsCount: classPublishedAssessments.length,
 			draftAssessmentsCount: draftAssessments.length,
 			readyToPublishCount,
 			pendingResultsCount: Math.max(0, totalExpectedResults - filledResultsCount),
@@ -482,7 +523,7 @@ export async function buildTeacherDashboardPageData(
 				studentsCount: classStudents.length,
 				subjectsCount: subjectsCountByClass.get(classRow.id) ?? 0,
 				assessmentsCount: classAssessments.length,
-				publishedAssessmentsCount: publishedAssessments.length,
+				publishedAssessmentsCount: classPublishedAssessments.length,
 				riskStudentsCount,
 				draftCoveragePercent,
 				totalExpectedDraftResults,
@@ -501,6 +542,7 @@ export async function buildTeacherDashboardPageData(
 				(item) =>
 					item.class_id === classSubject.class_id && item.subject_id === classSubject.subject_id
 			);
+
 			if (subjectAssessments.length === 0) return null;
 
 			const scores = subjectAssessments.flatMap((assessment) =>
@@ -508,6 +550,7 @@ export async function buildTeacherDashboardPageData(
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number')
 			);
+
 			const averagePercent = average(scores);
 			if (averagePercent === null) return null;
 
@@ -517,6 +560,7 @@ export async function buildTeacherDashboardPageData(
 					const assessmentScores = (resultsByAssessmentId.get(assessment.id) ?? [])
 						.map((result) => normalizeResultPercent(result))
 						.filter((value): value is number => typeof value === 'number');
+
 					return average(assessmentScores);
 				})
 				.filter((value): value is number => typeof value === 'number');
@@ -535,7 +579,7 @@ export async function buildTeacherDashboardPageData(
 		.sort((a, b) => a.averagePercent - b.averagePercent);
 
 	const fallingStudents = students
-		.map((student) => {
+		.map<FallingStudentInternal | null>((student) => {
 			const series = publishedAssessments
 				.filter((assessment) => assessment.class_id === student.class_id)
 				.sort((a, b) => a.assessment_date.localeCompare(b.assessment_date))
@@ -543,12 +587,14 @@ export async function buildTeacherDashboardPageData(
 					const result = (resultsByAssessmentId.get(assessment.id) ?? []).find(
 						(item) => item.student_id === student.id
 					);
+
 					return result ? normalizeResultPercent(result) : null;
 				})
 				.filter((value): value is number => typeof value === 'number');
 
 			const trendDelta = buildTrendDelta(series);
 			const averagePercent = average(series);
+
 			if (
 				typeof trendDelta !== 'number' ||
 				averagePercent === null ||
@@ -567,37 +613,41 @@ export async function buildTeacherDashboardPageData(
 				riskTone: (riskLevel === 'high' ? 'critical' : 'attention') as TeacherDashboardRiskTone,
 				helperText: `${classNameById.get(student.class_id) ?? 'Turma'} - queda de ${formatGapLabel(trendDelta)}`,
 				href: `/teacher/students/${student.id}`,
-				_sortTrend: trendDelta,
-				_sortAverage: averagePercent
+				sortTrend: trendDelta,
+				sortAverage: averagePercent
 			};
 		})
-		.filter((item) => item !== null)
-		.sort((a, b) => a._sortTrend - b._sortTrend || a._sortAverage - b._sortAverage)
+		.filter((item): item is FallingStudentInternal => item !== null)
+		.sort((a, b) => a.sortTrend - b.sortTrend || a.sortAverage - b.sortAverage)
 		.map((item) => {
-			const { _sortTrend: sortTrend, _sortAverage: sortAverage, ...rest } = item;
+			const { sortTrend, sortAverage, ...rest } = item;
 			void sortTrend;
 			void sortAverage;
 			return rest;
 		});
 
 	const relevantGaps = students
-		.map((student) => {
+		.map<RelevantGapInternal | null>((student) => {
 			const classPublishedAssessments = publishedAssessments.filter(
 				(assessment) => assessment.class_id === student.class_id
 			);
+
 			const classScores = classPublishedAssessments.flatMap((assessment) =>
 				(resultsByAssessmentId.get(assessment.id) ?? [])
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number')
 			);
+
 			const studentScores = classPublishedAssessments.flatMap((assessment) =>
 				(resultsByAssessmentId.get(assessment.id) ?? [])
 					.filter((result) => result.student_id === student.id)
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number')
 			);
+
 			const classAverage = average(classScores);
 			const studentAverage = average(studentScores);
+
 			if (classAverage === null || studentAverage === null) return null;
 
 			const gapPercent = Number((studentAverage - classAverage).toFixed(1));
@@ -610,19 +660,23 @@ export async function buildTeacherDashboardPageData(
 					const subjectAssessments = classPublishedAssessments.filter(
 						(assessment) => assessment.subject_id === subjectId
 					);
+
 					const subjectClassScores = subjectAssessments.flatMap((assessment) =>
 						(resultsByAssessmentId.get(assessment.id) ?? [])
 							.map((result) => normalizeResultPercent(result))
 							.filter((value): value is number => typeof value === 'number')
 					);
+
 					const subjectStudentScores = subjectAssessments.flatMap((assessment) =>
 						(resultsByAssessmentId.get(assessment.id) ?? [])
 							.filter((result) => result.student_id === student.id)
 							.map((result) => normalizeResultPercent(result))
 							.filter((value): value is number => typeof value === 'number')
 					);
+
 					const subjectClassAverage = average(subjectClassScores);
 					const subjectStudentAverage = average(subjectStudentScores);
+
 					if (subjectClassAverage === null || subjectStudentAverage === null) return null;
 
 					return {
@@ -646,13 +700,13 @@ export async function buildTeacherDashboardPageData(
 				helperText: `Gap de ${formatGapLabel(gapPercent)} em relacao a ${classNameById.get(student.class_id) ?? 'Turma'}.`,
 				subjects: subjectTags,
 				href: `/teacher/${student.class_id}`,
-				_sortGap: gapPercent
+				sortGap: gapPercent
 			};
 		})
-		.filter((item) => item !== null)
-		.sort((a, b) => a._sortGap - b._sortGap)
+		.filter((item): item is RelevantGapInternal => item !== null)
+		.sort((a, b) => a.sortGap - b.sortGap)
 		.map((item) => {
-			const { _sortGap: sortGap, ...rest } = item;
+			const { sortGap, ...rest } = item;
 			void sortGap;
 			return rest;
 		});
@@ -660,6 +714,7 @@ export async function buildTeacherDashboardPageData(
 	const actionSteps = dashboardClasses
 		.flatMap<ActionStep>((classItem) => {
 			const steps: ActionStep[] = [];
+
 			if (classItem.studentsCount === 0) {
 				steps.push({
 					title: 'Proximo passo',
@@ -668,6 +723,7 @@ export async function buildTeacherDashboardPageData(
 					priority: 0
 				});
 			}
+
 			if (classItem.subjectsCount === 0) {
 				steps.push({
 					title: 'Proximo passo',
@@ -676,6 +732,7 @@ export async function buildTeacherDashboardPageData(
 					priority: 0
 				});
 			}
+
 			if (
 				classItem.studentsCount > 0 &&
 				classItem.subjectsCount > 0 &&
@@ -688,6 +745,7 @@ export async function buildTeacherDashboardPageData(
 					priority: 1
 				});
 			}
+
 			if (classItem.readyToPublishCount > 0) {
 				steps.push({
 					title: 'Proximo passo',
@@ -696,6 +754,7 @@ export async function buildTeacherDashboardPageData(
 					priority: 1
 				});
 			}
+
 			if (classItem.pendingResultsCount > 0) {
 				steps.push({
 					title: 'Proximo passo',
@@ -704,6 +763,7 @@ export async function buildTeacherDashboardPageData(
 					priority: classItem.draftCoveragePercent < 60 ? 1 : 2
 				});
 			}
+
 			return steps;
 		})
 		.sort((a, b) => a.priority - b.priority);
@@ -738,6 +798,7 @@ export async function buildTeacherDashboardPageData(
 				const assessmentDate = parseDateValue(
 					assessment.published_at ?? assessment.assessment_date
 				);
+
 				return (
 					assessmentDate !== null &&
 					assessmentDate >= recentStartDate &&
@@ -752,11 +813,13 @@ export async function buildTeacherDashboardPageData(
 			const scores = publishedAssessments.flatMap((assessment) => {
 				if (assessment.class_id !== student.class_id) return [];
 				if (recentAssessmentIds.size > 0 && !recentAssessmentIds.has(assessment.id)) return [];
+
 				return (resultsByAssessmentId.get(assessment.id) ?? [])
 					.filter((result) => result.student_id === student.id)
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number');
 			});
+
 			return average(scores);
 		})
 		.filter((value): value is number => typeof value === 'number');
@@ -765,14 +828,41 @@ export async function buildTeacherDashboardPageData(
 		.map((student) => {
 			const scores = publishedAssessments.flatMap((assessment) => {
 				if (assessment.class_id !== student.class_id) return [];
+
 				return (resultsByAssessmentId.get(assessment.id) ?? [])
 					.filter((result) => result.student_id === student.id)
 					.map((result) => normalizeResultPercent(result))
 					.filter((value): value is number => typeof value === 'number');
 			});
+
 			return average(scores);
 		})
 		.filter((value): value is number => typeof value === 'number');
+
+	const buildClassAnalyticsSummary = (classId: string) => {
+		const classStudents = studentsByClass.get(classId) ?? [];
+		const classPublishedAssessments = publishedAssessments.filter(
+			(assessment) => assessment.class_id === classId
+		);
+
+		const classStudentAverages = classStudents
+			.map((student) => {
+				const scores = classPublishedAssessments.flatMap((assessment) =>
+					(resultsByAssessmentId.get(assessment.id) ?? [])
+						.filter((result) => result.student_id === student.id)
+						.map((result) => normalizeResultPercent(result))
+						.filter((value): value is number => typeof value === 'number')
+				);
+
+				return average(scores);
+			})
+			.filter((value): value is number => typeof value === 'number');
+
+		return {
+			rangeLabel: 'Turma',
+			buckets: buildAnalyticsBuckets(classStudentAverages)
+		};
+	};
 
 	const nextAction = actionSteps[0] ?? {
 		title: 'Proximo passo',
@@ -837,7 +927,8 @@ export async function buildTeacherDashboardPageData(
 					.slice(0, 4)
 					.map((subject) => subject.subjectName),
 				statusTone: statusTone(item.status),
-				openHref: `/teacher/${item.id}`
+				openHref: `/teacher/${item.id}`,
+				analyticsSummary: buildClassAnalyticsSummary(item.id)
 			})),
 		analyticsSummary: {
 			rangeLabel: 'Ultimos 30 dias',

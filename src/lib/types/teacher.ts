@@ -1,148 +1,16 @@
-import type { PublicationStatus } from './academic';
-
-export type TeacherSchemaState =
-	| {
-			ready: true;
-			message: null;
-	  }
-	| {
-			ready: false;
-			message: string;
-	  };
-
-export type TeacherClassOption = {
-	id: string;
-	name: string;
-};
-
-export type TeacherSubjectOption = {
-	id: string;
-	name: string;
-	code: string | null;
-	classIds: string[];
-};
-
-export type TeacherAssessmentCard = {
-	id: string;
-	title: string;
-	assessmentDate: string;
-	weight: number;
-	status: PublicationStatus;
-	publishedAt: string | null;
-	classId: string;
-	className: string;
-	subjectId: string;
-	subjectName: string;
-	filledResults: number;
-	excusedResults: number;
-	totalResults: number;
-};
-
-export type TeacherAssessmentAnalyticsCard = {
-	id: string;
-	title: string;
-	assessmentDate: string;
-	status: PublicationStatus;
-	className: string;
-	subjectName: string;
-	coveragePercent: number;
-	averagePercent: number | null;
-	riskStudentsCount: number;
-	belowTargetCount: number;
-	dispersionPercent: number | null;
-	consistencyBand: 'consistent' | 'mixed' | 'spread' | 'pending';
-	tone: 'healthy' | 'attention' | 'critical' | 'pending';
-};
-
-export type TeacherSubjectCard = {
-	id: string;
-	name: string;
-	code: string | null;
-	classIds: string[];
-	classNames: string[];
-};
-
-export type TeacherClassStudent = {
-	id: string;
-	name: string;
-	invite_code: string | null;
-	created_at: string;
-};
-
-export type TeacherClassSubjectCard = {
-	id: string;
-	name: string;
-	code: string | null;
-	assessments: {
-		id: string;
-		title: string;
-		assessmentDate: string;
-		weight: number;
-		status: PublicationStatus;
-		publishedAt: string | null;
-		resultsCount: number;
-	}[];
-};
-
-export type TeacherDashboardClassCard = {
-	id: string;
-	name: string;
-	created_at: string;
-	scaleLabel: string;
-	studentsCount: number;
-	subjectsCount: number;
-	assessmentsCount: number;
-	publishedAssessmentsCount: number;
-	draftAssessmentsCount: number;
-	readyToPublishCount: number;
-	totalExpectedResults: number;
-	filledResultsCount: number;
-	pendingResultsCount: number;
-	draftCoveragePercent: number;
-	publishedCoveragePercent: number;
-	averagePercent: number | null;
-	riskStudentsCount: number;
-	latestPublicationDate: string | null;
-	trendDelta: number | null;
-	focusSubjects: Array<{
-		subjectId: string;
-		subjectName: string;
-		averagePercent: number;
-		gapVsClassAverage: number | null;
-		assessmentsCount: number;
-		tone: 'healthy' | 'attention' | 'critical';
-	}>;
-	status: 'setup' | 'healthy' | 'attention' | 'critical';
-};
-
-export type TeacherActionQueueItem = {
-	id: string;
-	classId: string;
-	title: string;
-	description: string;
-	ctaLabel: string;
-	href: string;
-	priority: number;
-	signalType: 'operational' | 'pedagogical';
-};
-
-export type TeacherDashboardSummary = {
-	displayName: string;
-	totalClasses: number;
-	totalStudents: number;
-	totalDraftAssessments: number;
-	totalPublishedAssessments: number;
-	totalPendingPublications: number;
-	totalRiskStudents: number;
-	totalPendingCells: number;
-	classesAtRisk: number;
-	classesInSetup: number;
-	healthyClasses: number;
-	message: string;
-};
-
 export type TeacherDashboardRiskTone = 'critical' | 'attention' | 'neutral';
-export type TeacherDashboardTrendTone = 'positive' | 'neutral' | 'negative';
+export type TeacherDashboardTrendTone = 'positive' | 'negative' | 'neutral';
+
+export type TeacherDashboardAnalyticsBucket = {
+	label: string;
+	value: number;
+	heightPercent: number;
+};
+
+export type TeacherDashboardAnalyticsSummary = {
+	rangeLabel: string;
+	buckets: TeacherDashboardAnalyticsBucket[];
+};
 
 export type TeacherDashboardActionNow = {
 	draftClasses: number;
@@ -154,14 +22,14 @@ export type TeacherDashboardActionNow = {
 	nextStepHref: string;
 };
 
-export type TeacherDashboardPerformanceSubjectItem = {
+export type TeacherDashboardBelowReferenceSubject = {
 	subjectName: string;
 	scoreLabel: string;
 	helperText: string;
 	href: string;
 };
 
-export type TeacherDashboardPerformanceStudentItem = {
+export type TeacherDashboardFallingStudent = {
 	studentName: string;
 	publishedAverageLabel: string;
 	riskLabel: string;
@@ -170,7 +38,7 @@ export type TeacherDashboardPerformanceStudentItem = {
 	href: string;
 };
 
-export type TeacherDashboardPerformanceGapItem = {
+export type TeacherDashboardRelevantGap = {
 	studentName: string;
 	gapLabel: string;
 	riskLabel: string;
@@ -181,11 +49,11 @@ export type TeacherDashboardPerformanceGapItem = {
 };
 
 export type TeacherDashboardPerformanceChanges = {
-	belowReferenceSubjects: TeacherDashboardPerformanceSubjectItem[];
+	belowReferenceSubjects: TeacherDashboardBelowReferenceSubject[];
 	belowReferenceSubjectsHref: string;
-	fallingStudents: TeacherDashboardPerformanceStudentItem[];
+	fallingStudents: TeacherDashboardFallingStudent[];
 	fallingStudentsHref: string;
-	relevantGaps: TeacherDashboardPerformanceGapItem[];
+	relevantGaps: TeacherDashboardRelevantGap[];
 	relevantGapsHref: string;
 };
 
@@ -199,17 +67,7 @@ export type TeacherDashboardClassSummaryItem = {
 	tags: string[];
 	statusTone: TeacherDashboardRiskTone;
 	openHref: string;
-};
-
-export type TeacherDashboardAnalyticsBucket = {
-	label: string;
-	value: number;
-	heightPercent: number;
-};
-
-export type TeacherDashboardAnalyticsSummary = {
-	rangeLabel: string;
-	buckets: TeacherDashboardAnalyticsBucket[];
+	analyticsSummary: TeacherDashboardAnalyticsSummary;
 };
 
 export type TeacherDashboardPageData = {
@@ -222,37 +80,72 @@ export type TeacherDashboardPageData = {
 	error: string | null;
 };
 
-export type TeacherRiskStudentCard = {
-	studentId: string;
-	studentName: string;
-	classId: string;
-	className: string;
-	averagePercent: number;
-	publishedAssessmentsCount: number;
-	riskLevel: 'high' | 'medium';
+/**
+ * Tipos usados na rota /teacher/[classId]
+ */
+
+export type TeacherSubjectAssessment = {
+	id: string;
+	title: string;
+	name: string;
+	status: 'draft' | 'published';
+	assessment_date: string | null;
+	published_at: string | null;
+	raw_score?: number | null;
+	score_min?: number | null;
+	score_max?: number | null;
+	is_excused?: boolean;
+	[key: string]: unknown;
 };
 
-export type TeacherStudentComparisonCard = {
-	studentId: string;
-	studentName: string;
-	classId: string;
-	className: string;
-	studentAveragePercent: number;
-	classAveragePercent: number;
-	gapPercent: number;
-	publishedAssessmentsCount: number;
+export type TeacherSubjectOption = {
+	id: string;
+	name: string;
+	code: string | null;
 };
 
-export type TeacherAssessmentDropCard = {
+export type TeacherClassStudent = {
+	id: string;
+	name: string;
+	email: string | null;
+	displayName: string | null;
+	invite_code: string | null;
+	publishedAverageLabel?: string;
+	averageLabel?: string;
+	latestScoreLabel?: string;
+	trendLabel?: string;
+	trendTone?: TeacherDashboardTrendTone;
+	riskLabel?: string;
+	riskTone?: TeacherDashboardRiskTone;
+	helperText?: string;
+	openHref?: string;
+	studentHref?: string;
+	subjects?: string[];
+};
+
+export type TeacherClassSubjectCard = {
+	id: string;
+	name: string;
+	code: string | null;
+	assessments: TeacherSubjectAssessment[];
+	subjectId?: string;
+	subjectName?: string;
+	scoreLabel?: string;
+	averageLabel?: string;
+	publishedAverageLabel?: string;
+	trendLabel?: string;
+	trendTone?: TeacherDashboardTrendTone;
+	helperText?: string;
+	assessmentsCount?: number;
+	openHref?: string;
+};
+
+export type TeacherClassPageData = {
 	classId: string;
 	className: string;
-	subjectId: string;
-	subjectName: string;
-	latestAssessmentId: string;
-	latestAssessmentDate: string;
-	previousAssessmentDate: string;
-	latestAveragePercent: number;
-	previousAveragePercent: number;
-	dropPercent: number;
-	sampleSize: number;
+	students: TeacherClassStudent[];
+	subjectCards: TeacherClassSubjectCard[];
+	subjectOptions: TeacherSubjectOption[];
+	error: string | null;
+	[key: string]: unknown;
 };
