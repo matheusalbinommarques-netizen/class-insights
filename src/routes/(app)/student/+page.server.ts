@@ -17,8 +17,13 @@ type ParentData = {
 	};
 };
 
+type ClaimStudentRpcRow = {
+	student_id: string;
+};
+
 export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 	const parentData = (await parent()) as ParentData;
+
 	if (!parentData.authUser?.id) {
 		throw redirect(302, '/login');
 	}
@@ -31,7 +36,11 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 		summary: {
 			studentName: payload.student.displayName,
 			className: payload.student.className,
-			...payload.summary
+			...payload.summary,
+			publishedAssessments: payload.longitudinal?.timeline.length ?? 0,
+			recentTrend: payload.longitudinal?.recent_trend ?? 'insufficient_data',
+			bestSubjectName: payload.longitudinal?.best_subject ?? null,
+			weakestSubjectName: payload.longitudinal?.worst_subject ?? null
 		},
 		bestSubject: payload.bestSubject
 			? {
@@ -40,7 +49,10 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 					score: payload.bestSubject.score,
 					progress: payload.bestSubject.progress,
 					status: payload.bestSubject.status,
-					description: payload.bestSubject.description
+					description: payload.bestSubject.description,
+					assessmentsCount: payload.bestSubject.assessmentsCount,
+					latestAssessmentTitle: payload.bestSubject.latestAssessmentTitle,
+					latestAssessmentDate: payload.bestSubject.latestAssessmentDate
 				}
 			: null,
 		prioritySubject: payload.prioritySubject
@@ -50,7 +62,10 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 					score: payload.prioritySubject.score,
 					progress: payload.prioritySubject.progress,
 					status: payload.prioritySubject.status,
-					description: payload.prioritySubject.description
+					description: payload.prioritySubject.description,
+					assessmentsCount: payload.prioritySubject.assessmentsCount,
+					latestAssessmentTitle: payload.prioritySubject.latestAssessmentTitle,
+					latestAssessmentDate: payload.prioritySubject.latestAssessmentDate
 				}
 			: null,
 		subjects: payload.subjects.map((subject) => ({
@@ -59,7 +74,10 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 			score: subject.score,
 			progress: subject.progress,
 			status: subject.status,
-			description: subject.description
+			description: subject.description,
+			assessmentsCount: subject.assessmentsCount,
+			latestAssessmentTitle: subject.latestAssessmentTitle,
+			latestAssessmentDate: subject.latestAssessmentDate
 		})),
 		academicSummary: payload.academicSummary,
 		longitudinal: payload.longitudinal,
@@ -79,14 +97,14 @@ export const actions: Actions = {
 		if (!userId) {
 			return fail(401, {
 				action: 'claimInviteCode',
-				message: 'Voce precisa estar logado para adicionar um codigo.'
+				message: 'Você precisa estar logado para adicionar um código.'
 			});
 		}
 
 		if (!inviteCode) {
 			return fail(400, {
 				action: 'claimInviteCode',
-				message: 'Informe um codigo de convite valido.',
+				message: 'Informe um código de convite válido.',
 				inviteCode
 			});
 		}
@@ -96,35 +114,37 @@ export const actions: Actions = {
 		});
 
 		if (error) {
-			const errorId = createErrorId('student_claim');
+			const errorId = createErrorId('student_claim_invite');
 			logServerEvent('error', 'student.claim_invite_code_failed', {
 				errorId,
 				userId,
-				route: '/student',
-				action: 'claimInviteCode',
 				inviteCode,
-				supabaseMessage: error.message
+				message: error.message
 			});
+
 			return fail(400, {
 				action: 'claimInviteCode',
-				message: buildErrorMessage(error.message, errorId),
+				message: buildErrorMessage('Não foi possível validar o código agora.', errorId),
 				inviteCode
 			});
 		}
 
-		const rows = (data ?? []) as Array<{ student_id: string }>;
+		const rows = ((data ?? []) as ClaimStudentRpcRow[]).filter(
+			(row) => typeof row?.student_id === 'string' && row.student_id.length > 0
+		);
+
 		if (rows.length === 0) {
-			return fail(404, {
+			return fail(400, {
 				action: 'claimInviteCode',
-				message: 'Nao encontramos um vinculo disponivel para esse codigo.',
+				message: 'Não encontramos um vínculo ativo para esse código.',
 				inviteCode
 			});
 		}
 
 		return {
-			action: 'claimInviteCode',
 			success: true,
-			message: 'Vinculo concluido com sucesso.'
+			action: 'claimInviteCode',
+			message: 'Código adicionado com sucesso.'
 		};
 	}
 };

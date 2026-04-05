@@ -1,56 +1,78 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { page } from '$app/stores';
 	import ciIcon from '$lib/assets/ci-icon.png';
 	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
 
-	let { children, data } = $props<{
-		children: () => unknown;
+	type Enrollment = {
+		enrollmentId: string;
+		studentId: string;
+		classId: string;
+		teacherId: string;
+		status: 'pending' | 'active' | 'archived';
+		joinedAt: string | null;
+		leftAt: string | null;
+		studentName: string;
+		className: string;
+		isCurrent: boolean;
+		isSelectable: boolean;
+	};
+
+	type Props = {
+		children: Snippet;
 		data: {
 			profile: {
 				id: string;
 				display_name: string;
 			};
 		};
-	}>();
+	};
+
+	let { children, data }: Props = $props();
 
 	const links = [
-		{ href: '/student', label: 'Inicio', description: 'Resumo do progresso' },
-		{ href: '/student/journey', label: 'Trajetoria', description: 'Historico publicado' },
-		{ href: '/student/skills', label: 'Materias', description: 'Leitura por materia' }
+		{ href: '/student', label: 'Início', description: 'Panorama do momento' },
+		{ href: '/student/journey', label: 'Trajetória', description: 'Histórico publicado' },
+		{ href: '/student/skills', label: 'Matérias', description: 'Leitura por matéria' }
 	];
+
+	const pathname = $derived($page.url.pathname);
+	const redirectTo = $derived(`${$page.url.pathname}${$page.url.search}`);
+
+	const enrollments = $derived(($page.data.enrollments ?? []) as Enrollment[]);
+	const selectableEnrollments = $derived(enrollments.filter((item) => item.isSelectable));
+	const activeEnrollment = $derived(
+		enrollments.find((item) => item.isCurrent) ?? selectableEnrollments[0] ?? null
+	);
 
 	const isActive = (href: string) => {
 		if (href === '/student') return $page.url.pathname === '/student';
 		return $page.url.pathname.startsWith(href);
 	};
 
-	const sectionSummary = (pathname: string) => {
-		if (pathname.startsWith('/student/journey')) {
+	const sectionCopy = (value: string) => {
+		if (value.startsWith('/student/journey')) {
 			return {
-				title: 'Trajetoria longitudinal',
-				description: 'Veja sua sequencia de publicacoes e como seu momento atual foi construido.',
-				nextLabel: 'Abrir materias'
+				title: 'Sua trajetória',
+				description: 'Entenda como suas publicações recentes construíram o momento atual.'
 			};
 		}
 
-		if (pathname.startsWith('/student/skills')) {
+		if (value.startsWith('/student/skills')) {
 			return {
-				title: 'Leitura por materia',
-				description: 'Entenda onde voce esta bem, onde caiu e qual materia pede a proxima acao.',
-				nextLabel: 'Voltar para a trajetoria'
+				title: 'Suas matérias',
+				description: 'Veja onde você está bem, o que ainda não foi publicado e onde vale revisar.'
 			};
 		}
 
 		return {
 			title: 'Panorama do momento',
-			description:
-				'Comece pelo resumo geral e siga para trajetoria e materias quando quiser aprofundar.',
-			nextLabel: 'Abrir trajetoria'
+			description: 'Comece pelo que importa agora e aprofunde quando quiser.'
 		};
 	};
 
-	const currentSection = $derived(sectionSummary($page.url.pathname));
+	const currentSection = $derived(sectionCopy(pathname));
 </script>
 
 <DisplayNamePrompt
@@ -63,320 +85,115 @@
 	<title>Class Insights - Aluno</title>
 </svelte:head>
 
-<div class="student-shell">
-	<header class="topbar">
-		<div class="brand">
-			<div class="brand-badge">
-				<img src={ciIcon} alt="" class="brand-icon" />
-			</div>
-			<div>
-				<h1>Class Insights</h1>
-				<p>Area do aluno</p>
-			</div>
-		</div>
+<div
+	class="min-h-screen bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]"
+>
+	<div class="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+		<header
+			class="rounded-4xl border border-slate-200 bg-white/90 px-5 py-5 shadow-sm backdrop-blur sm:px-6"
+		>
+			<div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+				<div class="flex items-start gap-4">
+					<div
+						class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-sky-200 bg-white shadow-lg shadow-sky-900/10"
+					>
+						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
+					</div>
 
-		<div class="topbar-chip">
-			<span class="chip-dot" aria-hidden="true"></span>
-			<span>Progresso pessoal</span>
-		</div>
-	</header>
+					<div class="min-w-0">
+						<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Aluno</p>
+						<h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+							{currentSection.title}
+						</h1>
+						<p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+							{currentSection.description}
+						</p>
+					</div>
+				</div>
 
-	<nav class="nav">
-		{#each links as link (link.href)}
-			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-			<a
-				href={link.href}
-				class="nav-link"
-				class:active={isActive(link.href)}
-				aria-current={isActive(link.href) ? 'page' : undefined}
-			>
-				<div class="nav-title">{link.label}</div>
-				<div class="nav-description">{link.description}</div>
-			</a>
-		{/each}
-	</nav>
+				<div class="grid gap-3 lg:min-w-[320px]">
+					<div class="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+						<p class="text-xs font-black uppercase tracking-[0.24em] text-sky-700">Turma ativa</p>
+						<p class="mt-2 text-base font-black tracking-tight">
+							{activeEnrollment?.className ?? 'Aguardando vínculo'}
+						</p>
+						<p class="mt-1 text-sm leading-6 text-slate-600">
+							{activeEnrollment
+								? 'Essa é a turma usada para sua leitura atual.'
+								: 'Quando um vínculo estiver ativo, ele aparecerá aqui.'}
+						</p>
+					</div>
 
-	<section class="overview">
-		<div>
-			<p class="overview-kicker">Jornada do aluno</p>
-			<h2>{currentSection.title}</h2>
-			<p>
-				{currentSection.description}
-				{#if data.profile.display_name}
-					Leitura pessoal de {data.profile.display_name}.
-				{/if}
-			</p>
-		</div>
-		<div class="overview-status" aria-label="Resumo da secao atual">
-			<div class="status-card">
-				<span class="status-label">Voce esta aqui</span>
-				<strong>{currentSection.title}</strong>
-				<small>{currentSection.description}</small>
+					<div
+						class="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-bold text-emerald-700"
+					>
+						<span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+						<span>Progresso pessoal</span>
+					</div>
+				</div>
 			</div>
-			<div class="status-card muted">
-				<span class="status-label">Proximo passo</span>
-				<strong>{currentSection.nextLabel}</strong>
-				<small>Use a navegacao acima para aprofundar a leitura quando quiser.</small>
-			</div>
-		</div>
-	</section>
 
-	<main class="content">
-		<div class="content-inner">
+			{#if selectableEnrollments.length > 1}
+				<form
+					method="POST"
+					action="/student/switch-enrollment"
+					class="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-end"
+				>
+					<div class="min-w-0 flex-1">
+						<label
+							for="enrollmentId"
+							class="block text-xs font-black uppercase tracking-[0.24em] text-slate-500"
+						>
+							Trocar turma ativa
+						</label>
+
+						<select
+							id="enrollmentId"
+							name="enrollmentId"
+							class="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+						>
+							{#each selectableEnrollments as enrollment (enrollment.enrollmentId)}
+								<option
+									value={enrollment.enrollmentId}
+									selected={activeEnrollment?.enrollmentId === enrollment.enrollmentId}
+								>
+									{enrollment.className}
+								</option>
+							{/each}
+						</select>
+					</div>
+
+					<input type="hidden" name="redirectTo" value={redirectTo} />
+
+					<button
+						type="submit"
+						class="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
+					>
+						Aplicar turma
+					</button>
+				</form>
+			{/if}
+		</header>
+
+		<nav class="mt-6 grid gap-3 md:grid-cols-3">
+			{#each links as link (link.href)}
+				<a
+					href={link.href}
+					class={`rounded-[1.5rem] border px-4 py-4 transition ${
+						isActive(link.href)
+							? 'border-sky-200 bg-sky-50 shadow-sm'
+							: 'border-slate-200 bg-white/80 hover:border-slate-300 hover:bg-white'
+					}`}
+					aria-current={isActive(link.href) ? 'page' : undefined}
+				>
+					<p class="text-base font-black tracking-tight text-slate-950">{link.label}</p>
+					<p class="mt-1 text-sm leading-6 text-slate-600">{link.description}</p>
+				</a>
+			{/each}
+		</nav>
+
+		<main class="min-w-0 flex-1 py-6">
 			{@render children()}
-		</div>
-	</main>
+		</main>
+	</div>
 </div>
-
-<style>
-	:global(body) {
-		margin: 0;
-		background:
-			radial-gradient(circle at top center, rgba(59, 130, 246, 0.08), transparent 26%),
-			linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
-		color: #0f172a;
-		font-family:
-			Inter,
-			ui-sans-serif,
-			system-ui,
-			-apple-system,
-			BlinkMacSystemFont,
-			'Segoe UI',
-			sans-serif;
-	}
-
-	:global(a) {
-		color: inherit;
-	}
-
-	.student-shell {
-		min-height: 100vh;
-		padding: 1rem;
-	}
-
-	.topbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1rem;
-		padding: 1rem;
-		border-radius: 1.35rem;
-		background: rgba(255, 255, 255, 0.9);
-		border: 1px solid rgba(148, 163, 184, 0.2);
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-		margin-bottom: 1rem;
-	}
-
-	.brand {
-		display: flex;
-		align-items: center;
-		gap: 0.85rem;
-		min-width: 0;
-	}
-
-	.brand-badge {
-		width: 2.7rem;
-		height: 2.7rem;
-		border-radius: 0.95rem;
-		display: grid;
-		place-items: center;
-		font-weight: 800;
-		letter-spacing: 0.03em;
-		background: linear-gradient(135deg, #3b82f6, #2563eb);
-		color: white;
-		box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
-		flex-shrink: 0;
-	}
-
-	.brand-icon {
-		width: 1.65rem;
-		height: 1.65rem;
-		object-fit: contain;
-	}
-
-	.brand h1 {
-		margin: 0;
-		font-size: 1rem;
-		line-height: 1.2;
-		color: #0f172a;
-	}
-
-	.brand p {
-		margin: 0.2rem 0 0;
-		font-size: 0.84rem;
-		color: #64748b;
-	}
-
-	.topbar-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.65rem 0.9rem;
-		border-radius: 999px;
-		background: rgba(37, 99, 235, 0.08);
-		border: 1px solid rgba(96, 165, 250, 0.28);
-		color: #1d4ed8;
-		font-size: 0.88rem;
-		font-weight: 700;
-		white-space: nowrap;
-	}
-
-	.chip-dot {
-		width: 0.6rem;
-		height: 0.6rem;
-		border-radius: 999px;
-		background: #22c55e;
-		box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
-	}
-
-	.nav {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 0.75rem;
-		margin-bottom: 1rem;
-	}
-
-	.nav-link {
-		display: block;
-		padding: 0.95rem 1rem;
-		border-radius: 1.1rem;
-		background: rgba(255, 255, 255, 0.88);
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		text-decoration: none;
-		box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-		transition:
-			transform 0.16s ease,
-			border-color 0.16s ease,
-			background 0.16s ease;
-	}
-
-	.nav-link:hover {
-		transform: translateY(-1px);
-		border-color: rgba(96, 165, 250, 0.32);
-	}
-
-	.nav-link.active {
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.14), rgba(37, 99, 235, 0.08));
-		border-color: rgba(96, 165, 250, 0.38);
-	}
-
-	.nav-title {
-		font-size: 0.95rem;
-		font-weight: 800;
-		color: #0f172a;
-	}
-
-	.nav-description {
-		margin-top: 0.22rem;
-		font-size: 0.82rem;
-		color: #64748b;
-	}
-
-	.overview {
-		display: grid;
-		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-		gap: 1rem;
-		padding: 1rem;
-		margin-bottom: 1rem;
-		border-radius: 1.35rem;
-		background:
-			linear-gradient(135deg, rgba(14, 165, 233, 0.12), rgba(255, 255, 255, 0.92)),
-			radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 45%);
-		border: 1px solid rgba(125, 211, 252, 0.3);
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
-	}
-
-	.overview-kicker {
-		margin: 0;
-		font-size: 0.78rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #0369a1;
-	}
-
-	.overview h2 {
-		margin: 0.35rem 0 0;
-		font-size: 1.25rem;
-		line-height: 1.15;
-		color: #0f172a;
-	}
-
-	.overview p {
-		margin: 0.55rem 0 0;
-		max-width: 52rem;
-		font-size: 0.95rem;
-		line-height: 1.65;
-		color: #334155;
-	}
-
-	.overview-status {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.status-card {
-		display: grid;
-		gap: 0.3rem;
-		padding: 0.9rem;
-		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.76);
-		border: 1px solid rgba(148, 163, 184, 0.16);
-	}
-
-	.status-card.muted {
-		background: linear-gradient(180deg, rgba(14, 165, 233, 0.16), rgba(14, 165, 233, 0.08));
-		border-color: rgba(14, 165, 233, 0.32);
-	}
-
-	.status-label {
-		font-size: 0.94rem;
-		font-weight: 800;
-		color: #0369a1;
-	}
-
-	.status-card strong {
-		font-size: 0.98rem;
-		color: #0f172a;
-	}
-
-	.status-card small {
-		font-size: 0.8rem;
-		line-height: 1.45;
-		color: #475569;
-	}
-
-	.content {
-		padding-bottom: 1.5rem;
-	}
-
-	.content-inner {
-		max-width: 900px;
-		margin: 0 auto;
-	}
-
-	@media (max-width: 800px) {
-		.nav,
-		.overview,
-		.overview-status {
-			grid-template-columns: 1fr;
-		}
-	}
-
-	@media (max-width: 640px) {
-		.student-shell {
-			padding: 0.75rem;
-		}
-
-		.topbar {
-			flex-direction: column;
-			align-items: flex-start;
-		}
-
-		.topbar-chip {
-			width: 100%;
-			justify-content: center;
-		}
-	}
-</style>
