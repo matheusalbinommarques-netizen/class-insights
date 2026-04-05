@@ -1,15 +1,30 @@
 <script lang="ts">
+	import TeacherContextMenu from '$lib/components/teacher/TeacherContextMenu.svelte';
 	import type {
 		TeacherDashboardClassSummaryItem,
 		TeacherDashboardRiskTone,
 		TeacherDashboardTrendTone
 	} from '$lib/types/teacher';
 
-	type Props = {
-		classItem: TeacherDashboardClassSummaryItem;
+	type ContextMenuItem = {
+		id: string;
+		label: string;
+		href?: string;
+		tone?: 'default' | 'danger';
+		disabled?: boolean;
 	};
 
-	let { classItem }: Props = $props();
+	type Props = {
+		classItem: TeacherDashboardClassSummaryItem;
+		menuItems?: ContextMenuItem[];
+		onMenuSelect?: (itemId: string) => void;
+	};
+
+	let {
+		classItem,
+		menuItems = [],
+		onMenuSelect = () => {}
+	}: Props = $props();
 
 	const axisLevels = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -17,12 +32,6 @@
 		if (trendTone === 'negative') return 'text-red-600';
 		if (trendTone === 'positive') return 'text-emerald-600';
 		return 'text-slate-500';
-	}
-
-	function statusIndicatorClass(statusTone: TeacherDashboardRiskTone) {
-		if (statusTone === 'critical') return 'bg-red-500';
-		if (statusTone === 'attention') return 'bg-amber-400';
-		return 'bg-slate-300';
 	}
 
 	function tagClass(index: number) {
@@ -58,56 +67,36 @@
 			{classItem.className}
 		</h3>
 
-		<div class="flex items-center gap-2 pt-1">
-			<span class={`h-3 w-3 rounded-full ${statusIndicatorClass(classItem.statusTone)}`}></span>
-
-			<svg
-				class="h-5 w-5 text-slate-700"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				aria-hidden="true"
-			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"
-				/>
-				<circle cx="10" cy="7" r="4" />
-				<path stroke-linecap="round" stroke-linejoin="round" d="M20 8v6M23 11h-6" />
-			</svg>
-		</div>
+		{#if menuItems.length > 0}
+			<TeacherContextMenu items={menuItems} onSelect={onMenuSelect} />
+		{/if}
 	</div>
 
-	<div class="mt-5 grid grid-cols-3 gap-4">
+	<div class="mt-5 grid gap-4 md:grid-cols-3">
 		<div>
-			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
 				Média publicada
 			</p>
-			<p class="mt-2 text-[2.25rem] font-extrabold tracking-tight text-slate-950">
-				{classItem.publishedAverageLabel.split('/')[0].trim()}
-				<span class="text-[1.25rem] font-bold text-slate-700">
-					/ {classItem.publishedAverageLabel.split('/')[1]?.trim() ?? '10'}
-				</span>
+			<p class="mt-2 text-[2.2rem] font-extrabold leading-none tracking-tight text-slate-950">
+				{classItem.publishedAverageLabel}
 			</p>
 		</div>
 
 		<div>
-			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
 				Cobertura
 			</p>
-			<p class="mt-2 text-[2.25rem] font-extrabold tracking-tight text-slate-950">
+			<p class="mt-2 text-[2.2rem] font-extrabold leading-none tracking-tight text-slate-950">
 				{classItem.coverageLabel}
 			</p>
 		</div>
 
 		<div>
-			<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
 				Tendência
 			</p>
 			<p
-				class={`mt-2 text-[2.25rem] font-extrabold tracking-tight ${trendClass(classItem.trendTone)}`}
+				class={`mt-2 text-[2.2rem] font-extrabold leading-none tracking-tight ${trendClass(classItem.trendTone)}`}
 			>
 				{classItem.trendLabel}
 			</p>
@@ -115,62 +104,48 @@
 	</div>
 
 	{#if classItem.tags.length > 0}
-		<div class="mt-4 flex flex-wrap gap-2">
-			{#each classItem.tags as tag, index (`${tag}-${index}`)}
-				<span
-					class={`inline-flex items-center rounded-full px-3 py-1.5 text-sm font-semibold ${tagClass(index)}`}
-				>
+		<div class="mt-5 flex flex-wrap gap-2">
+			{#each classItem.tags as tag, index (`${classItem.classId}-${tag}`)}
+				<span class={`rounded-full px-3 py-1.5 text-sm font-bold ${tagClass(index)}`}>
 					{tag}
 				</span>
 			{/each}
 		</div>
 	{/if}
 
-	<div class="mt-6">
-		<p class="text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+	<div class="mt-5">
+		<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
 			Resumo analítico da turma
 		</p>
 
-		<div class="mt-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-4">
-			<div class="grid grid-cols-[32px_minmax(0,1fr)] gap-3">
-				<div class="flex h-44 flex-col justify-between pb-8 pt-2">
+		<div class="mt-4 rounded-3xl border border-slate-200 bg-white px-3 py-4 sm:px-4">
+			<div class="grid grid-cols-[22px_1fr] gap-3">
+				<div class="flex flex-col justify-between pt-3 pb-10">
 					{#each axisLevels as level (level)}
-						<span class="text-[11px] font-medium leading-none text-slate-400">{level}</span>
+						<span class="text-[0.72rem] font-medium text-slate-400">{level}</span>
 					{/each}
 				</div>
 
-				<div>
-					<div class="relative h-44">
-						<div class="absolute inset-0 flex flex-col justify-between pb-8 pt-2">
-							{#each axisLevels as level (level)}
-								<div class="border-t border-dashed border-slate-200"></div>
-							{/each}
-						</div>
-
-						<div class="relative z-10 grid h-full grid-cols-4 gap-3 pb-8 pt-2">
-							{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
-								<div class="flex h-full min-w-0 flex-col items-center">
-									<p class="mb-2 shrink-0 text-xs font-bold text-slate-600">{bucket.value}</p>
-
-									<div class="flex min-h-0 w-full flex-1 items-end">
-										<div
-											class={`w-full rounded-t-lg ${bucketBarClass(bucket.label)}`}
-											style={bucketStyle(bucket.heightPercent, bucket.value)}
-											aria-label={`${bucket.label}: ${bucket.value}`}
-											title={`${bucket.label}: ${bucket.value}`}
-										></div>
-									</div>
-								</div>
-							{/each}
-						</div>
+				<div class="relative min-h-48">
+					<div class="absolute inset-0 flex flex-col justify-between pt-2 pb-10">
+						{#each axisLevels as level (`grid-${level}`)}
+							<div class="border-t border-dashed border-slate-200"></div>
+						{/each}
 					</div>
 
-					<div class="mt-2 grid grid-cols-4 gap-3">
-						{#each classItem.analyticsSummary.buckets as bucket (bucket.label)}
-							<div class="text-center">
-								<p class="text-[11px] font-semibold leading-4 text-slate-600">
+					<div class="relative z-10 grid h-full grid-cols-4 items-end gap-3 pt-2 pb-10">
+						{#each classItem.analyticsSummary.buckets as bucket (`${classItem.classId}-${bucket.label}`)}
+							<div class="flex h-full flex-col items-center justify-end">
+								<span class="mb-3 text-sm font-bold text-slate-600">{bucket.value}</span>
+
+								<div
+									class={`w-full rounded-t-[1.1rem] ${bucketBarClass(bucket.label)}`}
+									style={bucketStyle(bucket.heightPercent, bucket.value)}
+								></div>
+
+								<span class="mt-5 text-center text-[0.78rem] font-medium text-slate-500">
 									{bucket.label}
-								</p>
+								</span>
 							</div>
 						{/each}
 					</div>
@@ -179,33 +154,12 @@
 		</div>
 	</div>
 
-	<div class="mt-auto pt-4">
-		<div class="flex items-center gap-3">
-			<a
-				href={classItem.openHref}
-				class="inline-flex h-11 flex-1 items-center justify-center rounded-xl bg-slate-200 text-sm font-semibold text-slate-800 transition hover:bg-slate-300"
-			>
-				Abrir turma
-			</a>
-
-			<button
-				type="button"
-				class="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-slate-200 text-slate-700 transition hover:bg-slate-300"
-				aria-label="Mais opções da turma"
-			>
-				<svg
-					class="h-5 w-5"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					aria-hidden="true"
-				>
-					<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
-					<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-					<circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
-				</svg>
-			</button>
-		</div>
+	<div class="mt-4">
+		<a
+			href={classItem.openHref}
+			class="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-slate-200 px-4 text-sm font-bold text-slate-900 transition hover:bg-slate-300"
+		>
+			Abrir turma
+		</a>
 	</div>
 </article>

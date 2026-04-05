@@ -1,89 +1,91 @@
 <script lang="ts">
-	type ActionNow = {
-		draftClasses: number;
-		belowReferenceSubjects: number;
-		fallingStudents: number;
-		classesWithoutSubject: number;
-		nextStepTitle: string;
-		nextStepText: string;
-		nextStepHref: string;
+	import TeacherContextMenu from '$lib/components/teacher/TeacherContextMenu.svelte';
+	import type { TeacherDashboardActionNow } from '$lib/types/teacher';
+
+	type ContextMenuItem = {
+		id: string;
+		label: string;
+		href?: string;
+		tone?: 'default' | 'danger';
+		disabled?: boolean;
+	};
+
+	type ChipTone = 'attention' | 'critical' | 'neutral';
+
+	type ActionNowChip = {
+		label: string;
+		value: string;
+		tone: ChipTone;
 	};
 
 	type Props = {
 		teacherName: string;
-		actionNow: ActionNow;
+		actionNow: TeacherDashboardActionNow;
+		menuItems?: ContextMenuItem[];
+		onMenuSelect?: (itemId: string) => void;
 	};
 
-	let { teacherName, actionNow }: Props = $props();
+	let {
+		teacherName: _teacherName,
+		actionNow,
+		menuItems = [],
+		onMenuSelect = () => {}
+	}: Props = $props();
 
-	type SummaryChip = {
-		value: number;
-		label: string;
-		tone: 'amber' | 'red' | 'slate';
-	};
+	const chips = $derived.by(
+		(): ActionNowChip[] => [
+			{
+				label: 'Turma com rascunho de prova aberto',
+				value: String(actionNow.draftClasses),
+				tone: actionNow.draftClasses > 0 ? 'attention' : 'neutral'
+			},
+			{
+				label: 'Matérias abaixo média da instituição',
+				value: String(actionNow.belowReferenceSubjects),
+				tone: actionNow.belowReferenceSubjects > 0 ? 'critical' : 'neutral'
+			},
+			{
+				label: 'Alunos com notas caindo',
+				value: String(actionNow.fallingStudents),
+				tone: actionNow.fallingStudents > 0 ? 'attention' : 'neutral'
+			},
+			{
+				label: 'Turmas sem matéria',
+				value: String(actionNow.classesWithoutSubject),
+				tone: actionNow.classesWithoutSubject > 0 ? 'attention' : 'neutral'
+			}
+		]
+	);
 
-	const chips = $derived<SummaryChip[]>([
-		{
-			value: actionNow.draftClasses,
-			label: 'turma com rascunho aberto',
-			tone: actionNow.draftClasses > 0 ? 'amber' : 'slate'
-		},
-		{
-			value: actionNow.belowReferenceSubjects,
-			label: 'matérias abaixo da referência',
-			tone: actionNow.belowReferenceSubjects > 0 ? 'red' : 'slate'
-		},
-		{
-			value: actionNow.fallingStudents,
-			label: 'alunos em queda',
-			tone: actionNow.fallingStudents > 0 ? 'slate' : 'slate'
-		},
-		{
-			value: actionNow.classesWithoutSubject,
-			label: 'turmas sem matéria',
-			tone: actionNow.classesWithoutSubject > 0 ? 'slate' : 'slate'
+	function chipClass(tone: ChipTone) {
+		if (tone === 'critical') {
+			return 'border-red-200 bg-red-50';
 		}
-	]);
 
-	function chipClass(tone: SummaryChip['tone']) {
-		if (tone === 'amber') return 'border-amber-200 bg-amber-50';
-		if (tone === 'red') return 'border-red-200 bg-red-50';
+		if (tone === 'attention') {
+			return 'border-slate-200 bg-white';
+		}
+
 		return 'border-slate-200 bg-slate-50';
 	}
 
-	function chipValueClass(tone: SummaryChip['tone']) {
-		if (tone === 'amber') return 'text-amber-700';
-		if (tone === 'red') return 'text-red-700';
+	function chipValueClass(tone: ChipTone) {
+		if (tone === 'critical') return 'text-red-600';
 		return 'text-slate-950';
 	}
 </script>
 
-<section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+<section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
 	<div class="flex items-start justify-between gap-4">
-		<h2
-			class="max-w-3xl text-[1.85rem] font-extrabold leading-[1.05] tracking-tight text-slate-950 lg:text-[2rem]"
-		>
-			O que exige ação agora
-		</h2>
+		<div class="min-w-0">
+			<h2 class="text-[2rem] font-black leading-tight tracking-tight text-slate-950">
+				O que exige ação agora
+			</h2>
+		</div>
 
-		<button
-			type="button"
-			class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 transition hover:bg-slate-200 hover:text-slate-900"
-			aria-label="Mais opções"
-		>
-			<svg
-				class="h-5 w-5"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				aria-hidden="true"
-			>
-				<circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />
-				<circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" />
-				<circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none" />
-			</svg>
-		</button>
+		{#if menuItems.length > 0}
+			<TeacherContextMenu items={menuItems} onSelect={onMenuSelect} />
+		{/if}
 	</div>
 
 	<div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
