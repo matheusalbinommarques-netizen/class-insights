@@ -32,30 +32,28 @@
 		onMenuSelect = () => {}
 	}: Props = $props();
 
-	const chips = $derived.by(
-		(): ActionNowChip[] => [
-			{
-				label: 'Turma com rascunho de prova aberto',
-				value: String(actionNow.draftClasses),
-				tone: actionNow.draftClasses > 0 ? 'attention' : 'neutral'
-			},
-			{
-				label: 'Matérias abaixo média da instituição',
-				value: String(actionNow.belowReferenceSubjects),
-				tone: actionNow.belowReferenceSubjects > 0 ? 'critical' : 'neutral'
-			},
-			{
-				label: 'Alunos com notas caindo',
-				value: String(actionNow.fallingStudents),
-				tone: actionNow.fallingStudents > 0 ? 'attention' : 'neutral'
-			},
-			{
-				label: 'Turmas sem matéria',
-				value: String(actionNow.classesWithoutSubject),
-				tone: actionNow.classesWithoutSubject > 0 ? 'attention' : 'neutral'
-			}
-		]
-	);
+	const chips = $derived.by((): ActionNowChip[] => [
+		{
+			label: 'Turma com rascunho de prova aberto',
+			value: String(actionNow.draftClasses),
+			tone: actionNow.draftClasses > 0 ? 'attention' : 'neutral'
+		},
+		{
+			label: 'Matérias abaixo média da instituição',
+			value: String(actionNow.belowReferenceSubjects),
+			tone: actionNow.belowReferenceSubjects > 0 ? 'critical' : 'neutral'
+		},
+		{
+			label: 'Alunos com notas caindo',
+			value: String(actionNow.fallingStudents),
+			tone: actionNow.fallingStudents > 0 ? 'attention' : 'neutral'
+		},
+		{
+			label: 'Turmas sem matéria',
+			value: String(actionNow.classesWithoutSubject),
+			tone: actionNow.classesWithoutSubject > 0 ? 'attention' : 'neutral'
+		}
+	]);
 
 	function chipClass(tone: ChipTone) {
 		if (tone === 'critical') {

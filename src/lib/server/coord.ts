@@ -1,12 +1,3 @@
-type CoordMembershipRow = {
-	class_id: string;
-};
-
-type CoordAccessCodeRow = {
-	class_id: string;
-	access_code: string;
-};
-
 type ClassRow = {
 	class_id: string;
 	class_name: string;
@@ -53,6 +44,71 @@ type AssessmentResultRow = {
 };
 
 type Trend = 'improving' | 'declining' | 'stable' | 'insufficient_data';
+type CoordTone = 'healthy' | 'attention' | 'critical';
+type SummaryTone = 'default' | 'attention' | 'critical';
+
+type CoordSummaryHighlight = {
+	key: string;
+	label: string;
+	value: string;
+	description: string;
+	tone: SummaryTone;
+};
+
+type CoordClassDashboardItem = {
+	classId: string;
+	className: string;
+	teacherId: string;
+	teacherName: string;
+	accessCode: string | null;
+	studentsCount: number;
+	publishedAssessments: number;
+	averagePercent: number | null;
+	riskStudents: number;
+	tone: CoordTone;
+	priorityScore: number;
+	coveragePercent: number;
+	lastPublishedAt: string | null;
+	primaryReason: string;
+	detailHref: string;
+};
+
+type CoordSubjectDashboardItem = {
+	subjectId: string;
+	subjectName: string;
+	averagePercent: number | null;
+	assessmentsCount: number;
+	recentTrend: Trend;
+	priorityScore: number;
+	coveragePercent: number;
+	lastPublishedAt: string | null;
+	primaryReason: string;
+	detailHref: string;
+};
+
+type CoordTeacherDashboardItem = {
+	teacherId: string;
+	teacherName: string;
+	classesCount: number;
+	averagePercent: number | null;
+	publishedAssessments: number;
+	priorityScore: number;
+	coveragePercent: number;
+	lastPublishedAt: string | null;
+	primaryReason: string;
+	detailHref: string;
+};
+
+type CoordStudentDashboardItem = {
+	studentId: string;
+	studentName: string;
+	className: string;
+	averagePercent: number;
+	publishedAssessments: number;
+	priorityScore: number;
+	primaryReason: string;
+	detailHref: string;
+};
 
 export type CoordDashboardData = {
 	summary: {
@@ -64,40 +120,23 @@ export type CoordDashboardData = {
 		classesAtRisk: number;
 		managedClassesCount: number;
 		message: string;
+		highlights: CoordSummaryHighlight[];
 	};
-	classes: Array<{
-		classId: string;
-		className: string;
-		teacherName: string;
-		accessCode: string | null;
-		studentsCount: number;
-		publishedAssessments: number;
-		averagePercent: number | null;
-		riskStudents: number;
-		tone: 'healthy' | 'attention' | 'critical';
-	}>;
-	subjects: Array<{
-		subjectId: string;
-		subjectName: string;
-		averagePercent: number | null;
-		assessmentsCount: number;
-		recentTrend: Trend;
-	}>;
-	teachers: Array<{
-		teacherId: string;
-		teacherName: string;
-		classesCount: number;
-		averagePercent: number | null;
-		publishedAssessments: number;
-	}>;
-	students: Array<{
-		studentId: string;
-		studentName: string;
-		className: string;
-		averagePercent: number;
-		publishedAssessments: number;
-	}>;
+	classes: CoordClassDashboardItem[];
+	subjects: CoordSubjectDashboardItem[];
+	teachers: CoordTeacherDashboardItem[];
+	students: CoordStudentDashboardItem[];
 };
+
+export type CoordDashboardResult =
+	| {
+			ok: true;
+			data: CoordDashboardData;
+	  }
+	| {
+			ok: false;
+			error: string;
+	  };
 
 function average(values: number[]): number | null {
 	if (values.length === 0) return null;
@@ -106,88 +145,201 @@ function average(values: number[]): number | null {
 
 function normalizePercent(
 	result: Pick<AssessmentResultRow, 'raw_score' | 'score_min' | 'score_max'>
-) {
+): number | null {
 	if (typeof result.raw_score !== 'number') return null;
 
 	const range = result.score_max - result.score_min;
 	if (range <= 0) return null;
 
-	return Math.max(0, Math.min(100, ((result.raw_score - result.score_min) / range) * 100));
+	return ((result.raw_score - result.score_min) / range) * 100;
 }
 
-function buildTrend(values: number[]): Trend {
-	if (values.length < 2) return 'insufficient_data';
+function extractSubjectName(input: SubjectRow['subjects']): string {
+	if (!input) return 'Materia';
+	return Array.isArray(input) ? (input[0]?.name ?? 'Materia') : input.name;
+}
 
-	const midpoint = Math.floor(values.length / 2);
-	if (midpoint === 0) return 'insufficient_data';
+function unique<T>(values: T[]): T[] {
+	return [...new Set(values)];
+}
 
-	const start = average(values.slice(0, midpoint));
-	const end = average(values.slice(midpoint));
-	if (start === null || end === null) return 'insufficient_data';
+function classifyClassTone(input: {
+	studentsCount: number;
+	publishedAssessments: number;
+	averagePercent: number | null;
+	riskStudents: number;
+}): CoordTone {
+	if (input.studentsCount === 0) return 'attention';
 
-	if (end - start >= 5) return 'improving';
-	if (start - end >= 5) return 'declining';
+	if (input.publishedAssessments === 0) return 'critical';
+
+	if (
+		input.riskStudents >= Math.max(2, Math.ceil(input.studentsCount * 0.25)) ||
+		(typeof input.averagePercent === 'number' && input.averagePercent < 50)
+	) {
+		return 'critical';
+	}
+
+	if (
+		input.riskStudents > 0 ||
+		(typeof input.averagePercent === 'number' && input.averagePercent < 70)
+	) {
+		return 'attention';
+	}
+
+	return 'healthy';
+}
+
+function classifyTrend(
+	series: Array<{ assessmentDate: string; averagePercent: number | null }>
+): Trend {
+	const valid = series
+		.filter((item) => typeof item.averagePercent === 'number')
+		.sort((left, right) => left.assessmentDate.localeCompare(right.assessmentDate));
+
+	if (valid.length < 2) return 'insufficient_data';
+
+	const firstHalf = valid.slice(0, Math.ceil(valid.length / 2));
+	const secondHalf = valid.slice(Math.floor(valid.length / 2));
+
+	const firstAverage = average(firstHalf.map((item) => item.averagePercent ?? 0));
+	const secondAverage = average(secondHalf.map((item) => item.averagePercent ?? 0));
+
+	if (typeof firstAverage !== 'number' || typeof secondAverage !== 'number') {
+		return 'insufficient_data';
+	}
+
+	const delta = secondAverage - firstAverage;
+
+	if (delta >= 5) return 'improving';
+	if (delta <= -5) return 'declining';
 	return 'stable';
 }
 
-function toneFromMetrics(
-	averagePercent: number | null,
-	riskStudents: number,
-	publishedAssessments: number
-) {
-	if (
-		publishedAssessments === 0 ||
-		riskStudents >= 3 ||
-		(averagePercent !== null && averagePercent < 55)
-	) {
-		return 'critical' as const;
+function buildClassReason(input: {
+	publishedAssessments: number;
+	riskStudents: number;
+	averagePercent: number | null;
+	tone: CoordTone;
+}): string {
+	if (input.publishedAssessments === 0) {
+		return 'A turma ainda nao possui publicacoes suficientes para leitura institucional.';
 	}
 
-	if (riskStudents > 0 || (averagePercent !== null && averagePercent < 70)) {
-		return 'attention' as const;
+	if (input.tone === 'critical') {
+		if (input.riskStudents > 0) {
+			return `${input.riskStudents} aluno(s) aparecem em risco neste recorte.`;
+		}
+
+		return 'A media publicada da turma caiu para nivel critico.';
 	}
 
-	return 'healthy' as const;
+	if (input.tone === 'attention') {
+		return 'A turma pede acompanhamento mais proximo pela media ou pela presenca de alunos em atencao.';
+	}
+
+	return 'A turma esta dentro do esperado neste momento.';
+}
+
+function buildSubjectReason(input: {
+	recentTrend: Trend;
+	averagePercent: number | null;
+	assessmentsCount: number;
+}): string {
+	if (input.assessmentsCount === 0) {
+		return 'A materia ainda nao possui publicacoes suficientes para leitura.';
+	}
+
+	if (input.recentTrend === 'declining') {
+		return 'A materia mostra tendencia recente de queda no escopo atual.';
+	}
+
+	if (typeof input.averagePercent === 'number' && input.averagePercent < 60) {
+		return 'A media publicada da materia esta abaixo do esperado.';
+	}
+
+	if (input.recentTrend === 'improving') {
+		return 'A materia mostra melhora recente no escopo atual.';
+	}
+
+	return 'A materia esta estavel no recorte atual.';
+}
+
+function buildTeacherReason(input: {
+	classesCount: number;
+	publishedAssessments: number;
+	averagePercent: number | null;
+}): string {
+	if (input.publishedAssessments === 0) {
+		return 'Ainda nao ha publicacoes suficientes para leitura institucional desse professor.';
+	}
+
+	if (typeof input.averagePercent === 'number' && input.averagePercent < 60) {
+		return 'As turmas desse professor concentram media institucional abaixo do esperado.';
+	}
+
+	return `${input.classesCount} turma(s) compoem o recorte atual desse professor.`;
+}
+
+function buildStudentReason(input: {
+	averagePercent: number;
+	publishedAssessments: number;
+}): string {
+	if (input.averagePercent < 50) {
+		return 'O aluno entra como prioridade alta pela media publicada atual.';
+	}
+
+	if (input.averagePercent < 70) {
+		return 'O aluno merece acompanhamento por estar abaixo da faixa esperada.';
+	}
+
+	return `Base em ${input.publishedAssessments} publicacao(oes) no recorte atual.`;
+}
+
+function sortByPriority<
+	T extends { priorityScore: number; averagePercent?: number | null; averagePercentValue?: number }
+>(items: T[]): T[] {
+	return [...items].sort((left, right) => {
+		if (right.priorityScore !== left.priorityScore) {
+			return right.priorityScore - left.priorityScore;
+		}
+
+		const leftValue =
+			typeof left.averagePercentValue === 'number'
+				? left.averagePercentValue
+				: typeof left.averagePercent === 'number'
+					? left.averagePercent
+					: 999;
+
+		const rightValue =
+			typeof right.averagePercentValue === 'number'
+				? right.averagePercentValue
+				: typeof right.averagePercent === 'number'
+					? right.averagePercent
+					: 999;
+
+		return leftValue - rightValue;
+	});
 }
 
 export async function loadCoordDashboard(
 	locals: App.Locals,
-	coordId: string,
+	_coordUserId: string,
 	displayName: string
-): Promise<{ ok: true; data: CoordDashboardData } | { ok: false; error: string }> {
-	const [
-		{ data: membershipsData, error: membershipsError },
-		{ data: accessCodesData, error: accessCodesError }
-	] = await Promise.all([
-		locals.supabase.from('coord_class_memberships').select('class_id').eq('coord_id', coordId),
-		locals.supabase.from('class_coord_access_codes').select('class_id, access_code')
-	]);
+): Promise<CoordDashboardResult> {
+	const { data: classesData, error: classesError } =
+		await locals.supabase.rpc('coord_scope_classes');
 
-	if (membershipsError) {
+	if (classesError) {
 		return {
 			ok: false,
-			error: membershipsError.message
+			error: 'Nao foi possivel carregar o escopo institucional da coordenacao.'
 		};
 	}
 
-	if (accessCodesError) {
-		return {
-			ok: false,
-			error: accessCodesError.message
-		};
-	}
+	const classes = (classesData ?? []) as ClassRow[];
 
-	const classIds = [
-		...new Set(((membershipsData ?? []) as CoordMembershipRow[]).map((item) => item.class_id))
-	];
-	const accessCodeByClassId = new Map(
-		((accessCodesData ?? []) as CoordAccessCodeRow[]).map((item) => [
-			item.class_id,
-			item.access_code
-		])
-	);
-
-	if (classIds.length === 0) {
+	if (classes.length === 0) {
 		return {
 			ok: true,
 			data: {
@@ -199,7 +351,16 @@ export async function loadCoordDashboard(
 					institutionAverage: null,
 					classesAtRisk: 0,
 					managedClassesCount: 0,
-					message: 'Cole um codigo de turma para montar o primeiro recorte institucional.'
+					message: 'Adicione um codigo de turma para montar seu primeiro recorte institucional.',
+					highlights: [
+						{
+							key: 'scope',
+							label: 'Escopo',
+							value: '0 turmas',
+							description: 'Nenhuma turma vinculada ao painel ainda.',
+							tone: 'default'
+						}
+					]
 				},
 				classes: [],
 				subjects: [],
@@ -209,281 +370,397 @@ export async function loadCoordDashboard(
 		};
 	}
 
-	const [classesRes, studentsRes, classSubjectsRes, assessmentsRes] = await Promise.all([
-		locals.supabase.rpc('coord_scope_classes'),
-		locals.supabase.rpc('coord_scope_students'),
-		locals.supabase
-			.from('class_subjects')
-			.select(
-				`
-					class_id,
-					subject_id,
-					subjects (
-						name
-					)
-				`
-			)
-			.in('class_id', classIds),
-		locals.supabase
-			.from('assessments')
-			.select('id, class_id, subject_id, status, assessment_date')
-			.in('class_id', classIds)
-			.eq('status', 'published')
-	]);
+	const classIds = unique(classes.map((item) => item.class_id));
 
-	if (classesRes.error) return { ok: false, error: classesRes.error.message };
-	if (studentsRes.error) return { ok: false, error: studentsRes.error.message };
-	if (classSubjectsRes.error) return { ok: false, error: classSubjectsRes.error.message };
-	if (assessmentsRes.error) return { ok: false, error: assessmentsRes.error.message };
+	const { data: studentsData, error: studentsError } = await locals.supabase
+		.from('students')
+		.select('id, name, class_id, classes(name)')
+		.in('class_id', classIds);
 
-	const classes = ((classesRes.data ?? []) as ClassRow[]).filter((item) =>
-		classIds.includes(item.class_id)
-	);
-	const students = ((studentsRes.data ?? []) as StudentRow[]).filter((item) =>
-		classIds.includes(item.class_id)
-	);
-	const classSubjects = (classSubjectsRes.data ?? []) as SubjectRow[];
-	const assessments = (assessmentsRes.data ?? []) as AssessmentRow[];
+	if (studentsError) {
+		return {
+			ok: false,
+			error: 'Nao foi possivel carregar os alunos do escopo institucional.'
+		};
+	}
 
-	const teacherIds = [...new Set(classes.map((item) => item.teacher_id))];
-	const assessmentIds = assessments.map((item) => item.id);
+	const students = (
+		(studentsData ?? []) as Array<{
+			id: string;
+			name: string;
+			class_id: string;
+			classes: { name: string } | { name: string }[] | null;
+		}>
+	).map<StudentRow>((row) => ({
+		student_id: row.id,
+		student_name: row.name,
+		class_id: row.class_id,
+		class_name: Array.isArray(row.classes)
+			? (row.classes[0]?.name ?? 'Turma')
+			: (row.classes?.name ?? 'Turma')
+	}));
 
-	const [, resultsRes] = await Promise.all([
-		Promise.resolve({ data: [], error: null }),
-		assessmentIds.length > 0
-			? locals.supabase
-					.from('assessment_results')
-					.select('assessment_id, student_id, raw_score, score_min, score_max, is_excused')
-					.in('assessment_id', assessmentIds)
-			: Promise.resolve({ data: [], error: null })
-	]);
+	const { data: subjectsData, error: subjectsError } = await locals.supabase
+		.from('class_subjects')
+		.select('class_id, subject_id, subjects(name)')
+		.in('class_id', classIds);
 
-	if (resultsRes.error) return { ok: false, error: resultsRes.error.message };
+	if (subjectsError) {
+		return {
+			ok: false,
+			error: 'Nao foi possivel carregar as materias do escopo institucional.'
+		};
+	}
 
-	const results = (resultsRes.data ?? []) as AssessmentResultRow[];
+	const subjects = (subjectsData ?? []) as SubjectRow[];
+
+	const { data: assessmentsData, error: assessmentsError } = await locals.supabase
+		.from('assessments')
+		.select('id, class_id, subject_id, status, assessment_date')
+		.in('class_id', classIds);
+
+	if (assessmentsError) {
+		return {
+			ok: false,
+			error: 'Nao foi possivel carregar as avaliacoes do escopo institucional.'
+		};
+	}
+
+	const assessments = (assessmentsData ?? []) as AssessmentRow[];
+	const publishedAssessments = assessments.filter((item) => item.status === 'published');
+	const publishedAssessmentIds = publishedAssessments.map((item) => item.id);
+
+	let results: AssessmentResultRow[] = [];
+
+	if (publishedAssessmentIds.length > 0) {
+		const { data: resultsData, error: resultsError } = await locals.supabase
+			.from('assessment_results')
+			.select('assessment_id, student_id, raw_score, score_min, score_max, is_excused')
+			.in('assessment_id', publishedAssessmentIds);
+
+		if (resultsError) {
+			return {
+				ok: false,
+				error: 'Nao foi possivel carregar os resultados publicados do escopo institucional.'
+			};
+		}
+
+		results = (resultsData ?? []) as AssessmentResultRow[];
+	}
 
 	const studentsByClassId = new Map<string, StudentRow[]>();
 	for (const student of students) {
-		const current = studentsByClassId.get(student.class_id) ?? [];
-		current.push(student);
-		studentsByClassId.set(student.class_id, current);
+		const bucket = studentsByClassId.get(student.class_id) ?? [];
+		bucket.push(student);
+		studentsByClassId.set(student.class_id, bucket);
+	}
+
+	const publishedAssessmentsByClassId = new Map<string, AssessmentRow[]>();
+	for (const assessment of publishedAssessments) {
+		const bucket = publishedAssessmentsByClassId.get(assessment.class_id) ?? [];
+		bucket.push(assessment);
+		publishedAssessmentsByClassId.set(assessment.class_id, bucket);
 	}
 
 	const resultsByAssessmentId = new Map<string, AssessmentResultRow[]>();
 	for (const result of results) {
-		const current = resultsByAssessmentId.get(result.assessment_id) ?? [];
-		current.push(result);
-		resultsByAssessmentId.set(result.assessment_id, current);
+		const bucket = resultsByAssessmentId.get(result.assessment_id) ?? [];
+		bucket.push(result);
+		resultsByAssessmentId.set(result.assessment_id, bucket);
 	}
 
-	const assessmentsByClassId = new Map<string, AssessmentRow[]>();
-	for (const assessment of assessments) {
-		const current = assessmentsByClassId.get(assessment.class_id) ?? [];
-		current.push(assessment);
-		assessmentsByClassId.set(assessment.class_id, current);
-	}
+	const classDashboardItems = classes.map<CoordClassDashboardItem>((classRow) => {
+		const classStudents = studentsByClassId.get(classRow.class_id) ?? [];
+		const classAssessments = publishedAssessmentsByClassId.get(classRow.class_id) ?? [];
+		const classResults = classAssessments.flatMap(
+			(assessment) => resultsByAssessmentId.get(assessment.id) ?? []
+		);
 
-	const subjectNameByClassAndId = new Map<string, string>();
-	for (const row of classSubjects) {
-		const subject = Array.isArray(row.subjects) ? row.subjects[0] : row.subjects;
-		if (!subject) continue;
-		subjectNameByClassAndId.set(`${row.class_id}:${row.subject_id}`, subject.name);
-	}
+		const normalizedScores = classResults
+			.filter((result) => !result.is_excused)
+			.map((result) => normalizePercent(result))
+			.filter((value): value is number => typeof value === 'number');
 
-	const classCards = classes
-		.map((classroom) => {
-			const classStudents = studentsByClassId.get(classroom.class_id) ?? [];
-			const classAssessments = assessmentsByClassId.get(classroom.class_id) ?? [];
-			const normalizedScores = classAssessments.flatMap((assessment) =>
-				(resultsByAssessmentId.get(assessment.id) ?? [])
-					.filter((result) => !result.is_excused)
-					.map((result) => normalizePercent(result))
-					.filter((value): value is number => typeof value === 'number')
-			);
-			const publishedStudentScores = new Map<string, number[]>();
-
-			for (const assessment of classAssessments) {
-				for (const result of resultsByAssessmentId.get(assessment.id) ?? []) {
-					const normalized = normalizePercent(result);
-					if (normalized === null) continue;
-
-					const current = publishedStudentScores.get(result.student_id) ?? [];
-					current.push(normalized);
-					publishedStudentScores.set(result.student_id, current);
-				}
-			}
-
-			const riskStudents = [...publishedStudentScores.values()].filter((scores) => {
-				const scoreAverage = average(scores);
-				return scoreAverage !== null && scoreAverage < 60;
-			}).length;
-
-			const averagePercentValue = average(normalizedScores);
-			const averagePercent =
-				averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1)));
-
-			return {
-				classId: classroom.class_id,
-				className: classroom.class_name,
-				teacherName: classroom.teacher_name ?? 'Professor',
-				accessCode: classroom.access_code ?? accessCodeByClassId.get(classroom.class_id) ?? null,
-				studentsCount: classStudents.length,
-				publishedAssessments: classAssessments.length,
-				averagePercent,
-				riskStudents,
-				tone: toneFromMetrics(averagePercent, riskStudents, classAssessments.length)
-			};
-		})
-		.sort((left, right) => {
-			const toneRank = { critical: 0, attention: 1, healthy: 2 } as const;
-			if (toneRank[left.tone] !== toneRank[right.tone]) {
-				return toneRank[left.tone] - toneRank[right.tone];
-			}
-
-			const leftAverage =
-				typeof left.averagePercent === 'number' ? left.averagePercent : Number.POSITIVE_INFINITY;
-			const rightAverage =
-				typeof right.averagePercent === 'number' ? right.averagePercent : Number.POSITIVE_INFINITY;
-			return leftAverage - rightAverage || left.className.localeCompare(right.className, 'pt-BR');
-		});
-
-	const subjects = [...new Set(assessments.map((item) => `${item.class_id}:${item.subject_id}`))]
-		.map((key) => {
-			const [classId, subjectId] = key.split(':');
-			const subjectAssessments = (assessmentsByClassId.get(classId) ?? [])
-				.filter((assessment) => assessment.subject_id === subjectId)
-				.sort((a, b) => a.assessment_date.localeCompare(b.assessment_date));
-			const series = subjectAssessments
-				.map((assessment) => {
-					const scores = (resultsByAssessmentId.get(assessment.id) ?? [])
-						.filter((result) => !result.is_excused)
-						.map((result) => normalizePercent(result))
-						.filter((value): value is number => typeof value === 'number');
-					return average(scores);
-				})
+		const studentAverageById = new Map<string, number>();
+		for (const student of classStudents) {
+			const studentScores = classResults
+				.filter((result) => result.student_id === student.student_id && !result.is_excused)
+				.map((result) => normalizePercent(result))
 				.filter((value): value is number => typeof value === 'number');
-			const averagePercentValue = average(series);
 
-			return {
-				subjectId: key,
-				subjectName: subjectNameByClassAndId.get(key) ?? 'Materia',
-				averagePercent:
-					averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1))),
-				assessmentsCount: subjectAssessments.length,
-				recentTrend: buildTrend(series)
-			};
-		})
-		.sort((left, right) => {
-			const leftAverage =
-				typeof left.averagePercent === 'number' ? left.averagePercent : Number.POSITIVE_INFINITY;
-			const rightAverage =
-				typeof right.averagePercent === 'number' ? right.averagePercent : Number.POSITIVE_INFINITY;
-			return (
-				leftAverage - rightAverage || left.subjectName.localeCompare(right.subjectName, 'pt-BR')
-			);
-		})
-		.slice(0, 8);
+			const studentAverage = average(studentScores);
+			if (typeof studentAverage === 'number') {
+				studentAverageById.set(student.student_id, studentAverage);
+			}
+		}
 
-	const teachers = teacherIds
-		.map((teacherId) => {
-			const teacherClasses = classes.filter((item) => item.teacher_id === teacherId);
-			const teacherClassIds = new Set(teacherClasses.map((item) => item.class_id));
-			const teacherAssessments = assessments.filter((item) => teacherClassIds.has(item.class_id));
-			const teacherScores = teacherAssessments.flatMap((assessment) =>
-				(resultsByAssessmentId.get(assessment.id) ?? [])
-					.filter((result) => !result.is_excused)
-					.map((result) => normalizePercent(result))
-					.filter((value): value is number => typeof value === 'number')
-			);
-			const averagePercentValue = average(teacherScores);
-
-			return {
-				teacherId,
-				teacherName: teacherClasses[0]?.teacher_name ?? 'Professor',
-				classesCount: teacherClasses.length,
-				averagePercent:
-					averagePercentValue === null ? null : Math.round(Number(averagePercentValue.toFixed(1))),
-				publishedAssessments: teacherAssessments.length
-			};
-		})
-		.sort((left, right) => {
-			const leftAverage =
-				typeof left.averagePercent === 'number' ? left.averagePercent : Number.POSITIVE_INFINITY;
-			const rightAverage =
-				typeof right.averagePercent === 'number' ? right.averagePercent : Number.POSITIVE_INFINITY;
-			return (
-				leftAverage - rightAverage || left.teacherName.localeCompare(right.teacherName, 'pt-BR')
-			);
+		const averagePercent = average(normalizedScores);
+		const riskStudents = [...studentAverageById.values()].filter((value) => value < 60).length;
+		const publishedAssessmentsCount = classAssessments.length;
+		const studentsCount = classStudents.length;
+		const tone = classifyClassTone({
+			studentsCount,
+			publishedAssessments: publishedAssessmentsCount,
+			averagePercent,
+			riskStudents
 		});
 
-	const studentsList = students
-		.map((student) => {
-			const studentAssessments = assessmentsByClassId.get(student.class_id) ?? [];
-			const scores = studentAssessments.flatMap((assessment) =>
-				(resultsByAssessmentId.get(assessment.id) ?? [])
-					.filter((result) => result.student_id === student.student_id && !result.is_excused)
-					.map((result) => normalizePercent(result))
-					.filter((value): value is number => typeof value === 'number')
-			);
-			const averagePercentValue = average(scores);
-			if (averagePercentValue === null || averagePercentValue >= 60) return null;
+		const totalExpectedResults = publishedAssessmentsCount * Math.max(studentsCount, 1);
+		const coveragePercent =
+			totalExpectedResults > 0 ? (classResults.length / totalExpectedResults) * 100 : 0;
+
+		const lastPublishedAt =
+			classAssessments
+				.map((item) => item.assessment_date)
+				.sort((left, right) => right.localeCompare(left))[0] ?? null;
+
+		const priorityScore =
+			(tone === 'critical' ? 320 : tone === 'attention' ? 180 : 80) +
+			riskStudents * 10 +
+			Math.round((100 - (averagePercent ?? 100)) * 1.5) +
+			Math.round((100 - coveragePercent) * 0.5);
+
+		return {
+			classId: classRow.class_id,
+			className: classRow.class_name,
+			teacherId: classRow.teacher_id,
+			teacherName: classRow.teacher_name,
+			accessCode: classRow.access_code,
+			studentsCount,
+			publishedAssessments: publishedAssessmentsCount,
+			averagePercent,
+			riskStudents,
+			tone,
+			priorityScore,
+			coveragePercent,
+			lastPublishedAt,
+			primaryReason: buildClassReason({
+				publishedAssessments: publishedAssessmentsCount,
+				riskStudents,
+				averagePercent,
+				tone
+			}),
+			detailHref: `/coord/classes/${classRow.class_id}`
+		};
+	});
+
+	const subjectNameById = new Map<string, string>();
+	const classIdsBySubjectId = new Map<string, string[]>();
+
+	for (const subjectRow of subjects) {
+		subjectNameById.set(subjectRow.subject_id, extractSubjectName(subjectRow.subjects));
+
+		const bucket = classIdsBySubjectId.get(subjectRow.subject_id) ?? [];
+		bucket.push(subjectRow.class_id);
+		classIdsBySubjectId.set(subjectRow.subject_id, unique(bucket));
+	}
+
+	const subjectDashboardItems = unique(
+		subjects.map((item) => item.subject_id)
+	).map<CoordSubjectDashboardItem>((subjectId) => {
+		const relatedAssessments = publishedAssessments.filter((item) => item.subject_id === subjectId);
+		const relatedResults = relatedAssessments.flatMap(
+			(assessment) => resultsByAssessmentId.get(assessment.id) ?? []
+		);
+
+		const normalizedScores = relatedResults
+			.filter((result) => !result.is_excused)
+			.map((result) => normalizePercent(result))
+			.filter((value): value is number => typeof value === 'number');
+
+		const averagePercent = average(normalizedScores);
+
+		const trendSeries = relatedAssessments.map((assessment) => {
+			const assessmentScores = (resultsByAssessmentId.get(assessment.id) ?? [])
+				.filter((result) => !result.is_excused)
+				.map((result) => normalizePercent(result))
+				.filter((value): value is number => typeof value === 'number');
+
+			return {
+				assessmentDate: assessment.assessment_date,
+				averagePercent: average(assessmentScores)
+			};
+		});
+
+		const recentTrend = classifyTrend(trendSeries);
+		const relatedClassIds = classIdsBySubjectId.get(subjectId) ?? [];
+		const coverageBase = relatedClassIds.length * Math.max(relatedAssessments.length, 1);
+		const coveragePercent =
+			coverageBase > 0 ? Math.min(100, (relatedAssessments.length / coverageBase) * 100) : 0;
+
+		const lastPublishedAt =
+			relatedAssessments
+				.map((item) => item.assessment_date)
+				.sort((left, right) => right.localeCompare(left))[0] ?? null;
+
+		const priorityScore =
+			(recentTrend === 'declining' ? 150 : recentTrend === 'stable' ? 40 : 20) +
+			Math.round((100 - (averagePercent ?? 100)) * 1.4) +
+			relatedAssessments.length * 2;
+
+		return {
+			subjectId,
+			subjectName: subjectNameById.get(subjectId) ?? 'Materia',
+			averagePercent,
+			assessmentsCount: relatedAssessments.length,
+			recentTrend,
+			priorityScore,
+			coveragePercent,
+			lastPublishedAt,
+			primaryReason: buildSubjectReason({
+				recentTrend,
+				averagePercent,
+				assessmentsCount: relatedAssessments.length
+			}),
+			detailHref: `/coord/subjects/${subjectId}`
+		};
+	});
+
+	const teacherDashboardItems = unique(
+		classes.map((item) => item.teacher_id)
+	).map<CoordTeacherDashboardItem>((teacherId) => {
+		const teacherClasses = classDashboardItems.filter((item) => item.teacherId === teacherId);
+		const averagePercent = average(
+			teacherClasses
+				.map((item) => item.averagePercent)
+				.filter((value): value is number => typeof value === 'number')
+		);
+
+		const publishedAssessmentsCount = teacherClasses.reduce(
+			(sum, item) => sum + item.publishedAssessments,
+			0
+		);
+
+		const coveragePercent = average(teacherClasses.map((item) => item.coveragePercent)) ?? 0;
+		const lastPublishedAt =
+			teacherClasses
+				.map((item) => item.lastPublishedAt)
+				.filter((value): value is string => typeof value === 'string')
+				.sort((left, right) => right.localeCompare(left))[0] ?? null;
+
+		const classesAtRisk = teacherClasses.filter((item) => item.tone !== 'healthy').length;
+
+		const priorityScore =
+			classesAtRisk * 90 +
+			Math.round((100 - (averagePercent ?? 100)) * 1.2) +
+			Math.round((100 - coveragePercent) * 0.5);
+
+		return {
+			teacherId,
+			teacherName: teacherClasses[0]?.teacherName ?? 'Professor',
+			classesCount: teacherClasses.length,
+			averagePercent,
+			publishedAssessments: publishedAssessmentsCount,
+			priorityScore,
+			coveragePercent,
+			lastPublishedAt,
+			primaryReason: buildTeacherReason({
+				classesCount: teacherClasses.length,
+				publishedAssessments: publishedAssessmentsCount,
+				averagePercent
+			}),
+			detailHref: `/coord/teachers/${teacherId}`
+		};
+	});
+
+	const studentDashboardItems = students
+		.map<CoordStudentDashboardItem | null>((student) => {
+			const studentResults = results
+				.filter((result) => result.student_id === student.student_id && !result.is_excused)
+				.map((result) => normalizePercent(result))
+				.filter((value): value is number => typeof value === 'number');
+
+			const averagePercent = average(studentResults);
+			if (typeof averagePercent !== 'number') {
+				return null;
+			}
+
+			const publishedAssessmentsCount = unique(
+				results
+					.filter((result) => result.student_id === student.student_id)
+					.map((result) => result.assessment_id)
+			).length;
+
+			const priorityScore =
+				Math.round((100 - averagePercent) * 2.2) + publishedAssessmentsCount * 5;
 
 			return {
 				studentId: student.student_id,
 				studentName: student.student_name,
-				className: student.class_name ?? 'Turma',
-				averagePercent: Math.round(Number(averagePercentValue.toFixed(1))),
-				publishedAssessments: scores.length
+				className: student.class_name,
+				averagePercent,
+				publishedAssessments: publishedAssessmentsCount,
+				priorityScore,
+				primaryReason: buildStudentReason({
+					averagePercent,
+					publishedAssessments: publishedAssessmentsCount
+				}),
+				detailHref: `/coord/students/${student.student_id}`
 			};
 		})
-		.filter(
-			(
-				item
-			): item is {
-				studentId: string;
-				studentName: string;
-				className: string;
-				averagePercent: number;
-				publishedAssessments: number;
-			} => item !== null
-		)
-		.sort(
-			(left, right) =>
-				left.averagePercent - right.averagePercent ||
-				left.studentName.localeCompare(right.studentName, 'pt-BR')
-		)
-		.slice(0, 8);
+		.filter((item): item is CoordStudentDashboardItem => item !== null);
 
-	const institutionScores = results
-		.filter((result) => !result.is_excused)
-		.map((result) => normalizePercent(result))
-		.filter((value): value is number => typeof value === 'number');
-	const institutionAverageValue = average(institutionScores);
-	const classesAtRisk = classCards.filter((item) => item.tone !== 'healthy').length;
+	const sortedClasses = sortByPriority(classDashboardItems);
+	const sortedSubjects = sortByPriority(subjectDashboardItems);
+	const sortedTeachers = sortByPriority(teacherDashboardItems);
+	const sortedStudents = sortByPriority(studentDashboardItems);
+
+	const institutionAverage = average(
+		sortedClasses
+			.map((item) => item.averagePercent)
+			.filter((value): value is number => typeof value === 'number')
+	);
+
+	const classesAtRisk = sortedClasses.filter((item) => item.tone !== 'healthy').length;
+	const totalPublishedAssessments = publishedAssessments.length;
+
+	const highlights: CoordSummaryHighlight[] = [
+		{
+			key: 'critical-classes',
+			label: 'Turmas prioritarias',
+			value: `${sortedClasses.filter((item) => item.tone === 'critical').length}`,
+			description: 'Turmas em nivel critico no escopo atual.',
+			tone: sortedClasses.some((item) => item.tone === 'critical') ? 'critical' : 'default'
+		},
+		{
+			key: 'declining-subjects',
+			label: 'Materias em queda',
+			value: `${sortedSubjects.filter((item) => item.recentTrend === 'declining').length}`,
+			description: 'Materias com tendencia recente de piora.',
+			tone: sortedSubjects.some((item) => item.recentTrend === 'declining')
+				? 'attention'
+				: 'default'
+		},
+		{
+			key: 'priority-students',
+			label: 'Alunos prioritarios',
+			value: `${sortedStudents.filter((item) => item.averagePercent < 60).length}`,
+			description: 'Alunos abaixo da faixa esperada.',
+			tone: sortedStudents.some((item) => item.averagePercent < 50) ? 'attention' : 'default'
+		}
+	];
 
 	return {
 		ok: true,
 		data: {
 			summary: {
 				displayName,
-				totalClasses: classCards.length,
+				totalClasses: classes.length,
 				totalStudents: students.length,
-				totalPublishedAssessments: assessments.length,
-				institutionAverage:
-					institutionAverageValue === null
-						? null
-						: Math.round(Number(institutionAverageValue.toFixed(1))),
+				totalPublishedAssessments,
+				institutionAverage,
 				classesAtRisk,
-				managedClassesCount: classCards.length,
+				managedClassesCount: classes.length,
 				message:
-					classesAtRisk > 0
-						? `${classesAtRisk} turma(s) pedem atencao imediata na leitura publicada.`
-						: 'Sua coordenacao ja esta lendo somente as turmas sob seu escopo.'
+					totalPublishedAssessments > 0
+						? 'A leitura institucional abaixo considera apenas resultados publicados no seu escopo atual.'
+						: 'Seu escopo ja esta vinculado, mas ainda nao ha publicacoes suficientes para leitura institucional.',
+				highlights
 			},
-			classes: classCards,
-			subjects,
-			teachers,
-			students: studentsList
+			classes: sortedClasses,
+			subjects: sortedSubjects,
+			teachers: sortedTeachers,
+			students: sortedStudents
 		}
 	};
 }

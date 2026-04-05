@@ -1,4 +1,5 @@
 import { redirect } from '@sveltejs/kit';
+import { getAuthenticatedUserId } from '$lib/server/auth';
 import {
 	clearPreferredEnrollmentId,
 	loadStudentEnrollments,
@@ -6,7 +7,7 @@ import {
 } from '$lib/server/student-enrollments';
 
 export const POST = async ({ request, locals, cookies }) => {
-	if (!locals.session) {
+	if (!getAuthenticatedUserId(locals)) {
 		throw redirect(302, '/login');
 	}
 

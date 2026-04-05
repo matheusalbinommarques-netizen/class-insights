@@ -63,7 +63,8 @@ test('getOwnedClass returns the class only when it belongs to the teacher', asyn
 		name: 'Turma A',
 		score_min: 0,
 		score_max: 10,
-		score_decimals: 1
+		score_decimals: 1,
+		access_code: null
 	});
 
 	assert.equal(await getOwnedClass(locals, 'class-1', 'teacher-2'), null);

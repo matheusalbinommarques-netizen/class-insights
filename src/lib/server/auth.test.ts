@@ -3,21 +3,53 @@ import assert from 'node:assert/strict';
 
 import { getAuthenticatedUserId, getCurrentAuthUser, getProfileByUserId } from './auth.ts';
 
-test('getAuthenticatedUserId reads the session user id when present', () => {
-	const locals = {
-		session: {
-			user: {
-				id: 'user-1'
-			}
+test('getAuthenticatedUserId reads the verified local user id and falls back to the E2E profile', () => {
+	const verifiedLocals = {
+		user: {
+			id: 'user-1',
+			email: 'verified@example.com'
 		}
+	} as unknown as App.Locals;
+
+	assert.equal(getAuthenticatedUserId(verifiedLocals), 'user-1');
+
+	const e2eLocals = {
+		user: null,
+		e2eProfile: {
+			id: 'e2e-user',
+			role: 'student',
+			display_name: 'Aluno E2E',
+			email: 'student@e2e.local'
+		}
+	} as unknown as App.Locals;
+
+	assert.equal(getAuthenticatedUserId(e2eLocals), 'e2e-user');
+
+	const anonymousLocals = {
+		user: null,
+		e2eProfile: null
 	} as App.Locals;
 
-	assert.equal(getAuthenticatedUserId(locals), 'user-1');
-	assert.equal(getAuthenticatedUserId({ session: null } as App.Locals), null);
+	assert.equal(getAuthenticatedUserId(anonymousLocals), null);
+});
+
+test('getCurrentAuthUser returns the verified local user when present', async () => {
+	const locals = {
+		user: {
+			id: 'user-local',
+			email: 'local@example.com'
+		}
+	} as unknown as App.Locals;
+
+	assert.deepEqual(await getCurrentAuthUser(locals), {
+		id: 'user-local',
+		email: 'local@example.com'
+	});
 });
 
 test('getCurrentAuthUser returns null on auth error and normalized user data on success', async () => {
 	const failingLocals = {
+		user: null,
 		supabase: {
 			auth: {
 				getUser: async () => ({
@@ -31,6 +63,7 @@ test('getCurrentAuthUser returns null on auth error and normalized user data on 
 	assert.equal(await getCurrentAuthUser(failingLocals), null);
 
 	const successLocals = {
+		user: null,
 		supabase: {
 			auth: {
 				getUser: async () => ({
@@ -54,6 +87,7 @@ test('getCurrentAuthUser returns null on auth error and normalized user data on 
 
 test('getCurrentAuthUser uses the E2E profile when present', async () => {
 	const locals = {
+		user: null,
 		e2eProfile: {
 			id: 'e2e-user',
 			role: 'teacher',

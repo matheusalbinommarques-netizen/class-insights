@@ -12,7 +12,16 @@ function emptyDashboard(displayName: string) {
 			institutionAverage: null,
 			classesAtRisk: 0,
 			managedClassesCount: 0,
-			message: 'Cole um codigo de turma para montar o primeiro recorte institucional.'
+			message: 'Adicione um codigo de turma para montar seu primeiro recorte institucional.',
+			highlights: [
+				{
+					key: 'scope',
+					label: 'Escopo',
+					value: '0 turmas',
+					description: 'Nenhuma turma vinculada ao painel ainda.',
+					tone: 'default'
+				}
+			]
 		},
 		classes: [],
 		subjects: [],
@@ -43,13 +52,12 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const accessCode = String(form.get('accessCode') ?? '')
 			.trim()
-			.toUpperCase()
-			.replace(/\s+/g, '');
+			.toUpperCase();
 
 		if (!accessCode) {
 			return fail(400, {
 				action: 'claimAccessCode',
-				message: 'Informe um codigo de turma.'
+				message: 'Informe um codigo de turma valido.'
 			});
 		}
 
@@ -67,7 +75,7 @@ export const actions: Actions = {
 		return {
 			success: true,
 			action: 'claimAccessCode',
-			message: 'Turma adicionada ao seu painel com sucesso.'
+			message: 'Turma adicionada ao painel com sucesso.'
 		};
 	}
 };

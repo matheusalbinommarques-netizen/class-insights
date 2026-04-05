@@ -1,30 +1,25 @@
 <script lang="ts">
 	import ciIcon from '$lib/assets/ci-icon.png';
-	import DisplayNamePrompt from '$lib/components/DisplayNamePrompt.svelte';
-	let { children, data } = $props();
+	import type { Snippet } from 'svelte';
+
+	type Props = {
+		data: {
+			profile?: {
+				display_name: string;
+			} | null;
+		};
+		children: Snippet;
+	};
+
+	let { data, children }: Props = $props();
 </script>
 
-<DisplayNamePrompt
-	profileId={data.profile?.id}
-	displayName={data.profile?.display_name}
-	tone="coord"
-/>
-
-<svelte:head>
-	<title>Class Insights - Coordenacao</title>
-</svelte:head>
-
-<div class="min-h-screen bg-slate-50 text-slate-900">
-	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-		<div
-			class="absolute left-1/2 top-0 h-96 w-96 -translate-x-1/2 rounded-full bg-amber-200/35 blur-3xl"
-		></div>
-		<div class="absolute right-0 top-40 h-80 w-80 rounded-full bg-sky-200/25 blur-3xl"></div>
-	</div>
-
+<div
+	class="min-h-screen bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.08),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)]"
+>
 	<div class="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
 		<header
-			class="rounded-[2rem] border border-slate-200 bg-white/90 px-6 py-5 shadow-sm backdrop-blur"
+			class="rounded-4xl border border-slate-200 bg-white/90 px-6 py-5 shadow-sm backdrop-blur"
 		>
 			<div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
 				<div class="flex items-start gap-4">
@@ -35,13 +30,13 @@
 					</div>
 
 					<div class="min-w-0">
-						<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Coordenacao</p>
+						<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Coordenação</p>
 						<h1 class="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-							Escopo por turma
+							Visão institucional
 						</h1>
 						<p class="mt-2 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
-							Esta area e independente do fluxo teacher. O coordenador entra com login proprio e
-							passara a enxergar somente as turmas que administrar por codigo de turma.
+							Acompanhe as turmas do seu escopo, identifique pontos de atenção e concentre a leitura
+							nas quedas mais relevantes.
 						</p>
 					</div>
 				</div>
@@ -53,7 +48,8 @@
 						{data.profile?.display_name ?? 'Coordenador'}
 					</p>
 					<p class="mt-1 leading-6">
-						Fluxo institucional separado do professor e pronto para receber o modelo de vinculacao.
+						Painel institucional com foco em turmas, matérias, tendências e alunos que pedem
+						acompanhamento.
 					</p>
 				</div>
 			</div>

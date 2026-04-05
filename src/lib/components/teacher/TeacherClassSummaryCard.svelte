@@ -20,11 +20,7 @@
 		onMenuSelect?: (itemId: string) => void;
 	};
 
-	let {
-		classItem,
-		menuItems = [],
-		onMenuSelect = () => {}
-	}: Props = $props();
+	let { classItem, menuItems = [], onMenuSelect = () => {} }: Props = $props();
 
 	const axisLevels = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -83,18 +79,14 @@
 		</div>
 
 		<div>
-			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-				Cobertura
-			</p>
+			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">Cobertura</p>
 			<p class="mt-2 text-[2.2rem] font-extrabold leading-none tracking-tight text-slate-950">
 				{classItem.coverageLabel}
 			</p>
 		</div>
 
 		<div>
-			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-				Tendência
-			</p>
+			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">Tendência</p>
 			<p
 				class={`mt-2 text-[2.2rem] font-extrabold leading-none tracking-tight ${trendClass(classItem.trendTone)}`}
 			>

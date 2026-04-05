@@ -1,6 +1,7 @@
-import type { Actions, PageServerLoad } from './$types';
+﻿import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
 
+import { getAuthenticatedUserId } from '$lib/server/auth';
 import { buildErrorMessage, createErrorId, logServerEvent } from '$lib/server/observability';
 import { loadStudentPortalData } from '$lib/server/student-portal';
 
@@ -73,7 +74,9 @@ export const actions: Actions = {
 			.trim()
 			.toUpperCase();
 
-		if (!locals.session) {
+		const userId = getAuthenticatedUserId(locals);
+
+		if (!userId) {
 			return fail(401, {
 				action: 'claimInviteCode',
 				message: 'Voce precisa estar logado para adicionar um codigo.'
@@ -96,7 +99,7 @@ export const actions: Actions = {
 			const errorId = createErrorId('student_claim');
 			logServerEvent('error', 'student.claim_invite_code_failed', {
 				errorId,
-				userId: locals.session.user.id,
+				userId,
 				route: '/student',
 				action: 'claimInviteCode',
 				inviteCode,

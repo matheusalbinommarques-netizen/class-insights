@@ -144,12 +144,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	]);
 
 	const inviteCodesByStudentId = mapInviteCodesByStudentId(inviteCodesData);
-	const students = ((studentsData ?? []) as Array<Omit<TeacherClassStudent, 'invite_code'>>).map(
-		(student) => ({
-			...student,
-			invite_code: inviteCodesByStudentId.get(student.id) ?? null
-		})
-	);
+	const students: TeacherClassStudent[] = (studentsData ?? []).map((student) => ({
+		id: String(student.id),
+		name: String(student.name),
+		email: null,
+		displayName: null,
+		invite_code: inviteCodesByStudentId.get(String(student.id)) ?? null
+	}));
 	const classSubjects = ((classSubjectsData ?? []) as ClassSubjectRow[])
 		.map((item) => {
 			const subject = Array.isArray(item.subjects) ? item.subjects[0] : item.subjects;

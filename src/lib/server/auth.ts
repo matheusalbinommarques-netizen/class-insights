@@ -7,10 +7,17 @@ export type ProfileRow = {
 };
 
 export function getAuthenticatedUserId(locals: App.Locals): string | null {
-	return locals.session?.user?.id ?? null;
+	return locals.user?.id ?? locals.e2eProfile?.id ?? null;
 }
 
 export async function getCurrentAuthUser(locals: App.Locals) {
+	if (locals.user) {
+		return {
+			id: locals.user.id,
+			email: locals.user.email ?? null
+		};
+	}
+
 	if (locals.e2eProfile) {
 		return {
 			id: locals.e2eProfile.id,
@@ -26,6 +33,8 @@ export async function getCurrentAuthUser(locals: App.Locals) {
 	if (error || !user) {
 		return null;
 	}
+
+	locals.user = user;
 
 	return {
 		id: user.id,

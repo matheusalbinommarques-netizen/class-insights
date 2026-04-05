@@ -8,7 +8,10 @@
 	import TeacherClassSummaryCard from '$lib/components/teacher/TeacherClassSummaryCard.svelte';
 	import TeacherDashboardHeader from '$lib/components/teacher/TeacherDashboardHeader.svelte';
 	import TeacherPerformanceChangesCard from '$lib/components/teacher/TeacherPerformanceChangesCard.svelte';
-	import type { TeacherDashboardClassSummaryItem, TeacherDashboardPageData } from '$lib/types/teacher';
+	import type {
+		TeacherDashboardClassSummaryItem,
+		TeacherDashboardPageData
+	} from '$lib/types/teacher';
 
 	type ActionFeedback = {
 		action?: 'createClass' | 'deleteClass' | 'generateClassSnapshot';
@@ -175,12 +178,7 @@
 		</div>
 	{/if}
 
-	<form
-		method="POST"
-		action="?/generateClassSnapshot"
-		class="hidden"
-		bind:this={snapshotForm}
-	>
+	<form method="POST" action="?/generateClassSnapshot" class="hidden" bind:this={snapshotForm}>
 		<input type="hidden" name="classId" value={snapshotClassId} />
 	</form>
 
@@ -207,10 +205,13 @@
 
 			{#if data.classesSummary.length === 0}
 				<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-					<div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+					<div
+						class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
+					>
 						<h3 class="text-lg font-black text-slate-950">Nenhuma turma encontrada</h3>
 						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Crie uma turma para começar a acompanhar média, cobertura e tendência da leitura pedagógica.
+							Crie uma turma para começar a acompanhar média, cobertura e tendência da leitura
+							pedagógica.
 						</p>
 					</div>
 				</div>
@@ -238,7 +239,9 @@
 			onclick={closeCriteriaModal}
 		></button>
 
-		<div class="relative z-10 w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+		<div
+			class="relative z-10 w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+		>
 			<div class="flex items-start justify-between gap-4">
 				<div class="min-w-0">
 					<p class="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
@@ -258,7 +261,13 @@
 					aria-label="Fechar"
 					onclick={closeCriteriaModal}
 				>
-					<svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+					<svg
+						class="h-5 w-5"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
 						<path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6l-12 12" />
 					</svg>
 				</button>
@@ -270,13 +279,16 @@
 						Esta área prioriza o que costuma bloquear o próximo passo do professor:
 						<strong class="text-slate-950"> Rascunhos de provas abertos sem fechar</strong>,
 						<strong class="text-slate-950"> matérias abaixo da média da instituição</strong>,
-						<strong class="text-slate-950"> alunos com notas que caíram de uma prova para outra</strong>
+						<strong class="text-slate-950">
+							alunos com notas que caíram de uma prova para outra</strong
+						>
 						e
 						<strong class="text-slate-950"> turmas sem matéria alguma</strong>.
 					</p>
 
 					<p>
-						O bloco “Próximo passo” tenta resumir o que mais precisa de atenção agora, e que vale a pena conferir!
+						O bloco “Próximo passo” tenta resumir o que mais precisa de atenção agora, e que vale a
+						pena conferir!
 					</p>
 				</div>
 			{:else}
@@ -290,7 +302,8 @@
 					</p>
 
 					<p>
-						Os indicadores de risco e os números em destaque, ajudam a entender aonde precisa de intervenção e atenção.
+						Os indicadores de risco e os números em destaque, ajudam a entender aonde precisa de
+						intervenção e atenção.
 					</p>
 				</div>
 			{/if}

@@ -1,5 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
-import type { Session } from '@supabase/supabase-js';
+import type { Session, User } from '@supabase/supabase-js';
 import type { Handle } from '@sveltejs/kit';
 
 import { getPublicEnv } from '$lib/config/env';
@@ -24,6 +24,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	});
 
+	event.locals.session = null;
+	event.locals.user = null;
+	event.locals.e2eProfile = null;
+
 	if (E2E_AUTH_ENABLED) {
 		const role = event.cookies.get('ci_e2e_role');
 		const userId = event.cookies.get('ci_e2e_user_id');
@@ -32,30 +36,36 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 		if (userId && displayName && (role === 'teacher' || role === 'student' || role === 'coord')) {
 			const decodedDisplayName = decodeURIComponent(displayName);
+
+			const fakeUser = {
+				id: userId,
+				email,
+				app_metadata: {},
+				user_metadata: {
+					role,
+					display_name: decodedDisplayName
+				},
+				aud: 'authenticated',
+				created_at: new Date().toISOString()
+			} as User;
+
 			event.locals.e2eProfile = {
 				id: userId,
 				role,
 				display_name: decodedDisplayName,
 				email
 			};
+
+			event.locals.user = fakeUser;
 			event.locals.session = {
 				access_token: 'e2e-access-token',
 				refresh_token: 'e2e-refresh-token',
 				expires_in: 3600,
 				expires_at: Math.floor(Date.now() / 1000) + 3600,
 				token_type: 'bearer',
-				user: {
-					id: userId,
-					email,
-					app_metadata: {},
-					user_metadata: {
-						role,
-						display_name: decodedDisplayName
-					},
-					aud: 'authenticated',
-					created_at: new Date().toISOString()
-				}
+				user: fakeUser
 			} as Session;
+
 			return resolve(event);
 		}
 	}
@@ -65,7 +75,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	} = await event.locals.supabase.auth.getSession();
 
 	if (!session) {
-		event.locals.session = null;
 		return resolve(event);
 	}
 
@@ -74,7 +83,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 		error
 	} = await event.locals.supabase.auth.getUser();
 
-	event.locals.session = !error && user ? session : null;
+	if (error || !user) {
+		event.locals.session = null;
+		event.locals.user = null;
+		return resolve(event);
+	}
+
+	event.locals.user = user;
+	event.locals.session = {
+		access_token: session.access_token,
+		refresh_token: session.refresh_token,
+		expires_in: session.expires_in,
+		expires_at: session.expires_at,
+		token_type: session.token_type,
+		user
+	};
 
 	return resolve(event);
 };

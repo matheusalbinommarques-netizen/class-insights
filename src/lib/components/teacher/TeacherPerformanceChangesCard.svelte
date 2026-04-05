@@ -1,6 +1,9 @@
 <script lang="ts">
 	import TeacherContextMenu from '$lib/components/teacher/TeacherContextMenu.svelte';
-	import type { TeacherDashboardPerformanceChanges, TeacherDashboardRiskTone } from '$lib/types/teacher';
+	import type {
+		TeacherDashboardPerformanceChanges,
+		TeacherDashboardRiskTone
+	} from '$lib/types/teacher';
 
 	type ContextMenuItem = {
 		id: string;
@@ -16,11 +19,7 @@
 		onMenuSelect?: (itemId: string) => void;
 	};
 
-	let {
-		performanceChanges,
-		menuItems = [],
-		onMenuSelect = () => {}
-	}: Props = $props();
+	let { performanceChanges, menuItems = [], onMenuSelect = () => {} }: Props = $props();
 
 	function riskBadgeClass(riskTone: TeacherDashboardRiskTone) {
 		if (riskTone === 'critical') {
@@ -83,7 +82,9 @@
 			</div>
 
 			{#if performanceChanges.belowReferenceSubjects.length === 0}
-				<div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+				<div
+					class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500"
+				>
 					Nenhuma matéria abaixo da média da instituição agora.
 				</div>
 			{:else}
@@ -96,7 +97,9 @@
 									<p class="mt-1 text-sm leading-7 text-slate-600">{subject.helperText}</p>
 								</div>
 
-								<p class={`text-[1.9rem] font-black tracking-tight ${scoreToneClass(subject.scoreLabel)}`}>
+								<p
+									class={`text-[1.9rem] font-black tracking-tight ${scoreToneClass(subject.scoreLabel)}`}
+								>
 									{subject.scoreLabel}
 								</p>
 							</div>
@@ -128,7 +131,9 @@
 			</div>
 
 			{#if performanceChanges.fallingStudents.length === 0}
-				<div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+				<div
+					class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500"
+				>
 					Não há alunos em queda relevante agora.
 				</div>
 			{:else}
@@ -186,7 +191,9 @@
 			</div>
 
 			{#if performanceChanges.relevantGaps.length === 0}
-				<div class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500">
+				<div
+					class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-500"
+				>
 					Nenhuma nota relevante abaixo da média da turma identificada agora.
 				</div>
 			{:else}
@@ -200,7 +207,9 @@
 								</div>
 
 								<div class="text-right">
-									<p class={`text-[1.7rem] font-black tracking-tight ${gapToneClass(gap.gapLabel)}`}>
+									<p
+										class={`text-[1.7rem] font-black tracking-tight ${gapToneClass(gap.gapLabel)}`}
+									>
 										{gap.gapLabel}
 									</p>
 									<span
