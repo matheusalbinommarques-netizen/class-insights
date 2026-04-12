@@ -137,7 +137,7 @@ function buildEmptyDashboard(
 			classesWithoutSubject: 0,
 			nextStepTitle: 'Proximo passo',
 			nextStepText: message,
-			nextStepHref: '#teacher-create-class'
+			nextStepHref: '/teacher/classes/new'
 		},
 		performanceChanges: {
 			belowReferenceSubjects: [],
@@ -296,7 +296,7 @@ export async function buildTeacherDashboardPageData(
 				classesWithoutSubject: 0,
 				nextStepTitle: 'Proximo passo',
 				nextStepText: 'Crie a primeira turma para ativar o fluxo principal do professor.',
-				nextStepHref: '#teacher-create-class'
+				nextStepHref: '/teacher/classes/new'
 			}
 		};
 	}
@@ -869,7 +869,7 @@ export async function buildTeacherDashboardPageData(
 		text: subjectPerformances[0]
 			? `Abra ${subjectPerformances[0].className} para revisar ${subjectPerformances[0].subjectName}.`
 			: 'Abra uma turma para seguir com a operacao do professor.',
-		href: dashboardClasses[0] ? `/teacher/${dashboardClasses[0].id}` : '#teacher-create-class',
+		href: dashboardClasses[0] ? `/teacher/${dashboardClasses[0].id}` : '/teacher/classes/new',
 		priority: 9
 	};
 

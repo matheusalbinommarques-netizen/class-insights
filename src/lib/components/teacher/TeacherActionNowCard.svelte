@@ -55,6 +55,10 @@
 		}
 	]);
 
+	const ctaLabel = $derived(
+		actionNow.nextStepHref === '/teacher/classes/new' ? 'Criar turma' : 'Abrir turma'
+	);
+
 	function chipClass(tone: ChipTone) {
 		if (tone === 'critical') {
 			return 'border-red-200 bg-red-50';
@@ -121,7 +125,7 @@
 			href={actionNow.nextStepHref}
 			class="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700"
 		>
-			Abrir turma
+			{ctaLabel}
 		</a>
 	</div>
 </section>

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { Actions, PageServerLoad } from './$types';
 import { fail } from '@sveltejs/kit';
 
@@ -6,7 +7,6 @@ import { getAuthenticatedUserId } from '$lib/server/auth';
 import { buildSubjectLongitudinalSummaries } from '$lib/server/longitudinal';
 import { validateSubjectInput } from '$lib/server/subjects';
 import {
-	createTeacherInviteCode,
 	listTeacherInviteCodesByClass,
 	mapInviteCodesByStudentId
 } from '$lib/server/teacher-invite-codes';
@@ -53,6 +53,13 @@ type AssessmentResultRow = {
 	is_excused: boolean;
 };
 
+type CreatedStudentRow = {
+	id: string;
+	name: string;
+	class_id: string;
+	invite_code: string | null;
+};
+
 function parseNumberInput(raw: FormDataEntryValue | null): number {
 	return Number(
 		String(raw ?? '')
@@ -75,6 +82,67 @@ function normalizePercent(rawScore: number | null, min: number, max: number): nu
 	return Math.max(0, Math.min(100, ((rawScore - min) / range) * 100));
 }
 
+function generateInviteCode() {
+	return randomBytes(4).toString('hex').toUpperCase();
+}
+
+function normalizeInviteCode(value: FormDataEntryValue | null) {
+	const normalized = String(value ?? '')
+		.trim()
+		.toUpperCase()
+		.replace(/\s+/g, '');
+
+	return normalized || null;
+}
+
+async function createStudentWithInviteCode(
+	locals: App.Locals,
+	input: {
+		name: string;
+		classId: string;
+		inviteCode: string | null;
+	}
+) {
+	const maxAttempts = input.inviteCode ? 1 : 5;
+	let lastError: { message: string } | null = null;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+		const inviteCode = input.inviteCode ?? generateInviteCode();
+
+		const { data, error } = await locals.supabase
+			.from('students')
+			.insert({
+				name: input.name,
+				class_id: input.classId,
+				user_id: null,
+				invite_code: inviteCode
+			})
+			.select('id, name, class_id, invite_code')
+			.single<CreatedStudentRow>();
+
+		if (!error && data) {
+			return { data, error: null };
+		}
+
+		lastError = error ?? { message: 'Nao foi possivel criar o aluno.' };
+
+		const isDuplicateInviteCode =
+			(error?.message ?? '').toLowerCase().includes('duplicate') ||
+			(error?.message ?? '').toLowerCase().includes('unique');
+
+		if (!input.inviteCode && isDuplicateInviteCode) {
+			continue;
+		}
+
+		return { data: null, error: lastError };
+	}
+
+	return {
+		data: null,
+		error: lastError ?? { message: 'Nao foi possivel gerar um codigo valido para o aluno.' }
+	};
+}
+
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const userId = getAuthenticatedUserId(locals);
 
@@ -89,7 +157,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 				totalStudents: 0,
 				totalSubjects: 0,
 				totalAssessments: 0,
-				draftAssessments: 0
+				draftAssessments: 0,
+				publishedAssessments: 0
 			}
 		};
 	}
@@ -107,7 +176,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 				totalStudents: 0,
 				totalSubjects: 0,
 				totalAssessments: 0,
-				draftAssessments: 0
+				draftAssessments: 0,
+				publishedAssessments: 0
 			}
 		};
 	}
@@ -128,15 +198,15 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			.from('class_subjects')
 			.select(
 				`
-						class_id,
-						subject_id,
-						teacher_id,
-						subjects!inner (
-							id,
-							name,
-							code
-						)
-					`
+					class_id,
+					subject_id,
+					teacher_id,
+					subjects!inner (
+						id,
+						name,
+						code
+					)
+				`
 			)
 			.eq('class_id', ownedClass.id)
 			.eq('teacher_id', userId),
@@ -144,6 +214,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	]);
 
 	const inviteCodesByStudentId = mapInviteCodesByStudentId(inviteCodesData);
+
 	const students: TeacherClassStudent[] = (studentsData ?? []).map((student) => ({
 		id: String(student.id),
 		name: String(student.name),
@@ -151,9 +222,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 		displayName: null,
 		invite_code: inviteCodesByStudentId.get(String(student.id)) ?? null
 	}));
+
 	const classSubjects = ((classSubjectsData ?? []) as ClassSubjectRow[])
 		.map((item) => {
 			const subject = Array.isArray(item.subjects) ? item.subjects[0] : item.subjects;
+
 			if (!subject) return null;
 
 			return {
@@ -177,6 +250,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 				};
 			} => item !== null
 		);
+
 	const availableSubjects = (allSubjectsData ?? []) as TeacherSubjectOption[];
 
 	const subjectIds = classSubjects.map((item) => item.subject_id);
@@ -225,9 +299,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 						.filter((result) => !result.is_excused)
 						.map((result) => normalizePercent(result.raw_score, result.score_min, result.score_max))
 						.filter((value): value is number => typeof value === 'number');
+
 					const subject = classSubjects.find(
 						(item) => item.subject_id === assessment.subject_id
 					)?.subject;
+
 					const normalizedAverage = average(normalizedValues);
 
 					return {
@@ -286,30 +362,42 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 export const actions: Actions = {
 	createStudent: async ({ request, params, locals }) => {
 		const form = await request.formData();
-		const name = String(form.get('name') ?? '').trim();
+		const name = String(form.get('name') ?? form.get('studentName') ?? '').trim();
+		const customInviteCode = normalizeInviteCode(form.get('invite_code') ?? form.get('inviteCode'));
 
 		if (!name) {
-			return fail(400, { action: 'createStudent', message: 'Nome do aluno e obrigatorio.' });
+			return fail(400, {
+				action: 'createStudent',
+				message: 'Nome do aluno e obrigatorio.'
+			});
 		}
 
 		const userId = getAuthenticatedUserId(locals);
+
 		if (!userId) {
-			return fail(401, { action: 'createStudent', message: 'Voce precisa estar logado.' });
+			return fail(401, {
+				action: 'createStudent',
+				message: 'Voce precisa estar logado.'
+			});
 		}
 
 		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+
 		if (!ownedClass) {
-			return fail(404, { action: 'createStudent', message: 'Turma nao encontrada.' });
+			return fail(404, {
+				action: 'createStudent',
+				message: 'Turma nao encontrada.'
+			});
 		}
 
-		const { data: createdStudent, error: studentError } = await locals.supabase
-			.from('students')
-			.insert({
+		const { data: createdStudent, error: studentError } = await createStudentWithInviteCode(
+			locals,
+			{
 				name,
-				class_id: ownedClass.id
-			})
-			.select('id')
-			.single<{ id: string }>();
+				classId: ownedClass.id,
+				inviteCode: customInviteCode
+			}
+		);
 
 		if (studentError || !createdStudent) {
 			return fail(400, {
@@ -318,28 +406,35 @@ export const actions: Actions = {
 			});
 		}
 
-		const { error: inviteCodeError } = await createTeacherInviteCode(locals, {
-			studentId: createdStudent.id,
-			classId: ownedClass.id,
-			teacherId: userId
-		});
-
-		if (inviteCodeError) {
-			return fail(400, { action: 'createStudent', message: inviteCodeError.message });
-		}
-
-		return { success: true, action: 'createStudent', message: 'Aluno criado com sucesso.' };
+		return {
+			success: true,
+			action: 'createStudent',
+			message: `Aluno criado com sucesso. Codigo: ${createdStudent.invite_code ?? 'indisponivel'}`,
+			createdStudent: {
+				id: createdStudent.id,
+				name: createdStudent.name,
+				inviteCode: createdStudent.invite_code
+			}
+		};
 	},
 
 	createSubject: async ({ request, params, locals }) => {
 		const userId = getAuthenticatedUserId(locals);
+
 		if (!userId) {
-			return fail(401, { action: 'createSubject', message: 'Voce precisa estar logado.' });
+			return fail(401, {
+				action: 'createSubject',
+				message: 'Voce precisa estar logado.'
+			});
 		}
 
 		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+
 		if (!ownedClass) {
-			return fail(404, { action: 'createSubject', message: 'Turma nao encontrada.' });
+			return fail(404, {
+				action: 'createSubject',
+				message: 'Turma nao encontrada.'
+			});
 		}
 
 		const form = await request.formData();
@@ -347,8 +442,12 @@ export const actions: Actions = {
 		const code = String(form.get('code') ?? '').trim();
 
 		const validation = validateSubjectInput({ name, code });
+
 		if (!validation.ok) {
-			return fail(400, { action: 'createSubject', message: validation.message });
+			return fail(400, {
+				action: 'createSubject',
+				message: validation.message
+			});
 		}
 
 		const { data: createdSubject, error: subjectError } = await locals.supabase
@@ -375,7 +474,10 @@ export const actions: Actions = {
 		});
 
 		if (linkError) {
-			return fail(400, { action: 'createSubject', message: linkError.message });
+			return fail(400, {
+				action: 'createSubject',
+				message: linkError.message
+			});
 		}
 
 		return {
@@ -387,20 +489,31 @@ export const actions: Actions = {
 
 	linkSubject: async ({ request, params, locals }) => {
 		const userId = getAuthenticatedUserId(locals);
+
 		if (!userId) {
-			return fail(401, { action: 'linkSubject', message: 'Voce precisa estar logado.' });
+			return fail(401, {
+				action: 'linkSubject',
+				message: 'Voce precisa estar logado.'
+			});
 		}
 
 		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+
 		if (!ownedClass) {
-			return fail(404, { action: 'linkSubject', message: 'Turma nao encontrada.' });
+			return fail(404, {
+				action: 'linkSubject',
+				message: 'Turma nao encontrada.'
+			});
 		}
 
 		const form = await request.formData();
 		const subjectId = String(form.get('subject_id') ?? '').trim();
 
 		if (!subjectId) {
-			return fail(400, { action: 'linkSubject', message: 'Materia invalida.' });
+			return fail(400, {
+				action: 'linkSubject',
+				message: 'Materia invalida.'
+			});
 		}
 
 		const { error } = await locals.supabase.from('class_subjects').upsert(
@@ -413,21 +526,36 @@ export const actions: Actions = {
 		);
 
 		if (error) {
-			return fail(400, { action: 'linkSubject', message: error.message });
+			return fail(400, {
+				action: 'linkSubject',
+				message: error.message
+			});
 		}
 
-		return { success: true, action: 'linkSubject', message: 'Materia vinculada a turma.' };
+		return {
+			success: true,
+			action: 'linkSubject',
+			message: 'Materia vinculada a turma.'
+		};
 	},
 
 	createAssessment: async ({ request, params, locals }) => {
 		const userId = getAuthenticatedUserId(locals);
+
 		if (!userId) {
-			return fail(401, { action: 'createAssessment', message: 'Voce precisa estar logado.' });
+			return fail(401, {
+				action: 'createAssessment',
+				message: 'Voce precisa estar logado.'
+			});
 		}
 
 		const ownedClass = await getOwnedClass(locals, params.classId, userId);
+
 		if (!ownedClass) {
-			return fail(404, { action: 'createAssessment', message: 'Turma nao encontrada.' });
+			return fail(404, {
+				action: 'createAssessment',
+				message: 'Turma nao encontrada.'
+			});
 		}
 
 		const form = await request.formData();
@@ -440,7 +568,10 @@ export const actions: Actions = {
 		});
 
 		if (!validation.ok) {
-			return fail(400, { action: 'createAssessment', message: validation.message });
+			return fail(400, {
+				action: 'createAssessment',
+				message: validation.message
+			});
 		}
 
 		const classSubject = await getOwnedClassSubject(
@@ -449,6 +580,7 @@ export const actions: Actions = {
 			validation.value.subject_id,
 			userId
 		);
+
 		if (!classSubject) {
 			return fail(400, {
 				action: 'createAssessment',
@@ -466,7 +598,10 @@ export const actions: Actions = {
 		});
 
 		if (error) {
-			return fail(400, { action: 'createAssessment', message: error.message });
+			return fail(400, {
+				action: 'createAssessment',
+				message: error.message
+			});
 		}
 
 		return {

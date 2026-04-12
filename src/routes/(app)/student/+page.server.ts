@@ -1,8 +1,5 @@
 ﻿import type { Actions, PageServerLoad } from './$types';
 import { fail, redirect } from '@sveltejs/kit';
-
-import { getAuthenticatedUserId } from '$lib/server/auth';
-import { buildErrorMessage, createErrorId, logServerEvent } from '$lib/server/observability';
 import { loadStudentPortalData } from '$lib/server/student-portal';
 
 type ParentData = {
@@ -17,9 +14,20 @@ type ParentData = {
 	};
 };
 
-type ClaimStudentRpcRow = {
-	student_id: string;
+type ClaimFormState = {
+	action: 'claimInviteCode';
+	message: string;
+	values: {
+		invite_code: string;
+	};
 };
+
+function normalizeInviteCode(raw: FormDataEntryValue | null) {
+	return String(raw ?? '')
+		.trim()
+		.toUpperCase()
+		.replace(/\s+/g, '');
+}
 
 export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 	const parentData = (await parent()) as ParentData;
@@ -32,22 +40,15 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 
 	return {
 		authUser: payload.authUser,
-		portal: payload.portal,
-		summary: {
-			studentName: payload.student.displayName,
-			className: payload.student.className,
-			...payload.summary,
-			publishedAssessments: payload.longitudinal?.timeline.length ?? 0,
-			recentTrend: payload.longitudinal?.recent_trend ?? 'insufficient_data',
-			bestSubjectName: payload.longitudinal?.best_subject ?? null,
-			weakestSubjectName: payload.longitudinal?.worst_subject ?? null
-		},
+		overviewPortal: payload.portal,
+		student: payload.student,
+		summary: payload.summary,
 		bestSubject: payload.bestSubject
 			? {
-					subjectId: payload.bestSubject.id,
-					subjectName: payload.bestSubject.name,
-					score: payload.bestSubject.score,
+					id: payload.bestSubject.id,
+					name: payload.bestSubject.name,
 					progress: payload.bestSubject.progress,
+					score: payload.bestSubject.score,
 					status: payload.bestSubject.status,
 					description: payload.bestSubject.description,
 					assessmentsCount: payload.bestSubject.assessmentsCount,
@@ -57,10 +58,10 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 			: null,
 		prioritySubject: payload.prioritySubject
 			? {
-					subjectId: payload.prioritySubject.id,
-					subjectName: payload.prioritySubject.name,
-					score: payload.prioritySubject.score,
+					id: payload.prioritySubject.id,
+					name: payload.prioritySubject.name,
 					progress: payload.prioritySubject.progress,
+					score: payload.prioritySubject.score,
 					status: payload.prioritySubject.status,
 					description: payload.prioritySubject.description,
 					assessmentsCount: payload.prioritySubject.assessmentsCount,
@@ -69,10 +70,11 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 				}
 			: null,
 		subjects: payload.subjects.map((subject) => ({
-			subjectId: subject.id,
-			subjectName: subject.name,
-			score: subject.score,
+			id: subject.id,
+			name: subject.name,
+			code: subject.code,
 			progress: subject.progress,
+			score: subject.score,
 			status: subject.status,
 			description: subject.description,
 			assessmentsCount: subject.assessmentsCount,
@@ -88,63 +90,32 @@ export const load: PageServerLoad = async ({ locals, parent, cookies }) => {
 export const actions: Actions = {
 	claimInviteCode: async ({ request, locals }) => {
 		const form = await request.formData();
-		const inviteCode = String(form.get('inviteCode') ?? '')
-			.trim()
-			.toUpperCase();
-
-		const userId = getAuthenticatedUserId(locals);
-
-		if (!userId) {
-			return fail(401, {
-				action: 'claimInviteCode',
-				message: 'Você precisa estar logado para adicionar um código.'
-			});
-		}
+		const inviteCode = normalizeInviteCode(form.get('invite_code'));
 
 		if (!inviteCode) {
 			return fail(400, {
 				action: 'claimInviteCode',
-				message: 'Informe um código de convite válido.',
-				inviteCode
-			});
+				message: 'Informe um código de convite.',
+				values: {
+					invite_code: ''
+				}
+			} satisfies ClaimFormState);
 		}
 
-		const { data, error } = await locals.supabase.rpc('claim_student_by_invite_code', {
+		const { error } = await locals.supabase.rpc('claim_student_by_invite_code', {
 			p_invite_code: inviteCode
 		});
 
 		if (error) {
-			const errorId = createErrorId('student_claim_invite');
-			logServerEvent('error', 'student.claim_invite_code_failed', {
-				errorId,
-				userId,
-				inviteCode,
-				message: error.message
-			});
-
 			return fail(400, {
 				action: 'claimInviteCode',
-				message: buildErrorMessage('Não foi possível validar o código agora.', errorId),
-				inviteCode
-			});
+				message: error.message ?? 'Não foi possível vincular este código agora.',
+				values: {
+					invite_code: inviteCode
+				}
+			} satisfies ClaimFormState);
 		}
 
-		const rows = ((data ?? []) as ClaimStudentRpcRow[]).filter(
-			(row) => typeof row?.student_id === 'string' && row.student_id.length > 0
-		);
-
-		if (rows.length === 0) {
-			return fail(400, {
-				action: 'claimInviteCode',
-				message: 'Não encontramos um vínculo ativo para esse código.',
-				inviteCode
-			});
-		}
-
-		return {
-			success: true,
-			action: 'claimInviteCode',
-			message: 'Código adicionado com sucesso.'
-		};
+		throw redirect(303, '/student');
 	}
 };
