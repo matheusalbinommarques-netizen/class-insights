@@ -1,4 +1,5 @@
 <script lang="ts">
+	import StatusPill from '$lib/components/shared/StatusPill.svelte';
 	import type { TeacherSubjectStatusTone } from '$lib/types/teacher';
 
 	type Props = {
@@ -8,16 +9,12 @@
 
 	let { label, tone }: Props = $props();
 
-	function toneClass(value: TeacherSubjectStatusTone) {
-		if (value === 'critical') return 'border-red-200 bg-red-50 text-red-700';
-		if (value === 'attention') return 'border-amber-200 bg-amber-50 text-amber-700';
-		if (value === 'healthy') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-		return 'border-slate-200 bg-slate-100 text-slate-700';
-	}
+	const semanticTone = $derived.by(() => {
+		if (tone === 'critical') return 'alert';
+		if (tone === 'attention') return 'attention';
+		if (tone === 'healthy') return 'healthy';
+		return 'neutral';
+	});
 </script>
 
-<span
-	class={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.16em] ${toneClass(tone)}`}
->
-	{label}
-</span>
+<StatusPill {label} tone={semanticTone} uppercase={true} />

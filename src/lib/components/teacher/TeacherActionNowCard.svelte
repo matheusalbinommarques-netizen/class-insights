@@ -1,4 +1,6 @@
 <script lang="ts">
+	import NextStepCard from '$lib/components/shared/NextStepCard.svelte';
+	import MetricCard from '$lib/components/shared/MetricCard.svelte';
 	import TeacherContextMenu from '$lib/components/teacher/TeacherContextMenu.svelte';
 	import type { TeacherDashboardActionNow } from '$lib/types/teacher';
 
@@ -15,6 +17,7 @@
 	type ActionNowChip = {
 		label: string;
 		value: string;
+		helper: string;
 		tone: ChipTone;
 	};
 
@@ -34,23 +37,27 @@
 
 	const chips = $derived.by((): ActionNowChip[] => [
 		{
-			label: 'Turma com rascunho de prova aberto',
+			label: 'Rascunhos abertos',
 			value: String(actionNow.draftClasses),
+			helper: 'Turmas com rascunho de prova aberto.',
 			tone: actionNow.draftClasses > 0 ? 'attention' : 'neutral'
 		},
 		{
-			label: 'Matérias abaixo média da instituição',
+			label: 'Abaixo da referência',
 			value: String(actionNow.belowReferenceSubjects),
+			helper: 'Matérias abaixo da média da instituição.',
 			tone: actionNow.belowReferenceSubjects > 0 ? 'critical' : 'neutral'
 		},
 		{
-			label: 'Alunos com notas caindo',
+			label: 'Alunos em queda',
 			value: String(actionNow.fallingStudents),
+			helper: 'Alunos com notas caindo nas publicações recentes.',
 			tone: actionNow.fallingStudents > 0 ? 'attention' : 'neutral'
 		},
 		{
 			label: 'Turmas sem matéria',
 			value: String(actionNow.classesWithoutSubject),
+			helper: 'Turmas que ainda não entraram no fluxo principal.',
 			tone: actionNow.classesWithoutSubject > 0 ? 'attention' : 'neutral'
 		}
 	]);
@@ -59,25 +66,14 @@
 		actionNow.nextStepHref === '/teacher/classes/new' ? 'Criar turma' : 'Abrir turma'
 	);
 
-	function chipClass(tone: ChipTone) {
-		if (tone === 'critical') {
-			return 'border-red-200 bg-red-50';
-		}
-
-		if (tone === 'attention') {
-			return 'border-slate-200 bg-white';
-		}
-
-		return 'border-slate-200 bg-slate-50';
-	}
-
-	function chipValueClass(tone: ChipTone) {
-		if (tone === 'critical') return 'text-red-600';
-		return 'text-slate-950';
+	function chipToneToSemanticTone(tone: ChipTone) {
+		if (tone === 'critical') return 'alert';
+		if (tone === 'attention') return 'attention';
+		return 'neutral';
 	}
 </script>
 
-<section class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+<section class="app-card-strong app-stack-md">
 	<div class="flex items-start justify-between gap-4">
 		<div class="min-w-0">
 			<h2 class="text-[2rem] font-black leading-tight tracking-tight text-slate-950">
@@ -90,42 +86,26 @@
 		{/if}
 	</div>
 
-	<div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+	<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
 		{#each chips as chip (`${chip.label}-${chip.value}`)}
-			<div class={`rounded-2xl border px-4 py-3.5 ${chipClass(chip.tone)}`}>
-				<div class="flex items-center gap-3">
-					<p
-						class={`text-[1.7rem] font-extrabold leading-none tracking-tight ${chipValueClass(chip.tone)}`}
-					>
-						{chip.value}
-					</p>
-
-					<p class="text-[0.95rem] font-semibold leading-5 text-slate-700">
-						{chip.label}
-					</p>
-				</div>
-			</div>
+			<MetricCard
+				label={chip.label}
+				value={chip.value}
+				helper={chip.helper}
+				tone={chipToneToSemanticTone(chip.tone)}
+				valueTone={chip.tone === 'neutral' ? 'default' : 'tone'}
+				compact={true}
+			/>
 		{/each}
 	</div>
 
-	<div
-		class="mt-4 flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"
-	>
-		<div class="min-w-0">
-			<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-amber-700">
-				{actionNow.nextStepTitle}
-			</p>
-
-			<p class="mt-2 text-[1rem] font-semibold leading-7 text-slate-900">
-				{actionNow.nextStepText}
-			</p>
-		</div>
-
-		<a
-			href={actionNow.nextStepHref}
-			class="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700"
-		>
-			{ctaLabel}
-		</a>
-	</div>
+	<NextStepCard
+		eyebrow={actionNow.nextStepTitle}
+		title="Próximo clique recomendado"
+		description={actionNow.nextStepText}
+		tone="attention"
+		primaryHref={actionNow.nextStepHref}
+		primaryLabel={ctaLabel}
+		primaryTone="healthy"
+	/>
 </section>

@@ -5,7 +5,33 @@
 	import ciIcon from '$lib/assets/ci-icon.png';
 	import { supabase } from '$lib/services/supabaseClient';
 
+	type BenefitTone = 'sky' | 'emerald' | 'amber';
+
+	type Benefit = {
+		title: string;
+		text: string;
+		tone: BenefitTone;
+	};
+
 	const MIN_PASSWORD_LENGTH = 6;
+
+	const benefits: Benefit[] = [
+		{
+			title: 'Leitura institucional',
+			text: 'Acompanhe panorama, prioridades, comparativos e drill-down do seu escopo.',
+			tone: 'amber'
+		},
+		{
+			title: 'Escopo por vínculo',
+			text: 'Depois do primeiro acesso, seu escopo é associado às turmas administradas.',
+			tone: 'sky'
+		},
+		{
+			title: 'Fluxo separado do professor',
+			text: 'A coordenação acompanha a operação sem cair na rotina nota por nota.',
+			tone: 'emerald'
+		}
+	];
 
 	let name = '';
 	let email = '';
@@ -13,6 +39,7 @@
 	let confirmPassword = '';
 
 	let loading = false;
+	let resending = false;
 	let errorMessage = '';
 	let successMessage = '';
 	let showPassword = false;
@@ -21,6 +48,19 @@
 	$: trimmedName = name.trim();
 	$: trimmedEmail = email.trim().toLowerCase();
 	$: passwordHasMinLength = password.length >= MIN_PASSWORD_LENGTH;
+	$: passwordsMatch =
+		password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
+
+	function toneClass(tone: BenefitTone) {
+		if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50';
+		if (tone === 'sky') return 'border-sky-200 bg-sky-50';
+		return 'border-amber-200 bg-amber-50';
+	}
+
+	function getEmailRedirectTo() {
+		if (typeof window === 'undefined') return undefined;
+		return `${window.location.origin}/login`;
+	}
 
 	function resetMessages() {
 		errorMessage = '';
@@ -29,17 +69,17 @@
 
 	function validateForm() {
 		if (!trimmedName) {
-			errorMessage = 'Nome e obrigatorio.';
+			errorMessage = 'Nome é obrigatório.';
 			return false;
 		}
 
 		if (!trimmedEmail) {
-			errorMessage = 'E-mail e obrigatorio.';
+			errorMessage = 'E-mail é obrigatório.';
 			return false;
 		}
 
 		if (!password) {
-			errorMessage = 'Senha e obrigatoria.';
+			errorMessage = 'Senha é obrigatória.';
 			return false;
 		}
 
@@ -53,8 +93,8 @@
 			return false;
 		}
 
-		if (password !== confirmPassword) {
-			errorMessage = 'A confirmacao de senha nao confere.';
+		if (!passwordsMatch) {
+			errorMessage = 'A confirmação de senha não confere.';
 			return false;
 		}
 
@@ -63,6 +103,7 @@
 
 	async function handleRegister() {
 		resetMessages();
+
 		if (!validateForm()) return;
 
 		loading = true;
@@ -72,6 +113,7 @@
 				email: trimmedEmail,
 				password,
 				options: {
+					emailRedirectTo: getEmailRedirectTo(),
 					data: {
 						role: 'coord',
 						display_name: trimmedName,
@@ -88,222 +130,257 @@
 			const session = signUpData.session;
 
 			if (!user) {
-				throw new Error('Nao foi possivel criar a conta.');
+				throw new Error('Não foi possível criar a conta.');
+			}
+
+			const { error: profileError } = await supabase.from('profiles').upsert(
+				{
+					id: user.id,
+					role: 'coord',
+					display_name: trimmedName
+				},
+				{ onConflict: 'id' }
+			);
+
+			if (profileError) {
+				throw new Error(profileError.message);
 			}
 
 			if (session) {
-				const { error: profileError } = await supabase.from('profiles').upsert(
-					{
-						id: user.id,
-						role: 'coord',
-						display_name: trimmedName
-					},
-					{ onConflict: 'id' }
-				);
-
-				if (profileError) {
-					throw new Error(profileError.message);
-				}
-
 				await invalidateAll();
-				await goto(resolve('/coord'));
+				await goto('/coord');
 				return;
 			}
 
-			successMessage = 'Conta criada. Confirme seu e-mail e depois faca login para continuar.';
+			successMessage = 'Conta criada. Confirme seu e-mail para entrar na área de coordenação.';
 		} catch (error) {
 			errorMessage =
-				error instanceof Error ? error.message : 'Nao foi possivel concluir o cadastro.';
+				error instanceof Error ? error.message : 'Não foi possível criar sua conta agora.';
 		} finally {
 			loading = false;
 		}
 	}
 
-	async function handleSubmit(event: SubmitEvent) {
-		event.preventDefault();
-		await handleRegister();
+	async function handleResendVerification() {
+		resetMessages();
+
+		if (!trimmedEmail) {
+			errorMessage = 'Informe o e-mail usado no cadastro.';
+			return;
+		}
+
+		resending = true;
+
+		try {
+			const { error } = await supabase.auth.resend({
+				type: 'signup',
+				email: trimmedEmail,
+				options: {
+					emailRedirectTo: getEmailRedirectTo()
+				}
+			});
+
+			if (error) {
+				throw new Error(error.message);
+			}
+
+			successMessage = 'Enviamos um novo e-mail de confirmação.';
+		} catch (error) {
+			errorMessage = error instanceof Error ? error.message : 'Não foi possível reenviar o e-mail.';
+		} finally {
+			resending = false;
+		}
 	}
 </script>
 
 <svelte:head>
-	<title>Class Insights - Primeiro acesso da coordenacao</title>
+	<title>Class Insights - Cadastro de coordenação</title>
 	<meta
 		name="description"
-		content="Crie seu acesso de coordenacao no Class Insights para acompanhar turmas, materias e tendencias institucionais."
+		content="Crie seu acesso de coordenação no Class Insights para acompanhar prioridades institucionais e drill-down do seu escopo."
 	/>
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 text-slate-900">
 	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
 		<div
-			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-amber-200/50 blur-3xl"
+			class="absolute -top-24 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-amber-200/40 blur-3xl"
 		></div>
-		<div class="absolute -right-24 top-40 h-72 w-72 rounded-full bg-sky-200/45 blur-3xl"></div>
+		<div class="absolute -left-20 top-72 h-72 w-72 rounded-full bg-sky-200/35 blur-3xl"></div>
+		<div class="absolute -right-20 top-28 h-80 w-80 rounded-full bg-emerald-200/30 blur-3xl"></div>
 	</div>
 
-	<div class="mx-auto flex min-h-screen max-w-7xl items-center px-4 py-6 sm:px-6 lg:px-8">
+	<div class="mx-auto flex min-h-screen max-w-6xl items-center px-4 py-6 sm:px-6 lg:px-8">
 		<div
-			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-2"
+			class="grid w-full overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1fr_1fr]"
 		>
-			<section
-				class="order-2 flex flex-col border-t border-slate-200 bg-gradient-to-br from-amber-50 via-white to-sky-50 p-6 text-slate-900 lg:order-1 lg:border-r lg:border-t-0 lg:p-10"
-			>
-				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
+			<section class="bg-slate-950 px-6 py-8 text-white sm:px-8 lg:px-10">
+				<div class="flex items-center gap-4">
 					<div
-						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-200 bg-white shadow-sm"
+						class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg shadow-black/20"
 					>
-						<img src={ciIcon} alt="" class="h-7 w-7 object-contain" />
+						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
 					</div>
+
 					<div>
-						<p class="text-[11px] font-black uppercase tracking-widest text-amber-700/80">
+						<p class="text-xs font-black uppercase tracking-[0.32em] text-amber-200">
 							Class Insights
 						</p>
-						<p class="text-2xl font-black tracking-tight text-slate-900">Primeiro acesso</p>
+						<h1 class="mt-2 text-4xl font-black tracking-tight sm:text-5xl">
+							Criar acesso de coordenação
+						</h1>
 					</div>
-				</a>
-
-				<div class="mt-10 max-w-xl">
-					<p class="text-[11px] font-black uppercase tracking-widest text-amber-700/80">
-						Primeiro acesso de coordenacao
-					</p>
-					<h1
-						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
-					>
-						Crie seu acesso institucional.
-					</h1>
-					<p class="mt-5 text-base leading-8 text-slate-600">
-						Entre para comparar turmas, localizar materias criticas e acompanhar onde a operacao
-						ainda esta pendente.
-					</p>
 				</div>
 
-				<div class="mt-8 grid gap-3">
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">Leitura macro</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							Veja comparativos entre turmas, materias mais criticas e sinais de queda.
-						</p>
-					</div>
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">Pendencias operacionais</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							Acompanhe cobertura, publicacoes e pontos que ainda dependem do fluxo do professor.
-						</p>
-					</div>
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">Diretor no MVP</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							Nesta fase, diretor segue como visao da coordenacao, nao como role separada.
-						</p>
-					</div>
+				<p class="mt-6 max-w-xl text-base leading-8 text-slate-300">
+					Crie seu acesso para acompanhar o panorama institucional e aprofundar a leitura por turma,
+					matéria, professor e aluno.
+				</p>
+
+				<div class="mt-8 grid gap-4">
+					{#each benefits as benefit (benefit.title)}
+						<div class={`rounded-3xl border p-5 ${toneClass(benefit.tone)}`}>
+							<p class="text-sm font-black text-slate-950">{benefit.title}</p>
+							<p class="mt-2 text-sm leading-7 text-slate-700">{benefit.text}</p>
+						</div>
+					{/each}
 				</div>
 			</section>
 
-			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
-				<div class="w-full max-w-md">
-					<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-						<div class="mb-6">
-							<p class="text-[11px] font-black uppercase tracking-widest text-amber-700/80">
-								Cadastro
-							</p>
-							<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-								Entre na area institucional
-							</h2>
-							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Use seus dados para criar a conta e acessar a visao de coordenacao.
-							</p>
+			<section class="px-6 py-8 sm:px-8 lg:px-10">
+				<div class="mx-auto w-full max-w-xl">
+					<p class="text-xs font-black uppercase tracking-[0.3em] text-slate-500">
+						Primeiro acesso
+					</p>
+					<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+						Criar conta
+					</h2>
+					<p class="mt-4 text-base leading-8 text-slate-600">
+						Preencha seus dados para criar seu acesso de coordenação.
+					</p>
+
+					<form
+						class="mt-8 grid gap-5"
+						onsubmit={(event) => {
+							event.preventDefault();
+							handleRegister();
+						}}
+					>
+						<div>
+							<label for="name" class="block text-sm font-black text-slate-900">Nome</label>
+							<input
+								id="name"
+								type="text"
+								bind:value={name}
+								placeholder="Seu nome completo"
+								autocomplete="name"
+								class="mt-2 h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+							/>
 						</div>
 
-						<form class="space-y-5" onsubmit={handleSubmit}>
-							<div class="space-y-2">
-								<label for="name" class="block text-sm font-bold text-slate-700">Nome</label>
+						<div>
+							<label for="email" class="block text-sm font-black text-slate-900">E-mail</label>
+							<input
+								id="email"
+								type="email"
+								bind:value={email}
+								placeholder="voce@exemplo.com"
+								autocomplete="email"
+								class="mt-2 h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+							/>
+						</div>
+
+						<div>
+							<label for="password" class="block text-sm font-black text-slate-900">Senha</label>
+							<div class="mt-2 flex overflow-hidden rounded-2xl border border-slate-300 bg-white">
 								<input
-									id="name"
-									type="text"
-									bind:value={name}
-									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-									disabled={loading}
+									id="password"
+									type={showPassword ? 'text' : 'password'}
+									bind:value={password}
+									placeholder="Crie sua senha"
+									autocomplete="new-password"
+									class="h-14 min-w-0 flex-1 px-4 text-base text-slate-900 outline-none placeholder:text-slate-400"
 								/>
-							</div>
-							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700">E-mail</label>
-								<input
-									id="email"
-									type="email"
-									bind:value={email}
-									class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base text-slate-900 outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-									disabled={loading}
-								/>
-							</div>
-							<div class="space-y-2">
-								<label for="password" class="block text-sm font-bold text-slate-700">Senha</label>
-								<div class="relative">
-									<input
-										id="password"
-										type={showPassword ? 'text' : 'password'}
-										bind:value={password}
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-										disabled={loading}
-									/>
-									<button
-										type="button"
-										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700"
-										onclick={() => (showPassword = !showPassword)}
-										disabled={loading}>{showPassword ? 'Ocultar' : 'Mostrar'}</button
-									>
-								</div>
-							</div>
-							<div class="space-y-2">
-								<label for="confirmPassword" class="block text-sm font-bold text-slate-700"
-									>Confirmar senha</label
+								<button
+									type="button"
+									class="border-l border-slate-200 px-4 text-sm font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+									onclick={() => (showPassword = !showPassword)}
 								>
-								<div class="relative">
-									<input
-										id="confirmPassword"
-										type={showConfirmPassword ? 'text' : 'password'}
-										bind:value={confirmPassword}
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white px-4 pr-24 text-base text-slate-900 outline-none transition focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-										disabled={loading}
-									/>
-									<button
-										type="button"
-										class="absolute right-2 top-2 inline-flex h-10 items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700"
-										onclick={() => (showConfirmPassword = !showConfirmPassword)}
-										disabled={loading}>{showConfirmPassword ? 'Ocultar' : 'Mostrar'}</button
-									>
-								</div>
+									{showPassword ? 'Ocultar' : 'Mostrar'}
+								</button>
 							</div>
+						</div>
 
-							<button
-								type="submit"
-								disabled={loading}
-								class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-								>{loading ? 'Criando conta...' : 'Criar acesso de coordenacao'}</button
-							>
-						</form>
-
-						{#if errorMessage}
-							<div
-								class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-							>
-								{errorMessage}
+						<div>
+							<label for="confirmPassword" class="block text-sm font-black text-slate-900">
+								Confirmar senha
+							</label>
+							<div class="mt-2 flex overflow-hidden rounded-2xl border border-slate-300 bg-white">
+								<input
+									id="confirmPassword"
+									type={showConfirmPassword ? 'text' : 'password'}
+									bind:value={confirmPassword}
+									placeholder="Repita sua senha"
+									autocomplete="new-password"
+									class="h-14 min-w-0 flex-1 px-4 text-base text-slate-900 outline-none placeholder:text-slate-400"
+								/>
+								<button
+									type="button"
+									class="border-l border-slate-200 px-4 text-sm font-bold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+									onclick={() => (showConfirmPassword = !showConfirmPassword)}
+								>
+									{showConfirmPassword ? 'Ocultar' : 'Mostrar'}
+								</button>
 							</div>
-						{/if}
+						</div>
 
-						{#if successMessage}
-							<div
-								class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
-							>
-								{successMessage}
-							</div>
-						{/if}
+						<button
+							type="submit"
+							disabled={loading}
+							class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+						>
+							{loading ? 'Criando conta...' : 'Criar conta de coordenação'}
+						</button>
+					</form>
 
-						<p class="mt-6 text-center text-sm leading-6 text-slate-500">
-							Ja tem conta? <a
-								href={resolve('/login')}
-								class="font-bold text-slate-900 hover:underline">Entrar</a
-							>
-						</p>
+					{#if errorMessage}
+						<div
+							class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+						>
+							{errorMessage}
+						</div>
+					{/if}
+
+					{#if successMessage}
+						<div
+							class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
+						>
+							{successMessage}
+						</div>
+					{/if}
+
+					<div class="my-6 flex items-center gap-3 text-sm font-bold text-slate-400">
+						<div class="h-px flex-1 bg-slate-200"></div>
+						<span>Precisa confirmar e-mail?</span>
+						<div class="h-px flex-1 bg-slate-200"></div>
+					</div>
+
+					<div class="grid gap-3 sm:grid-cols-2">
+						<button
+							type="button"
+							class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+							onclick={handleResendVerification}
+							disabled={resending}
+						>
+							{resending ? 'Reenviando...' : 'Reenviar confirmação'}
+						</button>
+
+						<a
+							href={resolve('/login')}
+							class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white"
+						>
+							Já tenho conta
+						</a>
 					</div>
 				</div>
 			</section>

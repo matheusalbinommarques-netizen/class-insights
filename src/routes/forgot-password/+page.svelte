@@ -1,11 +1,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+
+	import ciIcon from '$lib/assets/ci-icon.png';
 	import { supabase } from '$lib/services/supabaseClient';
 
 	let email = '';
 	let loading = false;
 	let errorMessage = '';
 	let successMessage = '';
+
+	function getRedirectTo() {
+		if (typeof window === 'undefined') return undefined;
+		return `${window.location.origin}/reset-password`;
+	}
 
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
@@ -15,18 +22,15 @@
 		const trimmedEmail = email.trim().toLowerCase();
 
 		if (!trimmedEmail) {
-			errorMessage = 'E-mail é obrigatório.';
+			errorMessage = 'Informe seu e-mail.';
 			return;
 		}
 
 		loading = true;
 
 		try {
-			const redirectTo =
-				typeof window !== 'undefined' ? `${window.location.origin}/reset-password` : undefined;
-
 			const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-				redirectTo
+				redirectTo: getRedirectTo()
 			});
 
 			if (error) {
@@ -34,10 +38,10 @@
 			}
 
 			successMessage =
-				'Se o e-mail existir, enviamos um link para redefinir a senha. Verifique sua caixa de entrada.';
+				'Se o e-mail existir, enviamos um link para redefinir sua senha. Verifique sua caixa de entrada.';
 		} catch (error) {
 			errorMessage =
-				error instanceof Error ? error.message : 'Não foi possível enviar o link de recuperação.';
+				error instanceof Error ? error.message : 'Não foi possível enviar o link agora.';
 		} finally {
 			loading = false;
 		}
@@ -55,179 +59,121 @@
 <div class="min-h-screen bg-slate-50 text-slate-900">
 	<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
 		<div
-			class="absolute -top-32 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/50 blur-3xl"
+			class="absolute -top-24 left-1/2 h-96 w-96 -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl"
 		></div>
-		<div class="absolute -right-24 top-40 h-72 w-72 rounded-full bg-sky-200/50 blur-3xl"></div>
-		<div class="absolute -left-24 top-96 h-72 w-72 rounded-full bg-amber-200/40 blur-3xl"></div>
+		<div class="absolute -right-20 top-32 h-80 w-80 rounded-full bg-sky-200/35 blur-3xl"></div>
+		<div class="absolute -left-20 top-96 h-72 w-72 rounded-full bg-amber-200/30 blur-3xl"></div>
 	</div>
 
 	<div class="mx-auto flex min-h-screen max-w-6xl items-center px-4 py-6 sm:px-6 lg:px-8">
 		<div
-			class="grid w-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1.02fr_0.98fr]"
+			class="grid w-full overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-2xl lg:grid-cols-[1fr_1fr]"
 		>
-			<section
-				class="order-2 border-t border-slate-200 bg-linear-to-br from-sky-50 via-white to-emerald-50 p-6 lg:order-1 lg:border-t-0 lg:border-r lg:p-10"
-			>
-				<a href={resolve('/')} class="inline-flex w-fit items-center gap-3">
+			<section class="bg-slate-950 px-6 py-8 text-white sm:px-8 lg:px-10">
+				<div class="flex items-center gap-4">
 					<div
-						class="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white text-emerald-700 shadow-sm"
+						class="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-lg shadow-black/20"
 					>
-						<svg
-							class="h-6 w-6"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-							stroke-width="2.2"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M13 3v7h7M11 21v-7H4m16-4L11 21 4 14l9-11 7 7Z"
-							/>
-						</svg>
+						<img src={ciIcon} alt="" class="h-8 w-8 object-contain" />
 					</div>
 
 					<div>
-						<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-							EdTech Platform
+						<p class="text-xs font-black uppercase tracking-[0.32em] text-emerald-200">
+							Class Insights
 						</p>
-						<p class="text-2xl font-black tracking-tight text-slate-900">Class Insights</p>
+						<h1 class="mt-2 text-4xl font-black tracking-tight sm:text-5xl">Recuperar senha</h1>
 					</div>
-				</a>
-
-				<div class="mt-10 max-w-xl">
-					<p class="text-[11px] font-black uppercase tracking-widest text-sky-700/80">
-						Recuperação de acesso
-					</p>
-					<h1
-						class="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl"
-					>
-						Redefina sua senha com segurança.
-					</h1>
-					<p class="mt-5 text-base leading-8 text-slate-600">
-						Enviamos um link para o seu e-mail. A partir dele, você escolhe uma nova senha e volta
-						ao fluxo normal de acesso.
-					</p>
 				</div>
 
-				<div class="mt-8 grid gap-3">
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">1. Informe seu e-mail</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							Use o mesmo endereço cadastrado como professor, coordenação ou aluno.
+				<p class="mt-6 max-w-xl text-base leading-8 text-slate-300">
+					Se você perdeu o acesso, enviaremos um link para redefinir sua senha com segurança.
+				</p>
+
+				<div class="mt-8 grid gap-4">
+					<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
+						<p class="text-sm font-black text-white">1. Informe seu e-mail</p>
+						<p class="mt-2 text-sm leading-7 text-slate-300">
+							Use o mesmo e-mail cadastrado no produto.
 						</p>
 					</div>
 
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">2. Abra o link enviado</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							O link abre a tela de redefinição dentro do próprio Class Insights.
+					<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
+						<p class="text-sm font-black text-white">2. Abra o link</p>
+						<p class="mt-2 text-sm leading-7 text-slate-300">
+							Verifique sua caixa de entrada e abra o link enviado.
 						</p>
 					</div>
 
-					<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-						<p class="text-sm font-black text-slate-900">3. Escolha a nova senha</p>
-						<p class="mt-1 text-sm leading-6 text-slate-600">
-							Depois disso, você já pode entrar novamente pela tela de login.
+					<div class="rounded-3xl border border-white/10 bg-white/5 p-5">
+						<p class="text-sm font-black text-white">3. Defina a nova senha</p>
+						<p class="mt-2 text-sm leading-7 text-slate-300">
+							Você será levado para a tela de redefinição de senha.
 						</p>
 					</div>
 				</div>
 			</section>
 
-			<section class="order-1 flex items-center justify-center p-6 sm:p-8 lg:order-2 lg:p-10">
-				<div class="w-full max-w-md">
-					<div class="mb-8 lg:hidden">
-						<a
-							href={resolve('/login')}
-							class="text-sm font-bold text-slate-600 hover:text-slate-900"
+			<section class="px-6 py-8 sm:px-8 lg:px-10">
+				<div class="mx-auto w-full max-w-xl">
+					<p class="text-xs font-black uppercase tracking-[0.3em] text-slate-500">Acesso</p>
+					<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+						Solicitar link
+					</h2>
+					<p class="mt-4 text-base leading-8 text-slate-600">
+						Informe seu e-mail para receber o link de recuperação.
+					</p>
+
+					<form class="mt-8 grid gap-5" on:submit={handleSubmit}>
+						<div>
+							<label for="email" class="block text-sm font-black text-slate-900">E-mail</label>
+							<input
+								id="email"
+								type="email"
+								bind:value={email}
+								placeholder="voce@exemplo.com"
+								autocomplete="email"
+								class="mt-2 h-14 w-full rounded-2xl border border-slate-300 bg-white px-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-4 focus:ring-slate-100"
+							/>
+						</div>
+
+						<button
+							type="submit"
+							disabled={loading}
+							class="inline-flex h-14 items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
 						>
-							← Voltar para login
-						</a>
-					</div>
+							{loading ? 'Enviando link...' : 'Enviar link de recuperação'}
+						</button>
+					</form>
 
-					<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-						<div class="mb-6">
-							<p class="text-[11px] font-black uppercase tracking-widest text-emerald-700/80">
-								Senha
-							</p>
-							<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
-								Esqueceu a senha?
-							</h2>
-							<p class="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-								Informe seu e-mail e enviaremos um link de recuperação.
-							</p>
+					{#if errorMessage}
+						<div
+							class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+						>
+							{errorMessage}
 						</div>
+					{/if}
 
-						<form class="space-y-5" onsubmit={handleSubmit}>
-							<div class="space-y-2">
-								<label for="email" class="block text-sm font-bold text-slate-700">E-mail</label>
-								<div class="relative">
-									<div
-										class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400"
-									>
-										<svg
-											class="h-5 w-5"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M16 12H8m8 0a4 4 0 1 1-8 0m8 0a4 4 0 1 0-8 0m8 0v1a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3v-1"
-											/>
-										</svg>
-									</div>
-									<input
-										id="email"
-										name="email"
-										type="email"
-										bind:value={email}
-										placeholder="voce@email.com"
-										autocomplete="email"
-										class="h-14 w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
-										disabled={loading}
-									/>
-								</div>
-							</div>
-
-							<button
-								type="submit"
-								disabled={loading}
-								class="inline-flex h-14 w-full items-center justify-center rounded-2xl bg-slate-900 text-base font-black text-white shadow-lg transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-							>
-								{loading ? 'Enviando link...' : 'Enviar link de recuperação'}
-							</button>
-						</form>
-
-						{#if errorMessage}
-							<div
-								class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-							>
-								{errorMessage}
-							</div>
-						{/if}
-
-						{#if successMessage}
-							<div
-								class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
-							>
-								{successMessage}
-							</div>
-						{/if}
-
-						<div class="my-6 flex items-center gap-3 text-sm font-bold text-slate-400">
-							<div class="h-px flex-1 bg-slate-200"></div>
-							<span>Lembrou a senha?</span>
-							<div class="h-px flex-1 bg-slate-200"></div>
+					{#if successMessage}
+						<div
+							class="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
+						>
+							{successMessage}
 						</div>
+					{/if}
 
+					<div class="mt-8 grid gap-3 sm:grid-cols-2">
 						<a
 							href={resolve('/login')}
-							class="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white"
+							class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white"
 						>
 							Voltar para login
+						</a>
+
+						<a
+							href={resolve('/register/student')}
+							class="inline-flex h-12 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-900 transition hover:border-slate-300 hover:bg-white"
+						>
+							Criar conta
 						</a>
 					</div>
 				</div>

@@ -1,23 +1,34 @@
 <script lang="ts">
-	import TeacherClassSummaryCard from '$lib/components/teacher/TeacherClassSummaryCard.svelte';
-	import type {
-		TeacherDashboardClassSummaryItem,
-		TeacherDashboardRiskTone
-	} from '$lib/types/teacher';
+	import { page } from '$app/stores';
+	import { resolve } from '$app/paths';
+
+	import MetricCard from '$lib/components/shared/MetricCard.svelte';
+	import NextStepCard from '$lib/components/shared/NextStepCard.svelte';
+	import StatusPill from '$lib/components/shared/StatusPill.svelte';
 	import type { TeacherClassesPageData } from './+page.server';
 
 	type Props = {
 		data: TeacherClassesPageData;
 	};
 
-	type StatusFilter = 'all' | 'critical' | 'attention' | 'neutral';
-	type SortOption = 'priority' | 'name' | 'average' | 'coverage' | 'trend';
+	type FormState = {
+		action?: 'deleteClass' | 'generateClassSnapshot' | 'createClass';
+		message?: string;
+		success?: boolean;
+	};
+
+	type HealthFilter = 'all' | 'em_operacao' | 'com_alerta' | 'sem_avaliacao' | 'sem_materia';
+	type SortOption = 'priority' | 'name' | 'coverage' | 'trend' | 'average';
 
 	let { data }: Props = $props();
 
 	let search = $state('');
-	let statusFilter = $state<StatusFilter>('all');
+	let healthFilter = $state<HealthFilter>('all');
 	let sortBy = $state<SortOption>('priority');
+
+	const formState = $derived(($page.form ?? null) as FormState | null);
+	const formMessage = $derived(formState?.message ?? null);
+	const formSuccess = $derived(formState?.success ?? false);
 
 	function parsePtBrNumber(raw: string) {
 		const normalized = raw.replace(/\s+/g, '').replace(',', '.');
@@ -31,79 +42,117 @@
 	}
 
 	function parseCoverage(label: string) {
-		const value = Number(label.replace('%', '').trim());
+		const normalized = label.replace('%', '').trim();
+		const value = Number(normalized);
 		return Number.isFinite(value) ? value : null;
 	}
 
 	function parseTrend(label: string) {
-		if (!label || label.trim().toLowerCase() === 'estavel') return 0;
+		const normalized = label.trim().toLowerCase();
+		if (!normalized || normalized === 'estável' || normalized === 'estavel') return 0;
 		return parsePtBrNumber(label.replace('+', '').trim()) ?? 0;
 	}
 
-	function severityRank(statusTone: TeacherDashboardRiskTone) {
-		if (statusTone === 'critical') return 0;
-		if (statusTone === 'attention') return 1;
-		return 2;
+	function normalizeText(value: string) {
+		return value
+			.normalize('NFD')
+			.replace(/\p{Diacritic}/gu, '')
+			.toLowerCase()
+			.trim();
 	}
 
-	function toneBadgeClass(statusTone: TeacherDashboardRiskTone) {
-		if (statusTone === 'critical') {
-			return 'border-red-200 bg-red-50 text-red-700';
-		}
-
-		if (statusTone === 'attention') {
-			return 'border-amber-200 bg-amber-50 text-amber-700';
-		}
-
-		return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+	function healthLabel(
+		status: HealthFilter | TeacherClassesPageData['classesSummary'][number]['classHealthStatus']
+	) {
+		if (status === 'em_operacao') return 'Em operação';
+		if (status === 'com_alerta') return 'Com alerta';
+		if (status === 'sem_avaliacao') return 'Sem avaliação';
+		if (status === 'sem_materia') return 'Sem matéria';
+		return 'Todas';
 	}
 
-	function toneLabel(statusTone: TeacherDashboardRiskTone) {
-		if (statusTone === 'critical') return 'Em risco';
-		if (statusTone === 'attention') return 'Atenção';
-		return 'Saudável';
+	function healthTone(
+		status: TeacherClassesPageData['classesSummary'][number]['classHealthStatus']
+	) {
+		if (status === 'em_operacao') return 'healthy';
+		if (status === 'com_alerta') return 'attention';
+		if (status === 'sem_avaliacao') return 'neutral';
+		return 'alert';
 	}
 
-	function summaryMetricClass(tone: 'neutral' | 'attention' | 'critical') {
-		if (tone === 'critical') return 'border-red-200 bg-red-50';
-		if (tone === 'attention') return 'border-amber-200 bg-amber-50';
-		return 'border-slate-200 bg-white';
+	function summaryMetricTone(tone: 'neutral' | 'attention' | 'critical') {
+		if (tone === 'critical') return 'alert';
+		if (tone === 'attention') return 'attention';
+		return 'neutral';
 	}
 
-	function summaryMetricValueClass(tone: 'neutral' | 'attention' | 'critical') {
-		if (tone === 'critical') return 'text-red-600';
-		if (tone === 'attention') return 'text-amber-600';
-		return 'text-slate-950';
+	function trendTone(value: string) {
+		const parsed = parseTrend(value);
+		if (parsed < 0) return 'attention';
+		if (parsed > 0) return 'healthy';
+		return 'context';
 	}
 
-	function nextStepText(classItem: TeacherDashboardClassSummaryItem) {
-		if (classItem.statusTone === 'critical') {
-			return 'Há sinais fortes de risco nesta turma. Vale abrir a turma e revisar cobertura, alunos em queda e publicações recentes.';
-		}
+	function trendLabel(label: string) {
+		const parsed = parseTrend(label);
+		if (parsed < 0) return 'Em queda';
+		if (parsed > 0) return 'Em melhora';
+		return 'Estável';
+	}
 
-		if (classItem.statusTone === 'attention') {
-			return 'Esta turma pede revisão breve. Confira matérias abaixo da referência e possíveis lacunas de publicação.';
-		}
+	function coverageTone(label: string) {
+		const parsed = parseCoverage(label);
+		if (parsed === null) return 'neutral';
+		if (parsed < 50) return 'alert';
+		if (parsed < 75) return 'attention';
+		return 'healthy';
+	}
 
-		if (parseTrend(classItem.trendLabel) < 0) {
-			return 'A tendência recente caiu. Vale conferir as últimas avaliações para entender onde a turma perdeu ritmo.';
-		}
+	function averageTone(label: string) {
+		const parsed = parsePublishedAverage(label);
+		if (parsed === null) return 'neutral';
+		if (parsed < 5) return 'alert';
+		if (parsed < 7) return 'attention';
+		return 'healthy';
+	}
 
-		return 'A turma está estável no momento e pode servir como referência de comparação com as demais.';
+	function sortByPriority(
+		a: TeacherClassesPageData['classesSummary'][number],
+		b: TeacherClassesPageData['classesSummary'][number]
+	) {
+		const order = {
+			com_alerta: 0,
+			sem_materia: 1,
+			sem_avaliacao: 2,
+			em_operacao: 3
+		} as const;
+
+		const healthDiff = order[a.classHealthStatus] - order[b.classHealthStatus];
+		if (healthDiff !== 0) return healthDiff;
+
+		const trendDiff = parseTrend(a.trendLabel) - parseTrend(b.trendLabel);
+		if (trendDiff !== 0) return trendDiff;
+
+		const coverageDiff =
+			(parseCoverage(a.coverageLabel) ?? 100) - (parseCoverage(b.coverageLabel) ?? 100);
+		if (coverageDiff !== 0) return coverageDiff;
+
+		return a.className.localeCompare(b.className, 'pt-BR');
 	}
 
 	const filteredClasses = $derived.by(() => {
-		const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
+		const query = normalizeText(search);
 
 		const items = data.classesSummary.filter((item) => {
 			const matchesSearch =
-				normalizedSearch.length === 0 ||
-				item.className.toLocaleLowerCase('pt-BR').includes(normalizedSearch) ||
-				item.tags.some((tag) => tag.toLocaleLowerCase('pt-BR').includes(normalizedSearch));
+				query.length === 0 ||
+				normalizeText(item.className).includes(query) ||
+				normalizeText(item.mainIssue).includes(query) ||
+				normalizeText(item.nextAction.reason).includes(query);
 
-			const matchesStatus = statusFilter === 'all' || item.statusTone === statusFilter;
+			const matchesHealth = healthFilter === 'all' || item.classHealthStatus === healthFilter;
 
-			return matchesSearch && matchesStatus;
+			return matchesSearch && matchesHealth;
 		});
 
 		return [...items].sort((a, b) => {
@@ -111,268 +160,322 @@
 				return a.className.localeCompare(b.className, 'pt-BR');
 			}
 
-			if (sortBy === 'average') {
-				return (
-					(parsePublishedAverage(a.publishedAverageLabel) ?? 0) -
-					(parsePublishedAverage(b.publishedAverageLabel) ?? 0)
-				);
-			}
-
 			if (sortBy === 'coverage') {
-				return (parseCoverage(a.coverageLabel) ?? 0) - (parseCoverage(b.coverageLabel) ?? 0);
+				return (parseCoverage(b.coverageLabel) ?? -1) - (parseCoverage(a.coverageLabel) ?? -1);
 			}
 
 			if (sortBy === 'trend') {
 				return parseTrend(a.trendLabel) - parseTrend(b.trendLabel);
 			}
 
-			const severityDiff = severityRank(a.statusTone) - severityRank(b.statusTone);
-			if (severityDiff !== 0) return severityDiff;
+			if (sortBy === 'average') {
+				return (
+					(parsePublishedAverage(a.publishedAverageLabel) ?? -1) -
+					(parsePublishedAverage(b.publishedAverageLabel) ?? -1)
+				);
+			}
 
-			const trendDiff = parseTrend(a.trendLabel) - parseTrend(b.trendLabel);
-			if (trendDiff !== 0) return trendDiff;
-
-			return a.className.localeCompare(b.className, 'pt-BR');
+			return sortByPriority(a, b);
 		});
 	});
 
-	const gridClass = $derived(filteredClasses.length > 1 ? 'xl:grid-cols-2' : 'grid-cols-1');
+	function confirmDelete(className: string) {
+		return confirm(`Excluir a turma "${className}"? Essa ação não pode ser desfeita.`);
+	}
 </script>
 
 <svelte:head>
 	<title>Class Insights - Turmas</title>
 </svelte:head>
 
-<div class="mx-auto w-full max-w-295 space-y-6">
-	<section class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-		<div class="min-w-0">
-			<h1
-				class="text-[2.1rem] font-extrabold leading-[1.04] tracking-tight text-slate-950 lg:text-[2.7rem]"
-			>
-				Turmas
-			</h1>
+<div class="app-stack-lg">
+	<section class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+		<div class="app-card-strong app-stack-md">
+			<div class="app-header">
+				<p class="app-eyebrow">Turmas</p>
+				<h1 class="app-title">Gestão das turmas em operação</h1>
+				<p class="app-subtitle">
+					Cada card mostra a saúde da turma, a cobertura, a tendência e o principal problema para
+					você saber onde agir primeiro.
+				</p>
+			</div>
 
-			<p class="mt-2 max-w-3xl text-[1rem] font-medium leading-7 text-slate-600 lg:text-[1.08rem]">
-				Gerencie suas turmas, compare desempenho, cobertura e tendência, e descubra rápido onde vale
-				agir primeiro.
-			</p>
+			<div class="app-kpi-grid">
+				{#each data.summaryMetrics as metric (`${metric.label}-${metric.value}`)}
+					<MetricCard
+						label={metric.label}
+						value={metric.value}
+						tone={summaryMetricTone(metric.tone)}
+						valueTone={metric.tone === 'neutral' ? 'default' : 'tone'}
+						compact={true}
+					/>
+				{/each}
+			</div>
+
+			{#if data.error}
+				<div
+					class="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+				>
+					{data.error}
+				</div>
+			{/if}
+
+			<p class="text-sm text-slate-500">Última atualização: {data.syncLabel}</p>
 		</div>
 
-		<div
-			class="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm"
-		>
-			<span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-			<span>{data.syncLabel}</span>
-		</div>
+		{#if data.urgentClasses.length > 0}
+			<NextStepCard
+				eyebrow="Prioridade"
+				title={data.urgentClasses[0].className}
+				description={data.urgentClasses[0].mainIssue}
+				tone={healthTone(data.urgentClasses[0].classHealthStatus)}
+				primaryHref={data.urgentClasses[0].nextAction.href}
+				primaryLabel={data.urgentClasses[0].nextAction.label}
+				secondaryHref={data.urgentClasses[0].openHref}
+				secondaryLabel="Abrir turma"
+				primaryTone="healthy"
+			/>
+		{:else}
+			<section class="app-card app-empty-state">
+				<p class="app-empty-state-title">Nenhuma prioridade crítica agora</p>
+				<p class="app-empty-state-text">
+					As turmas aparecem aqui conforme entram em operação e passam a gerar leitura acionável.
+				</p>
+			</section>
+		{/if}
 	</section>
 
-	{#if data.error}
+	{#if formMessage}
 		<div
-			class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
+			class={`rounded-3xl border px-4 py-3 text-sm font-semibold ${
+				formSuccess
+					? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+					: 'border-red-200 bg-red-50 text-red-700'
+			}`}
 		>
-			{data.error}
+			{formMessage}
 		</div>
 	{/if}
 
-	<section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-		<div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-			{#each data.summaryMetrics as metric (`${metric.label}-${metric.value}`)}
-				<div class={`rounded-2xl border px-4 py-4 ${summaryMetricClass(metric.tone)}`}>
-					<p
-						class={`text-[1.85rem] font-extrabold leading-none tracking-tight ${summaryMetricValueClass(metric.tone)}`}
-					>
-						{metric.value}
-					</p>
-					<p class="mt-2 text-[0.95rem] font-semibold leading-5 text-slate-700">
-						{metric.label}
-					</p>
-				</div>
-			{/each}
-		</div>
-	</section>
-
-	{#if data.urgentClasses.length > 0}
-		<section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-			<div class="mb-5 flex items-center justify-between gap-3">
-				<div>
-					<h2 class="text-2xl font-extrabold tracking-tight text-slate-950">
-						Turmas que pedem ação
-					</h2>
-					<p class="mt-1 text-sm font-medium text-slate-500">
-						As duas turmas mais prioritárias para revisão agora.
-					</p>
-				</div>
+	<section class="app-card app-stack-md">
+		<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+			<div class="app-header">
+				<p class="app-eyebrow">Leitura rápida</p>
+				<h2 class="app-title">Turmas que merecem olhar primeiro</h2>
+				<p class="app-subtitle">
+					Este bloco resume as turmas mais urgentes antes de você entrar nos cards completos.
+				</p>
 			</div>
 
-			<div class="grid gap-4 xl:grid-cols-2">
-				{#each data.urgentClasses as classItem (classItem.classId)}
-					<article class="rounded-2xl border border-slate-200 bg-slate-50/70 p-5">
-						<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+			<a href={resolve('/teacher/classes/new')} class="app-button"> Criar turma </a>
+		</div>
+
+		{#if data.urgentClasses.length === 0}
+			<div class="app-empty-state">
+				<p class="app-empty-state-title">Nenhuma turma prioritária neste momento</p>
+				<p class="app-empty-state-text">
+					Quando houver alertas, cobertura baixa ou bloqueios de fluxo, eles aparecerão aqui.
+				</p>
+			</div>
+		{:else}
+			<div class="grid gap-4 xl:grid-cols-3">
+				{#each data.urgentClasses as item (item.classId)}
+					<article class="app-card app-stack-md">
+						<div class="flex flex-wrap items-start justify-between gap-3">
 							<div class="min-w-0">
-								<h3
-									class="text-[1.6rem] font-extrabold leading-tight tracking-tight text-slate-950"
-								>
-									{classItem.className}
-								</h3>
-
-								<div class="mt-3 flex flex-wrap gap-2">
-									<span
-										class={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${toneBadgeClass(classItem.statusTone)}`}
-									>
-										{toneLabel(classItem.statusTone)}
-									</span>
-
-									{#if parseTrend(classItem.trendLabel) < 0}
-										<span
-											class="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700"
-										>
-											Tendência em queda
-										</span>
-									{/if}
-								</div>
+								<p class="text-lg font-black text-slate-950">{item.className}</p>
+								<p class="mt-1 text-sm text-slate-600">{item.mainIssue}</p>
 							</div>
 
-							<a
-								href={classItem.openHref}
-								class="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-bold text-white transition hover:bg-emerald-700"
-							>
-								Abrir turma
-							</a>
+							<StatusPill
+								label={healthLabel(item.classHealthStatus)}
+								tone={healthTone(item.classHealthStatus)}
+								uppercase={true}
+							/>
 						</div>
 
-						<div class="mt-5 grid grid-cols-3 gap-3">
-							<div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-								<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-									Média
-								</p>
-								<p class="mt-2 text-[1.5rem] font-extrabold tracking-tight text-slate-950">
-									{classItem.publishedAverageLabel}
-								</p>
-							</div>
-
-							<div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-								<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-									Cobertura
-								</p>
-								<p class="mt-2 text-[1.5rem] font-extrabold tracking-tight text-slate-950">
-									{classItem.coverageLabel}
-								</p>
-							</div>
-
-							<div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-								<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-500">
-									Tendência
-								</p>
-								<p
-									class={`mt-2 text-[1.5rem] font-extrabold tracking-tight ${
-										parseTrend(classItem.trendLabel) < 0
-											? 'text-red-600'
-											: parseTrend(classItem.trendLabel) > 0
-												? 'text-emerald-600'
-												: 'text-slate-500'
-									}`}
-								>
-									{classItem.trendLabel}
-								</p>
-							</div>
+						<div class="grid gap-3 sm:grid-cols-3">
+							<MetricCard
+								label="Cobertura"
+								value={item.coverageLabel}
+								tone={coverageTone(item.coverageLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
+							<MetricCard
+								label="Tendência"
+								value={trendLabel(item.trendLabel)}
+								tone={trendTone(item.trendLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
+							<MetricCard
+								label="Média"
+								value={item.publishedAverageLabel}
+								tone={averageTone(item.publishedAverageLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
 						</div>
 
-						{#if classItem.tags.length > 0}
-							<div class="mt-4 flex flex-wrap gap-2">
-								{#each classItem.tags as tag (`${classItem.classId}-${tag}`)}
-									<span
-										class="inline-flex items-center rounded-full bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"
-									>
-										{tag}
-									</span>
-								{/each}
-							</div>
-						{/if}
-
-						<div
-							class={`mt-4 rounded-2xl border px-4 py-4 ${
-								classItem.statusTone === 'critical'
-									? 'border-red-200 bg-red-50'
-									: classItem.statusTone === 'attention'
-										? 'border-amber-200 bg-amber-50'
-										: 'border-slate-200 bg-white'
-							}`}
-						>
-							<p class="text-[0.72rem] font-bold uppercase tracking-[0.18em] text-slate-600">
+						<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
 								Próximo passo
 							</p>
-							<p class="mt-2 text-sm font-semibold leading-7 text-slate-900">
-								{nextStepText(classItem)}
-							</p>
+							<p class="mt-2 text-sm font-semibold text-slate-900">{item.nextAction.reason}</p>
+						</div>
+
+						<div class="flex flex-wrap gap-3">
+							<a href={item.nextAction.href} class="app-button">
+								{item.nextAction.label}
+							</a>
+							<a href={item.openHref} class="app-button-secondary"> Abrir turma </a>
 						</div>
 					</article>
 				{/each}
 			</div>
-		</section>
-	{/if}
+		{/if}
+	</section>
 
-	<section class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-		<div class="mb-5">
-			<h2 class="text-2xl font-extrabold tracking-tight text-slate-950">Todas as turmas</h2>
-			<p class="mt-1 text-sm font-medium text-slate-500">
-				Busque, filtre e compare suas turmas em um só lugar.
-			</p>
+	<section class="app-card app-stack-md">
+		<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+			<div class="app-header">
+				<p class="app-eyebrow">Todas as turmas</p>
+				<h2 class="app-title">Cards de gestão por turma</h2>
+				<p class="app-subtitle">
+					Cada card resume estado da turma, principal problema e ação recomendada, sem parecer
+					catálogo.
+				</p>
+			</div>
 		</div>
 
-		<div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]">
-			<label class="block">
-				<span class="sr-only">Buscar turma</span>
+		<div class="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(200px,1fr)_minmax(200px,1fr)]">
+			<div>
+				<label for="class-search" class="block text-sm font-black text-slate-900">Buscar</label>
 				<input
-					bind:value={search}
+					id="class-search"
 					type="text"
-					placeholder="Buscar turma ou matéria..."
-					class="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
+					bind:value={search}
+					class="app-input mt-2"
+					placeholder="Nome da turma, problema principal ou ação"
 				/>
-			</label>
+			</div>
 
-			<label class="block">
-				<span class="sr-only">Filtrar status</span>
-				<select
-					bind:value={statusFilter}
-					class="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-300 focus:bg-white"
-				>
-					<option value="all">Todas as situações</option>
-					<option value="critical">Em risco</option>
-					<option value="attention">Atenção</option>
-					<option value="neutral">Saudáveis</option>
+			<div>
+				<label for="health-filter" class="block text-sm font-black text-slate-900">Saúde</label>
+				<select id="health-filter" bind:value={healthFilter} class="app-select mt-2">
+					<option value="all">Todas</option>
+					<option value="em_operacao">Em operação</option>
+					<option value="com_alerta">Com alerta</option>
+					<option value="sem_avaliacao">Sem avaliação</option>
+					<option value="sem_materia">Sem matéria</option>
 				</select>
-			</label>
+			</div>
 
-			<label class="block">
-				<span class="sr-only">Ordenar</span>
-				<select
-					bind:value={sortBy}
-					class="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-300 focus:bg-white"
-				>
-					<option value="priority">Ordenar por prioridade</option>
-					<option value="name">Ordenar por nome</option>
-					<option value="average">Menor média primeiro</option>
-					<option value="coverage">Menor cobertura primeiro</option>
-					<option value="trend">Pior tendência primeiro</option>
+			<div>
+				<label for="sort-by" class="block text-sm font-black text-slate-900">Ordenar</label>
+				<select id="sort-by" bind:value={sortBy} class="app-select mt-2">
+					<option value="priority">Prioridade</option>
+					<option value="name">Nome</option>
+					<option value="coverage">Cobertura</option>
+					<option value="trend">Tendência</option>
+					<option value="average">Média</option>
 				</select>
-			</label>
+			</div>
 		</div>
 
-		<div class="mt-5">
-			{#if filteredClasses.length === 0}
-				<div class="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-					<p class="text-lg font-bold text-slate-950">Nenhuma turma encontrada</p>
-					<p class="mt-2 max-w-2xl text-sm leading-7 text-slate-600">
-						Ajuste a busca ou os filtros para encontrar uma turma específica.
-					</p>
-				</div>
-			{:else}
-				<div class={`grid gap-4 ${gridClass}`}>
-					{#each filteredClasses as classItem (classItem.classId)}
-						<TeacherClassSummaryCard {classItem} />
-					{/each}
-				</div>
-			{/if}
-		</div>
+		{#if filteredClasses.length === 0}
+			<div class="app-empty-state">
+				<p class="app-empty-state-title">Nenhuma turma encontrada</p>
+				<p class="app-empty-state-text">
+					Ajuste os filtros ou crie uma nova turma para começar a leitura operacional.
+				</p>
+			</div>
+		{:else}
+			<div class="grid gap-4 xl:grid-cols-2">
+				{#each filteredClasses as item (item.classId)}
+					<article class="app-card-strong app-stack-md">
+						<div class="flex flex-wrap items-start justify-between gap-3">
+							<div class="min-w-0">
+								<h3 class="text-2xl font-black tracking-tight text-slate-950">{item.className}</h3>
+								<p class="mt-2 text-sm leading-7 text-slate-600">{item.mainIssue}</p>
+							</div>
+
+							<StatusPill
+								label={healthLabel(item.classHealthStatus)}
+								tone={healthTone(item.classHealthStatus)}
+								uppercase={true}
+							/>
+						</div>
+
+						<div class="grid gap-3 md:grid-cols-3">
+							<MetricCard
+								label="Cobertura"
+								value={item.coverageLabel}
+								tone={coverageTone(item.coverageLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
+							<MetricCard
+								label="Tendência"
+								value={trendLabel(item.trendLabel)}
+								tone={trendTone(item.trendLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
+							<MetricCard
+								label="Média publicada"
+								value={item.publishedAverageLabel}
+								tone={averageTone(item.publishedAverageLabel)}
+								valueTone="tone"
+								compact={true}
+							/>
+						</div>
+
+						<div class="flex flex-wrap gap-2">
+							{#each item.tags as tag (`${item.classId}-${tag}`)}
+								<StatusPill label={tag} tone="neutral" />
+							{/each}
+						</div>
+
+						<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+								Próxima ação
+							</p>
+							<p class="mt-2 text-base font-black text-slate-950">{item.nextAction.label}</p>
+							<p class="mt-2 text-sm leading-7 text-slate-600">{item.nextAction.reason}</p>
+						</div>
+
+						<div class="flex flex-wrap gap-3">
+							<a href={item.nextAction.href} class="app-button">
+								{item.nextAction.label}
+							</a>
+
+							<a href={item.openHref} class="app-button-secondary"> Abrir turma </a>
+
+							<form method="POST" action="?/generateClassSnapshot">
+								<input type="hidden" name="classId" value={item.classId} />
+								<button type="submit" class="app-button-secondary"> Atualizar leitura </button>
+							</form>
+
+							<form method="POST" action="?/deleteClass">
+								<input type="hidden" name="classId" value={item.classId} />
+								<button
+									type="submit"
+									class="app-button-ghost text-red-700"
+									onclick={(event) => {
+										if (!confirmDelete(item.className)) {
+											event.preventDefault();
+										}
+									}}
+								>
+									Excluir
+								</button>
+							</form>
+						</div>
+					</article>
+				{/each}
+			</div>
+		{/if}
 	</section>
 </div>

@@ -1,493 +1,412 @@
 ﻿<script lang="ts">
 	import { resolve } from '$app/paths';
-	import { formatPercentAsGrade, formatPtBrGrade } from '$lib/utils/format';
 
-	type SubjectStatus = 'good' | 'attention' | 'pending';
-	type Trend = 'improving' | 'declining' | 'stable' | 'insufficient_data';
+	import MetricCard from '$lib/components/shared/MetricCard.svelte';
+	import StatusPill from '$lib/components/shared/StatusPill.svelte';
 
-	type SubjectItem = {
+	type PortalStatus = 'pending-link' | 'ready';
+	type TrendDirection = 'estável' | 'em melhora' | 'em atenção' | 'base insuficiente';
+	type SubjectSituation = 'saudável' | 'em atenção' | 'base insuficiente';
+
+	type SubjectCard = {
 		id: string;
 		name: string;
-		progress: number | null;
-		score: number | null;
-		status: SubjectStatus;
-		description: string;
-		assessmentsCount: number;
-		latestAssessmentTitle: string | null;
-		latestAssessmentDate: string | null;
-	};
-
-	type EnrollmentItem = {
-		enrollmentId: string;
-		studentId: string;
-		classId: string;
-		teacherId: string;
-		status: 'pending' | 'active' | 'archived';
-		joinedAt: string | null;
-		leftAt: string | null;
-		studentName: string;
-		className: string;
-		isCurrent: boolean;
-	};
-
-	export let data: {
-		authUser: { id: string; email: string | null };
-		subjectsPortal: { status: 'pending-link' | 'ready'; message: string };
-		student: { displayName: string; className: string | null };
-		summary: {
-			totalSubjects: number;
-			subjectsWithScore: number;
-			goodSubjects: number;
-			attentionSubjects: number;
-			pendingSubjects: number;
-			generalAverage: number | null;
-			generalPercent: number | null;
+		code: string | null;
+		currentAverage: number | null;
+		normalizedPercent: number | null;
+		trendDirection: TrendDirection;
+		subjectStatus: SubjectSituation;
+		publishedAssessments: number;
+		latestPublication: {
+			title: string | null;
+			date: string | null;
 		};
-		bestSubject: SubjectItem | null;
-		prioritySubject: SubjectItem | null;
-		subjects: SubjectItem[];
-		academicSummary: { title: string; description: string };
-		longitudinal: { recent_trend: Trend } | null;
-		enrollments: EnrollmentItem[];
+		description: string;
 	};
 
-	type FilterKey = 'all' | 'good' | 'attention' | 'pending';
-	let activeFilter: FilterKey = 'all';
-
-	const filterOptions: Array<{ key: FilterKey; label: string }> = [
-		{ key: 'all', label: 'Todas' },
-		{ key: 'attention', label: 'Vale revisar' },
-		{ key: 'good', label: 'Dentro do esperado' },
-		{ key: 'pending', label: 'Sem avaliacao' }
-	];
-
-	const averageLabel = (value: number | null) => formatPtBrGrade(value);
-	const scoreFromPercentLabel = (value: number | null) => formatPercentAsGrade(value);
-	const statusLabel = (status: SubjectStatus) => {
-		if (status === 'good') return 'Dentro do esperado';
-		if (status === 'attention') return 'Vale revisar';
-		return 'Sem avaliacao publicada';
+	type HighlightedSubject = {
+		id: string;
+		name: string;
+		code: string | null;
+		currentAverage: number | null;
+		normalizedPercent: number | null;
+		trendDirection: TrendDirection;
+		subjectStatus: SubjectSituation;
+		description: string;
+		latestPublication: {
+			title: string | null;
+			date: string | null;
+		};
 	};
-	const statusClass = (status: SubjectStatus) => status;
-	const trendLabel = (value: Trend | null | undefined) => {
-		if (value === 'improving') return 'Voce vem melhorando';
-		if (value === 'declining') return 'Sua evolucao caiu um pouco';
-		if (value === 'stable') return 'Voce esta estavel';
-		return 'Ainda sem base suficiente';
+
+	type Props = {
+		data: {
+			subjectsPortal: {
+				status: PortalStatus;
+				message: string;
+			};
+			student: {
+				className: string | null;
+			};
+			bestSubject: HighlightedSubject | null;
+			prioritySubject: HighlightedSubject | null;
+			subjects: SubjectCard[];
+			subjectsSummary: {
+				totalSubjects: number;
+				healthySubjects: number;
+				attentionSubjects: number;
+				insufficientBaseSubjects: number;
+			};
+		};
 	};
-	const formatDate = (value: string | null) => {
+
+	let { data }: Props = $props();
+
+	let selectedStatus = $state<'all' | SubjectSituation>('all');
+	let search = $state('');
+
+	const filteredSubjects = $derived.by(() => {
+		const query = search.trim().toLocaleLowerCase('pt-BR');
+
+		return data.subjects.filter((subject) => {
+			const matchesSearch =
+				query.length === 0 ||
+				subject.name.toLocaleLowerCase('pt-BR').includes(query) ||
+				(subject.code ?? '').toLocaleLowerCase('pt-BR').includes(query);
+
+			const matchesStatus = selectedStatus === 'all' || subject.subjectStatus === selectedStatus;
+
+			return matchesSearch && matchesStatus;
+		});
+	});
+
+	function formatDate(value: string | null) {
 		if (!value) return 'Sem data';
 		const date = new Date(`${value}T00:00:00`);
 		if (Number.isNaN(date.getTime())) return value;
-		return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'medium' }).format(date);
-	};
-	const enrollmentStatusLabel = (status: EnrollmentItem['status']) => {
-		if (status === 'active') return 'Ativa';
-		if (status === 'pending') return 'Pendente';
-		return 'Arquivada';
-	};
 
-	$: filteredSubjects =
-		activeFilter === 'all'
-			? data.subjects
-			: data.subjects.filter((subject) => subject.status === activeFilter);
-	$: orderedSubjects = [...filteredSubjects].sort((a, b) => {
-		const order = (status: SubjectStatus) =>
-			status === 'attention' ? 0 : status === 'pending' ? 1 : 2;
-		const statusCompare = order(a.status) - order(b.status);
-		if (statusCompare !== 0) return statusCompare;
-		return (a.progress ?? 0) - (b.progress ?? 0);
-	});
-	$: pageMessage =
-		data.longitudinal?.recent_trend === 'improving'
-			? 'Seu resultado por materia vem melhorando nas publicacoes mais recentes.'
-			: data.longitudinal?.recent_trend === 'declining'
-				? 'As materias abaixo ajudam a entender onde vale revisar primeiro.'
-				: 'Aqui esta sua foto atual por materia, usando apenas o que ja foi publicado.';
+		return new Intl.DateTimeFormat('pt-BR', {
+			day: '2-digit',
+			month: '2-digit',
+			year: 'numeric'
+		}).format(date);
+	}
+
+	function formatGrade(value: number | null) {
+		if (typeof value !== 'number') return '—';
+
+		return new Intl.NumberFormat('pt-BR', {
+			minimumFractionDigits: 1,
+			maximumFractionDigits: 1
+		}).format(value);
+	}
+
+	function formatPercent(value: number | null) {
+		if (typeof value !== 'number') return '—';
+
+		return `${new Intl.NumberFormat('pt-BR', {
+			minimumFractionDigits: 1,
+			maximumFractionDigits: 1
+		}).format(value)}%`;
+	}
+
+	function subjectTone(status: SubjectSituation) {
+		if (status === 'saudável') return 'healthy';
+		if (status === 'em atenção') return 'attention';
+		return 'neutral';
+	}
+
+	function subjectLabel(status: SubjectSituation) {
+		if (status === 'saudável') return 'Saudável';
+		if (status === 'em atenção') return 'Em atenção';
+		return 'Base insuficiente';
+	}
+
+	function trendTone(trend: TrendDirection) {
+		if (trend === 'em melhora') return 'healthy';
+		if (trend === 'em atenção') return 'attention';
+		if (trend === 'estável') return 'context';
+		return 'neutral';
+	}
+
+	function trendLabel(trend: TrendDirection) {
+		if (trend === 'em melhora') return 'Em melhora';
+		if (trend === 'em atenção') return 'Em atenção';
+		if (trend === 'estável') return 'Estável';
+		return 'Base insuficiente';
+	}
+
+	function subjectNarrative(subject: SubjectCard | HighlightedSubject) {
+		const latestTitle = subject.latestPublication.title;
+		const latestDate = subject.latestPublication.date
+			? formatDate(subject.latestPublication.date)
+			: null;
+
+		if (subject.subjectStatus === 'base insuficiente') {
+			return latestTitle
+				? `Ainda não há base suficiente para leitura confiável. Última publicação: ${latestTitle} em ${latestDate}.`
+				: 'Ainda não há base suficiente para leitura confiável desta matéria.';
+		}
+
+		if (subject.subjectStatus === 'saudável' && subject.trendDirection === 'em melhora') {
+			return latestTitle
+				? `Matéria saudável e em melhora. Última publicação: ${latestTitle} em ${latestDate}.`
+				: 'Matéria saudável e em melhora.';
+		}
+
+		if (subject.subjectStatus === 'saudável' && subject.trendDirection === 'estável') {
+			return latestTitle
+				? `Matéria saudável e estável. Última publicação: ${latestTitle} em ${latestDate}.`
+				: 'Matéria saudável e estável.';
+		}
+
+		if (subject.subjectStatus === 'em atenção' && subject.trendDirection === 'em atenção') {
+			return latestTitle
+				? `Matéria em atenção e com queda recente. Última publicação: ${latestTitle} em ${latestDate}.`
+				: 'Matéria em atenção e com queda recente.';
+		}
+
+		if (subject.subjectStatus === 'em atenção') {
+			return latestTitle
+				? `Matéria em atenção no momento. Última publicação: ${latestTitle} em ${latestDate}.`
+				: 'Matéria em atenção no momento.';
+		}
+
+		return latestTitle
+			? `Última publicação: ${latestTitle} em ${latestDate}.`
+			: 'Sem publicação recente suficiente para leitura.';
+	}
+
+	const primaryJourneyHref = resolve('/student/journey');
 </script>
 
 <svelte:head>
-	<title>Class Insights - Materias do Aluno</title>
+	<title>Class Insights - Matérias</title>
 </svelte:head>
 
-{#if data.subjectsPortal.status === 'pending-link'}
-	<section class="hero">
-		<div>
-			<p class="eyebrow">Materias</p>
-			<h1>Suas materias aparecem assim que o vinculo for concluido.</h1>
-			<p>
-				Quando sua conta estiver ligada a turma certa, esta tela mostra o que voce foi melhor e onde
-				vale revisar.
-			</p>
-		</div>
-		<div class="hero-side muted">
-			<p class="side-label">Status</p>
-			<strong>Aguardando vinculo</strong>
-			<p>{data.subjectsPortal.message}</p>
-		</div>
-	</section>
-{:else}
-	<section class="hero">
-		<div>
-			<p class="eyebrow">Materias</p>
-			<h1>Veja cada materia de um jeito direto.</h1>
-			<p>
+<div class="app-stack-lg">
+	<section class="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+		<div class="app-card-strong app-stack-md">
+			<div class="app-header">
+				<p class="app-eyebrow">Matérias</p>
+				<h1 class="app-title">Como cada matéria está agora</h1>
+				<p class="app-subtitle">
+					Veja a nota atual, a tendência, a última publicação e a situação de cada matéria sem
+					misturar conceitos no mesmo bloco.
+				</p>
+			</div>
+
+			<div class="flex flex-wrap gap-3">
 				{#if data.student.className}
-					Turma atual: <strong>{data.student.className}</strong>.
+					<StatusPill label={data.student.className} tone="context" />
 				{/if}
-				{pageMessage}
-			</p>
-		</div>
-		<div class="hero-side">
-			<p class="side-label">Media atual</p>
-			<strong>{averageLabel(data.summary.generalAverage)} / 10</strong>
-			<p>Tendencia recente: {trendLabel(data.longitudinal?.recent_trend)}</p>
-		</div>
-	</section>
-
-	<section class="top-strip">
-		<article class="top-card">
-			<p class="card-kicker">Onde voce foi melhor</p>
-			<strong>{data.bestSubject?.name ?? '--'}</strong>
-		</article>
-		<article class={`top-card ${data.prioritySubject ? 'attention' : 'good'}`}>
-			<p class="card-kicker">Onde vale revisar</p>
-			<strong>{data.prioritySubject?.name ?? 'Tudo dentro do esperado'}</strong>
-		</article>
-		<article class="top-card">
-			<p class="card-kicker">Materias com publicacao</p>
-			<strong>{data.summary.subjectsWithScore}</strong>
-		</article>
-	</section>
-
-	<section class="panel">
-		<div class="section-head">
-			<div>
-				<p class="section-kicker">Filtro</p>
-				<h2>Escolha o que quer ver agora</h2>
+				<StatusPill label={`${data.subjectsSummary.totalSubjects} matéria(s)`} tone="neutral" />
 			</div>
-			<a href={resolve('/student/journey')} class="ghost-link">Abrir jornada</a>
-		</div>
 
-		<div class="filters">
-			{#each filterOptions as option (option.key)}
-				<button
-					type="button"
-					class:active={activeFilter === option.key}
-					class="filter-button"
-					onclick={() => (activeFilter = option.key)}>{option.label}</button
-				>
-			{/each}
-		</div>
-	</section>
-
-	<section class="panel">
-		<div class="section-head">
-			<div>
-				<p class="section-kicker">Resultado por materia</p>
-				<h2>Seu panorama atual</h2>
+			<div class="app-kpi-grid">
+				<MetricCard
+					label="Saudáveis"
+					value={String(data.subjectsSummary.healthySubjects)}
+					tone={data.subjectsSummary.healthySubjects > 0 ? 'healthy' : 'neutral'}
+					valueTone={data.subjectsSummary.healthySubjects > 0 ? 'tone' : 'default'}
+					compact={true}
+				/>
+				<MetricCard
+					label="Em atenção"
+					value={String(data.subjectsSummary.attentionSubjects)}
+					tone={data.subjectsSummary.attentionSubjects > 0 ? 'attention' : 'neutral'}
+					valueTone={data.subjectsSummary.attentionSubjects > 0 ? 'tone' : 'default'}
+					compact={true}
+				/>
+				<MetricCard
+					label="Base insuficiente"
+					value={String(data.subjectsSummary.insufficientBaseSubjects)}
+					tone={data.subjectsSummary.insufficientBaseSubjects > 0 ? 'neutral' : 'healthy'}
+					valueTone="tone"
+					compact={true}
+				/>
 			</div>
 		</div>
 
-		{#if orderedSubjects.length > 0}
-			<div class="subject-grid">
-				{#each orderedSubjects as subject (subject.id)}
-					<article class="subject-card">
-						<div class="subject-header">
-							<div>
-								<h3>{subject.name}</h3>
-								<p>{subject.description}</p>
-							</div>
-							<span class={`status-badge ${statusClass(subject.status)}`}
-								>{statusLabel(subject.status)}</span
-							>
+		<section class="app-card app-stack-md">
+			<div class="app-header">
+				<p class="app-eyebrow">Leitura rápida</p>
+				<h2 class="app-title">Resumo do momento</h2>
+				<p class="app-subtitle">
+					As matérias mais fortes e as que pedem revisão primeiro aparecem aqui para orientar o
+					próximo clique.
+				</p>
+			</div>
+
+			{#if data.bestSubject}
+				<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div>
+							<p class="text-sm font-black text-slate-950">Ponto forte</p>
+							<p class="mt-1 text-base font-black text-slate-950">{data.bestSubject.name}</p>
 						</div>
 
-						<div class="subject-metrics">
-							<div>
-								<span>Media</span>
-								<strong>{averageLabel(subject.score)} / 10</strong>
-							</div>
-							<div>
-								<span>Desempenho</span>
-								<strong>{scoreFromPercentLabel(subject.progress)}</strong>
-							</div>
+						<StatusPill
+							label={subjectLabel(data.bestSubject.subjectStatus)}
+							tone={subjectTone(data.bestSubject.subjectStatus)}
+							uppercase={true}
+						/>
+					</div>
+
+					<p class="mt-3 text-sm leading-7 text-slate-600">
+						{subjectNarrative(data.bestSubject)}
+					</p>
+				</div>
+			{/if}
+
+			{#if data.prioritySubject}
+				<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div>
+							<p class="text-sm font-black text-slate-950">Onde revisar primeiro</p>
+							<p class="mt-1 text-base font-black text-slate-950">{data.prioritySubject.name}</p>
 						</div>
 
-						<div class="subject-footer">
-							<span>{subject.assessmentsCount} avaliacao(oes) publicada(s)</span>
-							<span>{formatDate(subject.latestAssessmentDate)}</span>
+						<StatusPill
+							label={subjectLabel(data.prioritySubject.subjectStatus)}
+							tone={subjectTone(data.prioritySubject.subjectStatus)}
+							uppercase={true}
+						/>
+					</div>
+
+					<p class="mt-3 text-sm leading-7 text-slate-600">
+						{subjectNarrative(data.prioritySubject)}
+					</p>
+				</div>
+			{/if}
+		</section>
+	</section>
+
+	{#if data.subjectsPortal.status !== 'ready'}
+		<section class="app-empty-state">
+			<p class="app-empty-state-title">Conclua um vínculo para liberar as matérias</p>
+			<p class="app-empty-state-text">{data.subjectsPortal.message}</p>
+			<div class="mt-4 flex flex-wrap justify-center gap-3">
+				<a href={resolve('/student')} class="app-button">Voltar ao início</a>
+			</div>
+		</section>
+	{:else}
+		<section class="app-card app-stack-md">
+			<div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+				<div class="app-header">
+					<p class="app-eyebrow">Filtro</p>
+					<h2 class="app-title">Encontrar matéria</h2>
+					<p class="app-subtitle">
+						Filtre por nome ou por situação para focar no que merece mais atenção.
+					</p>
+				</div>
+			</div>
+
+			<div class="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(220px,1fr)]">
+				<div>
+					<label for="subject-search" class="block text-sm font-black text-slate-900">Buscar</label>
+					<input
+						id="subject-search"
+						bind:value={search}
+						type="text"
+						class="app-input mt-2"
+						placeholder="Nome da matéria ou código"
+					/>
+				</div>
+
+				<div>
+					<label for="subject-status-filter" class="block text-sm font-black text-slate-900">
+						Situação
+					</label>
+					<select id="subject-status-filter" bind:value={selectedStatus} class="app-select mt-2">
+						<option value="all">Todas</option>
+						<option value="saudável">Saudáveis</option>
+						<option value="em atenção">Em atenção</option>
+						<option value="base insuficiente">Base insuficiente</option>
+					</select>
+				</div>
+			</div>
+		</section>
+
+		{#if filteredSubjects.length === 0}
+			<section class="app-empty-state">
+				<p class="app-empty-state-title">Nenhuma matéria encontrada</p>
+				<p class="app-empty-state-text">
+					Ajuste a busca ou o filtro para voltar a ver as matérias da sua turma.
+				</p>
+			</section>
+		{:else}
+			<section class="grid gap-4 xl:grid-cols-2">
+				{#each filteredSubjects as subject (subject.id)}
+					<article class="app-card-strong app-stack-md">
+						<div class="flex flex-wrap items-start justify-between gap-3">
+							<div class="min-w-0">
+								<h3 class="text-2xl font-black tracking-tight text-slate-950">
+									{subject.name}
+								</h3>
+								<p class="mt-1 text-sm text-slate-600">
+									{subject.code ?? 'Sem código'} · {subject.publishedAssessments} publicação(ões)
+								</p>
+							</div>
+
+							<StatusPill
+								label={subjectLabel(subject.subjectStatus)}
+								tone={subjectTone(subject.subjectStatus)}
+								uppercase={true}
+							/>
 						</div>
 
-						{#if subject.latestAssessmentTitle}
-							<p class="latest-note">Ultima avaliacao: {subject.latestAssessmentTitle}</p>
-						{/if}
+						<div class="grid gap-3 md:grid-cols-2">
+							<MetricCard
+								label="Nota atual"
+								value={formatGrade(subject.currentAverage)}
+								tone={subject.subjectStatus === 'base insuficiente' ? 'neutral' : 'context'}
+								valueTone="tone"
+								compact={true}
+							/>
+
+							<MetricCard
+								label="Tendência"
+								value={trendLabel(subject.trendDirection)}
+								tone={trendTone(subject.trendDirection)}
+								valueTone="tone"
+								compact={true}
+							/>
+						</div>
+
+						<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+								Última publicação
+							</p>
+
+							{#if subject.latestPublication.title}
+								<p class="mt-2 text-base font-black text-slate-950">
+									{subject.latestPublication.title}
+								</p>
+								<p class="mt-1 text-sm text-slate-600">
+									{formatDate(subject.latestPublication.date)}
+								</p>
+							{:else}
+								<p class="mt-2 text-sm leading-7 text-slate-600">
+									Ainda não há publicação suficiente para montar uma referência recente.
+								</p>
+							{/if}
+						</div>
+
+						<div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+							<p class="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Situação</p>
+							<p class="mt-2 text-sm leading-7 text-slate-600">
+								{subjectNarrative(subject)}
+							</p>
+						</div>
+
+						<div class="flex flex-wrap gap-3">
+							<a href={primaryJourneyHref} class="app-button"> Ver evolução da matéria </a>
+							<a href={resolve('/student')} class="app-button-secondary"> Voltar ao início </a>
+						</div>
 					</article>
 				{/each}
-			</div>
-		{:else}
-			<div class="empty-state">
-				<p>Nenhuma materia encontrada nesse filtro.</p>
-			</div>
+			</section>
 		{/if}
-	</section>
-
-	<section class="panel">
-		<div class="section-head">
-			<div>
-				<p class="section-kicker">Turmas</p>
-				<h2>Vinculos desta conta</h2>
-			</div>
-			<a href={resolve('/student')} class="ghost-link">Voltar ao inicio</a>
-		</div>
-
-		<div class="subject-grid compact-grid">
-			{#each data.enrollments as enrollment (enrollment.enrollmentId)}
-				<article class={`subject-card ${enrollment.isCurrent ? 'current' : ''}`}>
-					<div>
-						<h3>{enrollment.className}</h3>
-						<p>{enrollment.studentName}</p>
-					</div>
-					<div class="subject-footer">
-						<span>{enrollmentStatusLabel(enrollment.status)}</span>
-						<span>{enrollment.isCurrent ? 'Turma ativa' : 'Outro vinculo'}</span>
-					</div>
-				</article>
-			{/each}
-		</div>
-	</section>
-{/if}
-
-<style>
-	.hero,
-	.panel,
-	.top-card,
-	.subject-card,
-	.empty-state {
-		border: 1px solid rgba(148, 163, 184, 0.18);
-		border-radius: 1.25rem;
-		background: rgba(255, 255, 255, 0.94);
-		box-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
-	}
-
-	.hero,
-	.panel {
-		padding: 1rem;
-		margin-bottom: 1rem;
-	}
-
-	.hero {
-		display: grid;
-		gap: 1rem;
-	}
-
-	.eyebrow,
-	.section-kicker,
-	.card-kicker,
-	.side-label,
-	.subject-metrics span,
-	.subject-footer span {
-		font-size: 0.76rem;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-		color: #64748b;
-	}
-
-	h1,
-	h2,
-	h3,
-	p {
-		margin: 0;
-	}
-
-	h1,
-	h2,
-	h3 {
-		color: #0f172a;
-		line-height: 1.15;
-	}
-
-	h1 {
-		margin-top: 0.35rem;
-		font-size: clamp(1.9rem, 6vw, 2.6rem);
-	}
-
-	p,
-	.hero-side p,
-	.subject-card p,
-	.latest-note {
-		color: #475569;
-		line-height: 1.6;
-	}
-
-	.hero-side {
-		border-radius: 1rem;
-		padding: 1rem;
-		background: linear-gradient(180deg, rgba(37, 99, 235, 0.1), rgba(37, 99, 235, 0.04));
-	}
-
-	.hero-side.muted {
-		background: linear-gradient(180deg, rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0.08));
-	}
-
-	.hero-side strong,
-	.top-card strong,
-	.subject-metrics strong {
-		display: block;
-		margin-top: 0.35rem;
-		font-size: clamp(1.05rem, 4vw, 1.55rem);
-		font-weight: 900;
-		color: #0f172a;
-	}
-
-	.top-strip,
-	.subject-grid {
-		display: grid;
-		gap: 0.9rem;
-		margin-bottom: 1rem;
-	}
-
-	.top-card,
-	.subject-card {
-		padding: 1rem;
-	}
-
-	.top-card.attention {
-		background: rgba(245, 158, 11, 0.1);
-		border-color: rgba(245, 158, 11, 0.2);
-	}
-
-	.top-card.good {
-		background: rgba(34, 197, 94, 0.1);
-		border-color: rgba(34, 197, 94, 0.18);
-	}
-
-	.section-head {
-		display: flex;
-		flex-direction: column;
-		gap: 0.9rem;
-		margin-bottom: 1rem;
-	}
-
-	.filters {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.7rem;
-	}
-
-	.filter-button,
-	.ghost-link {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		min-height: 2.75rem;
-		padding: 0 1rem;
-		border-radius: 999px;
-		border: 1px solid #cbd5e1;
-		background: white;
-		font-size: 0.92rem;
-		font-weight: 800;
-		color: #0f172a;
-		text-decoration: none;
-		cursor: pointer;
-	}
-
-	.filter-button.active {
-		background: rgba(37, 99, 235, 0.1);
-		border-color: rgba(96, 165, 250, 0.35);
-		color: #1d4ed8;
-	}
-
-	.subject-card {
-		display: grid;
-		gap: 0.9rem;
-	}
-
-	.subject-card.current {
-		background: rgba(37, 99, 235, 0.08);
-		border-color: rgba(37, 99, 235, 0.18);
-	}
-
-	.subject-header {
-		display: flex;
-		flex-direction: column;
-		gap: 0.75rem;
-	}
-
-	.subject-metrics {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
-	}
-
-	.subject-footer {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-
-	.latest-note {
-		font-size: 0.92rem;
-	}
-
-	.status-badge {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: fit-content;
-		padding: 0.42rem 0.72rem;
-		border-radius: 999px;
-		font-size: 0.74rem;
-		font-weight: 800;
-	}
-
-	.status-badge.good {
-		background: rgba(34, 197, 94, 0.12);
-		color: #166534;
-	}
-
-	.status-badge.attention {
-		background: rgba(245, 158, 11, 0.14);
-		color: #b45309;
-	}
-
-	.status-badge.pending {
-		background: rgba(148, 163, 184, 0.16);
-		color: #475569;
-	}
-
-	.empty-state {
-		padding: 1rem;
-	}
-
-	@media (min-width: 768px) {
-		.hero {
-			grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.9fr);
-		}
-
-		.top-strip {
-			grid-template-columns: repeat(3, minmax(0, 1fr));
-		}
-
-		.subject-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.compact-grid {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-
-		.section-head {
-			flex-direction: row;
-			align-items: start;
-			justify-content: space-between;
-		}
-
-		.subject-header {
-			flex-direction: row;
-			align-items: start;
-			justify-content: space-between;
-		}
-	}
-</style>
+	{/if}
+</div>

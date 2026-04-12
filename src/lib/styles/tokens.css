@@ -3,7 +3,7 @@
 	--font-sans:
 		Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-	/* Colors - neutrals */
+	/* Neutral foundation */
 	--color-bg: #f8fafc;
 	--color-bg-soft: #eef2f7;
 	--color-surface: rgba(255, 255, 255, 0.92);
@@ -14,49 +14,132 @@
 	--color-text-soft: #334155;
 	--color-text-muted: #64748b;
 
-	--color-border: rgba(148, 163, 184, 0.2);
-	--color-border-strong: #cbd5e1;
-	--color-border-soft: #e2e8f0;
+	--color-border: rgba(148, 163, 184, 0.26);
+	--color-border-strong: rgba(100, 116, 139, 0.34);
+	--color-divider: rgba(148, 163, 184, 0.18);
 
 	/* Brand */
 	--color-brand-50: #eff6ff;
 	--color-brand-100: #dbeafe;
+	--color-brand-200: #bfdbfe;
 	--color-brand-500: #3b82f6;
 	--color-brand-600: #2563eb;
 	--color-brand-700: #1d4ed8;
+	--color-brand-900: #0f172a;
 
-	/* Semantic */
-	--color-success-50: rgba(34, 197, 94, 0.12);
-	--color-success-100: rgba(34, 197, 94, 0.22);
-	--color-success-700: #166534;
+	/* Semantic status system
+	   green = saudável
+	   blue = contexto
+	   yellow = atenção
+	   red = alerta
+	   gray = sem base
+	*/
 
-	--color-warning-50: rgba(245, 158, 11, 0.12);
-	--color-warning-100: rgba(245, 158, 11, 0.22);
-	--color-warning-700: #92400e;
+	/* Healthy / success */
+	--status-healthy-bg: #ecfdf3;
+	--status-healthy-bg-soft: rgba(16, 185, 129, 0.1);
+	--status-healthy-border: rgba(16, 185, 129, 0.22);
+	--status-healthy-border-strong: rgba(5, 150, 105, 0.34);
+	--status-healthy-text: #047857;
+	--status-healthy-text-strong: #065f46;
+	--status-healthy-ring: rgba(16, 185, 129, 0.16);
 
-	--color-danger-50: rgba(239, 68, 68, 0.1);
-	--color-danger-100: rgba(239, 68, 68, 0.2);
-	--color-danger-700: #991b1b;
+	/* Context / info */
+	--status-context-bg: #eff6ff;
+	--status-context-bg-soft: rgba(59, 130, 246, 0.1);
+	--status-context-border: rgba(59, 130, 246, 0.2);
+	--status-context-border-strong: rgba(37, 99, 235, 0.34);
+	--status-context-text: #1d4ed8;
+	--status-context-text-strong: #1e40af;
+	--status-context-ring: rgba(59, 130, 246, 0.16);
 
-	/* Overlays / special */
-	--color-sidebar: rgba(15, 23, 42, 0.96);
-	--color-sidebar-soft: rgba(30, 41, 59, 0.96);
-	--color-white: #ffffff;
+	/* Attention / warning */
+	--status-attention-bg: #fffbeb;
+	--status-attention-bg-soft: rgba(245, 158, 11, 0.1);
+	--status-attention-border: rgba(245, 158, 11, 0.24);
+	--status-attention-border-strong: rgba(217, 119, 6, 0.36);
+	--status-attention-text: #b45309;
+	--status-attention-text-strong: #92400e;
+	--status-attention-ring: rgba(245, 158, 11, 0.16);
+
+	/* Alert / danger */
+	--status-alert-bg: #fef2f2;
+	--status-alert-bg-soft: rgba(239, 68, 68, 0.1);
+	--status-alert-border: rgba(239, 68, 68, 0.24);
+	--status-alert-border-strong: rgba(220, 38, 38, 0.36);
+	--status-alert-text: #dc2626;
+	--status-alert-text-strong: #991b1b;
+	--status-alert-ring: rgba(239, 68, 68, 0.16);
+
+	/* Neutral / no baseline */
+	--status-neutral-bg: #f8fafc;
+	--status-neutral-bg-soft: rgba(148, 163, 184, 0.1);
+	--status-neutral-border: rgba(148, 163, 184, 0.22);
+	--status-neutral-border-strong: rgba(100, 116, 139, 0.3);
+	--status-neutral-text: #64748b;
+	--status-neutral-text-strong: #475569;
+	--status-neutral-ring: rgba(148, 163, 184, 0.16);
+
+	/* Reusable semantic aliases */
+	--color-status-success-bg: var(--status-healthy-bg);
+	--color-status-success-border: var(--status-healthy-border);
+	--color-status-success-text: var(--status-healthy-text);
+
+	--color-status-info-bg: var(--status-context-bg);
+	--color-status-info-border: var(--status-context-border);
+	--color-status-info-text: var(--status-context-text);
+
+	--color-status-warning-bg: var(--status-attention-bg);
+	--color-status-warning-border: var(--status-attention-border);
+	--color-status-warning-text: var(--status-attention-text);
+
+	--color-status-danger-bg: var(--status-alert-bg);
+	--color-status-danger-border: var(--status-alert-border);
+	--color-status-danger-text: var(--status-alert-text);
+
+	--color-status-muted-bg: var(--status-neutral-bg);
+	--color-status-muted-border: var(--status-neutral-border);
+	--color-status-muted-text: var(--status-neutral-text);
+
+	/* Component-level semantic aliases */
+	--subject-status-healthy-bg: var(--status-healthy-bg);
+	--subject-status-healthy-border: var(--status-healthy-border);
+	--subject-status-healthy-text: var(--status-healthy-text);
+
+	--subject-status-attention-bg: var(--status-attention-bg);
+	--subject-status-attention-border: var(--status-attention-border);
+	--subject-status-attention-text: var(--status-attention-text);
+
+	--subject-status-pending-bg: var(--status-neutral-bg);
+	--subject-status-pending-border: var(--status-neutral-border);
+	--subject-status-pending-text: var(--status-neutral-text);
+
+	--trend-improving-bg: var(--status-healthy-bg);
+	--trend-improving-border: var(--status-healthy-border);
+	--trend-improving-text: var(--status-healthy-text);
+
+	--trend-stable-bg: var(--status-context-bg);
+	--trend-stable-border: var(--status-context-border);
+	--trend-stable-text: var(--status-context-text);
+
+	--trend-attention-bg: var(--status-attention-bg);
+	--trend-attention-border: var(--status-attention-border);
+	--trend-attention-text: var(--status-attention-text);
+
+	--trend-insufficient-bg: var(--status-neutral-bg);
+	--trend-insufficient-border: var(--status-neutral-border);
+	--trend-insufficient-text: var(--status-neutral-text);
 
 	/* Shadows */
-	--shadow-sm: 0 6px 16px rgba(15, 23, 42, 0.05);
-	--shadow-md: 0 12px 24px rgba(15, 23, 42, 0.08);
-	--shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.08);
-	--shadow-brand: 0 12px 24px rgba(37, 99, 235, 0.24);
+	--shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+	--shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.06);
+	--shadow-md: 0 18px 40px rgba(15, 23, 42, 0.08);
 
 	/* Radius */
-	--radius-xs: 0.55rem;
 	--radius-sm: 0.75rem;
-	--radius-md: 0.95rem;
-	--radius-lg: 1rem;
-	--radius-xl: 1.25rem;
-	--radius-2xl: 1.35rem;
-	--radius-pill: 999px;
+	--radius-md: 1rem;
+	--radius-lg: 1.5rem;
+	--radius-xl: 2rem;
 
 	/* Spacing */
 	--space-1: 0.25rem;
@@ -67,46 +150,48 @@
 	--space-6: 1.5rem;
 	--space-8: 2rem;
 
-	/* Layout */
-	--container-xs: 560px;
-	--container-sm: 680px;
-	--container-md: 900px;
-	--container-lg: 1200px;
-	--sidebar-width: 280px;
-
-	/* Controls */
-	--control-height: 2.9rem;
-	--control-height-sm: 2.45rem;
-
 	/* Motion */
-	--transition-fast: 0.16s ease;
-	--transition-med: 0.22s ease;
+	--transition-fast: 160ms ease;
+	--transition-base: 220ms ease;
+}
 
-	/* Z-index */
-	--z-sticky: 10;
-	--z-dropdown: 20;
+/* Optional utility hooks for future shared components */
+[data-tone='healthy'] {
+	--tone-bg: var(--status-healthy-bg);
+	--tone-border: var(--status-healthy-border);
+	--tone-text: var(--status-healthy-text);
+	--tone-text-strong: var(--status-healthy-text-strong);
+	--tone-ring: var(--status-healthy-ring);
+}
 
-	/* Status tones */
-	--tone-risk: rgba(239, 68, 68, 0.08);
-	--tone-warn: rgba(245, 158, 11, 0.08);
-	--tone-good: rgba(34, 197, 94, 0.08);
-	--tone-empty: #ffffff;
+[data-tone='context'] {
+	--tone-bg: var(--status-context-bg);
+	--tone-border: var(--status-context-border);
+	--tone-text: var(--status-context-text);
+	--tone-text-strong: var(--status-context-text-strong);
+	--tone-ring: var(--status-context-ring);
+}
 
-	/* Background gradients */
-	--bg-app:
-		radial-gradient(circle at top left, rgba(59, 130, 246, 0.08), transparent 28%),
-		linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
-	--bg-student:
-		radial-gradient(circle at top center, rgba(59, 130, 246, 0.08), transparent 26%),
-		linear-gradient(180deg, #f8fafc 0%, #eef4ff 100%);
-	--bg-auth:
-		radial-gradient(circle at top, rgba(59, 130, 246, 0.08), transparent 30%),
-		linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
-	--bg-brand: linear-gradient(135deg, var(--color-brand-600), var(--color-brand-700));
+[data-tone='attention'] {
+	--tone-bg: var(--status-attention-bg);
+	--tone-border: var(--status-attention-border);
+	--tone-text: var(--status-attention-text);
+	--tone-text-strong: var(--status-attention-text-strong);
+	--tone-ring: var(--status-attention-ring);
+}
 
-	/* Breakpoints (referência) */
-	--bp-sm: 640px;
-	--bp-md: 900px;
-	--bp-lg: 980px;
-	--bp-xl: 1180px;
+[data-tone='alert'] {
+	--tone-bg: var(--status-alert-bg);
+	--tone-border: var(--status-alert-border);
+	--tone-text: var(--status-alert-text);
+	--tone-text-strong: var(--status-alert-text-strong);
+	--tone-ring: var(--status-alert-ring);
+}
+
+[data-tone='neutral'] {
+	--tone-bg: var(--status-neutral-bg);
+	--tone-border: var(--status-neutral-border);
+	--tone-text: var(--status-neutral-text);
+	--tone-text-strong: var(--status-neutral-text-strong);
+	--tone-ring: var(--status-neutral-ring);
 }
