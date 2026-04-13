@@ -157,7 +157,7 @@
 			return 'As publicações mais recentes indicam que vale revisar com prioridade.';
 		if (trend === 'estável')
 			return 'Seu desempenho recente está consistente nas publicações disponíveis.';
-		return 'Ainda não há base publicada suficiente para comparar tendência.';
+		return 'Ainda não há base publicada suficiente para comparar sua tendência.';
 	};
 
 	const subjectSituationLabel = (situation: SubjectSituation) => {
@@ -223,7 +223,7 @@
 			return 'No momento não existe uma matéria com sinal forte de atenção acima das demais. Continue acompanhando as publicações recentes para confirmar se essa estabilidade se mantém.';
 		}
 
-		return 'Assim que houver publicações suficientes, o portal mostrará com clareza qual matéria merece revisão primeiro.';
+		return 'Assim que houver publicações suficientes, o painel mostrará com clareza qual matéria merece revisão primeiro.';
 	});
 
 	const shouldShowReviewMetrics = $derived(
@@ -242,13 +242,13 @@
 </script>
 
 <svelte:head>
-	<title>Class Insights - Início do aluno</title>
+	<title>Class Insights - Painel do aluno</title>
 </svelte:head>
 
 <div class="grid gap-6">
 	<section class="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.85fr)]">
 		<div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
-			<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Portal do aluno</p>
+			<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Painel do aluno</p>
 
 			<h1 class="mt-3 text-4xl font-black tracking-tight text-slate-950 sm:text-5xl">
 				Olá, {data.student.displayName}
@@ -256,10 +256,10 @@
 
 			<p class="mt-4 max-w-3xl text-base leading-8 text-slate-600">
 				{#if data.overviewPortal.status === 'ready'}
-					Veja sua situação atual com base nas publicações já liberadas para sua turma.
+					Acompanhe sua situação atual com base nas publicações já liberadas para a sua turma.
 				{:else}
-					Sua conta está pronta, mas ainda falta concluir um vínculo acadêmico para liberar a visão
-					completa.
+					Sua conta já está pronta, mas ainda falta concluir um vínculo acadêmico para liberar a
+					visão completa do painel.
 				{/if}
 			</p>
 
@@ -283,7 +283,7 @@
 		</div>
 
 		<aside class="rounded-4xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
-			<p class="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Acesso rápido</p>
+			<p class="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Continue por aqui</p>
 
 			<div class="mt-4 grid gap-3">
 				<a
@@ -314,7 +314,7 @@
 			<p class="text-xs font-black uppercase tracking-[0.24em] text-amber-700">Próximo passo</p>
 
 			<h2 class="mt-2 text-3xl font-black tracking-tight text-slate-950">
-				Conclua um vínculo acadêmico
+				Conclua seu vínculo acadêmico
 			</h2>
 
 			<p class="mt-4 max-w-4xl text-base leading-8 text-slate-700">
@@ -369,7 +369,7 @@
 				<div class="rounded-3xl border border-amber-200 bg-white p-5">
 					<p class="text-sm font-black text-slate-950">Vínculos encontrados</p>
 					<p class="mt-2 text-sm leading-7 text-slate-600">
-						Quando um vínculo ficar ativo, ele passa a aparecer aqui e no topo do portal.
+						Quando um vínculo ficar ativo, ele passa a aparecer aqui e também no topo do painel.
 					</p>
 
 					{#if data.enrollments.length > 0}
@@ -518,7 +518,7 @@
 							Publicações recentes
 						</p>
 						<h2 class="mt-2 text-3xl font-black tracking-tight text-slate-950">
-							O que saiu por último
+							O que mudou por último
 						</h2>
 					</div>
 
@@ -534,7 +534,7 @@
 					<div
 						class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600"
 					>
-						Ainda não há publicações suficientes para mostrar aqui.
+						Ainda não há publicações suficientes para mostrar suas atualizações recentes.
 					</div>
 				{:else}
 					<div class="mt-6 grid gap-4">
@@ -570,7 +570,7 @@
 
 									<div class="rounded-2xl border border-slate-200 bg-white p-4">
 										<p class="text-xs font-black uppercase tracking-[0.24em] text-slate-500">
-											Gap para turma
+											Gap para a turma
 										</p>
 										<p class="mt-2 text-xl font-black tracking-tight text-slate-950">
 											{formatStudentSignedNumber(item.gapPercent)}
@@ -635,7 +635,7 @@
 				<div
 					class="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600"
 				>
-					Ainda não há matérias publicadas para mostrar aqui.
+					Ainda não há matérias publicadas para mostrar neste resumo.
 				</div>
 			{:else}
 				<div class="mt-6 grid gap-4 md:grid-cols-2">

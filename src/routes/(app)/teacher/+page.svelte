@@ -1,33 +1,19 @@
 ﻿<script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
-	import { tick } from 'svelte';
 
 	import TeacherActionNowCard from '$lib/components/teacher/TeacherActionNowCard.svelte';
 	import TeacherClassSummaryCard from '$lib/components/teacher/TeacherClassSummaryCard.svelte';
 	import TeacherDashboardHeader from '$lib/components/teacher/TeacherDashboardHeader.svelte';
 	import TeacherPerformanceChangesCard from '$lib/components/teacher/TeacherPerformanceChangesCard.svelte';
-	import type {
-		TeacherDashboardClassSummaryItem,
-		TeacherDashboardPageData
-	} from '$lib/types/teacher';
+	import StatusPill from '$lib/components/shared/StatusPill.svelte';
+	import type { TeacherDashboardPageData } from '$lib/types/teacher';
 
 	type ActionFeedback = {
 		action?: 'createClass' | 'deleteClass' | 'generateClassSnapshot';
 		message?: string;
 		success?: boolean;
 	};
-
-	type MenuItem = {
-		id: string;
-		label: string;
-		href?: string;
-		tone?: 'default' | 'danger';
-		disabled?: boolean;
-	};
-
-	type CriteriaModalKey = 'action-now' | 'performance' | null;
 
 	type Props = {
 		data: TeacherDashboardPageData;
@@ -43,124 +29,47 @@
 		data.classesSummary.length > 1 ? 'xl:grid-cols-2' : 'grid-cols-1'
 	);
 
-	let criteriaModal = $state<CriteriaModalKey>(null);
-	let snapshotClassId = $state('');
-	let snapshotForm: HTMLFormElement | null = null;
-
-	const actionNowMenuItems: MenuItem[] = [
+	const teacherAreaLinks = [
 		{
-			id: 'go-classes',
-			label: 'Ver tudo em Turmas',
-			href: resolve('/teacher/classes')
+			label: 'Turmas',
+			href: resolve('/teacher/classes'),
+			description: 'Veja a operação por turma.'
 		},
 		{
-			id: 'go-assessments',
-			label: 'Ver tudo em Avaliações',
-			href: resolve('/teacher/assessments')
+			label: 'Avaliações',
+			href: resolve('/teacher/assessments'),
+			description: 'Revise rascunhos, cobertura e publicações.'
 		},
 		{
-			id: 'refresh-dashboard',
-			label: 'Atualizar visão'
-		},
-		{
-			id: 'open-action-now-criteria',
-			label: 'Entender critérios'
+			label: 'Matérias',
+			href: resolve('/teacher/subjects'),
+			description: 'Organize o fluxo oficial da V1.'
 		}
 	];
 
-	const performanceMenuItems: MenuItem[] = [
-		{
-			id: 'go-assessments-analysis',
-			label: 'Ver análise completa',
-			href: resolve('/teacher/assessments')
-		},
-		{
-			id: 'refresh-dashboard',
-			label: 'Atualizar visão'
-		},
-		{
-			id: 'open-performance-criteria',
-			label: 'Entender critérios'
-		}
-	];
+	const hasClasses = $derived(data.classesSummary.length > 0);
 
-	function classMenuItems(classItem: TeacherDashboardClassSummaryItem): MenuItem[] {
-		return [
-			{
-				id: `class-new-assessment:${classItem.classId}`,
-				label: 'Nova avaliação',
-				href: `${resolve('/teacher/assessments')}#new-assessment`
-			},
-			{
-				id: `class-manage-subjects:${classItem.classId}`,
-				label: 'Gerenciar matérias',
-				href: resolve('/teacher/subjects')
-			},
-			{
-				id: `class-view-students:${classItem.classId}`,
-				label: 'Ver alunos',
-				href: classItem.openHref
-			},
-			{
-				id: `class-refresh-reading:${classItem.classId}`,
-				label: 'Atualizar leitura'
-			}
-		];
-	}
+	const classesWithAlert = $derived(
+		data.classesSummary.filter(
+			(item) => item.statusTone === 'critical' || item.statusTone === 'attention'
+		).length
+	);
 
-	async function triggerSnapshot(classId: string) {
-		snapshotClassId = classId;
-		await tick();
-		snapshotForm?.requestSubmit();
-	}
+	const setupClasses = $derived(
+		data.classesSummary.filter((item) => item.statusTone === 'attention').length
+	);
 
-	async function handleActionNowMenuSelect(itemId: string) {
-		if (itemId === 'refresh-dashboard') {
-			await invalidateAll();
-			return;
-		}
-
-		if (itemId === 'open-action-now-criteria') {
-			criteriaModal = 'action-now';
-		}
-	}
-
-	async function handlePerformanceMenuSelect(itemId: string) {
-		if (itemId === 'refresh-dashboard') {
-			await invalidateAll();
-			return;
-		}
-
-		if (itemId === 'open-performance-criteria') {
-			criteriaModal = 'performance';
-		}
-	}
-
-	async function handleClassMenuSelect(itemId: string) {
-		const [action, classId] = itemId.split(':');
-
-		if (!classId) return;
-
-		if (action === 'class-refresh-reading') {
-			await triggerSnapshot(classId);
-		}
-	}
-
-	function closeCriteriaModal() {
-		criteriaModal = null;
-	}
+	const hasError = $derived(Boolean(data.error));
 </script>
 
 <svelte:head>
-	<title>Class Insights - Professor</title>
+	<title>Class Insights - Painel do professor</title>
 </svelte:head>
 
-<div class="mx-auto w-full max-w-295">
-	<TeacherDashboardHeader teacherName={data.teacherName} syncLabel={data.syncLabel} />
-
+<div class="grid gap-6">
 	{#if formMessage}
 		<div
-			class={`mb-5 rounded-2xl border px-4 py-3 text-sm font-semibold ${
+			class={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
 				formSuccess
 					? 'border-emerald-200 bg-emerald-50 text-emerald-700'
 					: 'border-red-200 bg-red-50 text-red-700'
@@ -170,153 +79,183 @@
 		</div>
 	{/if}
 
-	{#if data.error}
-		<div
-			class="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
-		>
-			{data.error}
-		</div>
+	<TeacherDashboardHeader teacherName={data.teacherName} syncLabel={data.syncLabel} />
+
+	{#if hasError}
+		<section class="rounded-4xl border border-red-200 bg-red-50 p-6 shadow-sm">
+			<p class="text-xs font-black uppercase tracking-[0.35em] text-red-600">Erro no painel</p>
+			<h2 class="mt-3 text-2xl font-black tracking-tight text-red-950">
+				Não foi possível carregar sua área do professor
+			</h2>
+			<p class="mt-3 max-w-2xl text-sm leading-7 text-red-800">{data.error}</p>
+			<p class="mt-4 text-sm leading-7 text-red-800">
+				Atualize a página. Se o problema continuar, valide sua sessão e tente entrar novamente.
+			</p>
+		</section>
 	{/if}
 
-	<form method="POST" action="?/generateClassSnapshot" class="hidden" bind:this={snapshotForm}>
-		<input type="hidden" name="classId" value={snapshotClassId} />
-	</form>
+	<section class="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_360px]">
+		<div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+			<div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+				<div class="min-w-0">
+					<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+						Cockpit operacional
+					</p>
+					<h2 class="mt-3 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">
+						O que exige ação, onde está acontecendo e qual é o próximo clique
+					</h2>
+					<p class="mt-3 max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
+						Seu painel foi pensado para reduzir ruído operacional. Primeiro veja a prioridade,
+						depois confirme a turma mais sensível e só então aprofunde no fluxo.
+					</p>
+				</div>
 
-	<div class="space-y-5">
-		<TeacherActionNowCard
-			teacherName={data.teacherName}
-			actionNow={data.actionNow}
-			menuItems={actionNowMenuItems}
-			onMenuSelect={handleActionNowMenuSelect}
-		/>
-
-		<TeacherPerformanceChangesCard
-			performanceChanges={data.performanceChanges}
-			menuItems={performanceMenuItems}
-			onMenuSelect={handlePerformanceMenuSelect}
-		/>
-
-		<section class="space-y-4">
-			<div class="flex items-center justify-between gap-3">
-				<div>
-					<h2 class="text-[2rem] font-black tracking-tight text-slate-950">Suas turmas</h2>
+				<div class="flex flex-wrap gap-2">
+					<StatusPill label={`${data.classesSummary.length} turma(s)`} tone="context" size="md" />
+					<StatusPill
+						label={`${classesWithAlert} com alerta`}
+						tone={classesWithAlert > 0 ? 'attention' : 'healthy'}
+						size="md"
+					/>
 				</div>
 			</div>
 
-			{#if data.classesSummary.length === 0}
-				<div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-					<div
-						class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center"
+			<div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+				<p class="text-sm font-semibold text-slate-700">
+					{hasClasses
+						? 'Comece pelo próximo clique recomendado e use as turmas abaixo para confirmar onde o fluxo precisa de atenção.'
+						: 'Você ainda não tem turmas cadastradas. O primeiro passo é criar sua estrutura operacional.'}
+				</p>
+			</div>
+
+			<div class="mt-6">
+				<TeacherActionNowCard teacherName={data.teacherName} actionNow={data.actionNow} />
+			</div>
+		</div>
+
+		<div class="grid gap-4">
+			<div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+				<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">Acesso rápido</p>
+				<h2 class="mt-3 text-xl font-black tracking-tight text-slate-950">
+					Onde continuar o trabalho
+				</h2>
+
+				<div class="mt-5 grid gap-3">
+					{#each teacherAreaLinks as item (item.href)}
+						<a
+							href={item.href}
+							class="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white"
+						>
+							<p class="text-sm font-black text-slate-950">{item.label}</p>
+							<p class="mt-1 text-sm leading-6 text-slate-600">{item.description}</p>
+						</a>
+					{/each}
+				</div>
+
+				<div class="mt-5 flex justify-end">
+					<a
+						href={resolve('/teacher/classes/new')}
+						class="inline-flex h-11 items-center justify-center rounded-2xl bg-emerald-600 px-5 text-sm font-black text-white transition hover:bg-emerald-700"
 					>
-						<h3 class="text-lg font-black text-slate-950">Nenhuma turma encontrada</h3>
-						<p class="mt-2 text-sm leading-7 text-slate-600">
-							Crie uma turma para começar a acompanhar média, cobertura e tendência da leitura
-							pedagógica.
+						Criar nova turma
+					</a>
+				</div>
+			</div>
+
+			<div class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+				<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+					Leitura rápida do painel
+				</p>
+				<h2 class="mt-3 text-xl font-black tracking-tight text-slate-950">
+					Como interpretar esta área
+				</h2>
+
+				<div class="mt-5 grid gap-3">
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+						<p class="text-sm font-bold text-slate-950">Ação agora</p>
+						<p class="mt-2 text-sm leading-6 text-slate-600">
+							O primeiro bloco aponta o próximo clique mais útil para continuar o fluxo.
+						</p>
+					</div>
+
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+						<p class="text-sm font-bold text-slate-950">Mudanças recentes</p>
+						<p class="mt-2 text-sm leading-6 text-slate-600">
+							Use o bloco de desempenho para separar queda recente de estabilidade.
+						</p>
+					</div>
+
+					<div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+						<p class="text-sm font-bold text-slate-950">Turmas</p>
+						<p class="mt-2 text-sm leading-6 text-slate-600">
+							As turmas ajudam a localizar onde o fluxo está andando bem e onde travou.
 						</p>
 					</div>
 				</div>
-			{:else}
-				<div class={`grid gap-4 ${classesGridClass}`}>
-					{#each data.classesSummary as classItem (classItem.classId)}
-						<TeacherClassSummaryCard
-							{classItem}
-							menuItems={classMenuItems(classItem)}
-							onMenuSelect={handleClassMenuSelect}
-						/>
-					{/each}
+			</div>
+		</div>
+	</section>
+
+	<section class="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm">
+		<TeacherPerformanceChangesCard performanceChanges={data.performanceChanges} />
+	</section>
+
+	{#if !hasClasses && !hasError}
+		<section
+			class="rounded-4xl border border-dashed border-slate-300 bg-white/80 p-8 text-center shadow-sm"
+		>
+			<p class="text-lg font-black tracking-tight text-slate-950">
+				Você ainda não tem turmas cadastradas
+			</p>
+			<p class="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+				Crie sua primeira turma para começar a organizar matérias, avaliações, lançamentos e
+				publicações dentro do fluxo principal do produto.
+			</p>
+
+			<div class="mt-6 flex justify-center">
+				<a
+					href={resolve('/teacher/classes/new')}
+					class="inline-flex h-12 items-center justify-center rounded-2xl bg-emerald-600 px-6 text-sm font-black text-white transition hover:bg-emerald-700"
+				>
+					Criar primeira turma
+				</a>
+			</div>
+		</section>
+	{:else if hasClasses}
+		<section class="grid gap-4">
+			<div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+				<div>
+					<p class="text-xs font-black uppercase tracking-[0.35em] text-slate-500">
+						Visão por turma
+					</p>
+					<h2 class="mt-2 text-2xl font-black tracking-tight text-slate-950">
+						Onde o fluxo está andando e onde pede atenção
+					</h2>
+				</div>
+
+				<a
+					href={resolve('/teacher/classes')}
+					class="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-900 transition hover:border-slate-300 hover:bg-slate-50"
+				>
+					Ver todas as turmas
+				</a>
+			</div>
+
+			<div class={`grid gap-4 ${classesGridClass}`}>
+				{#each data.classesSummary as classItem (classItem.classId)}
+					<TeacherClassSummaryCard {classItem} />
+				{/each}
+			</div>
+
+			{#if setupClasses > 0}
+				<div
+					class="rounded-3xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800"
+				>
+					<strong class="font-black">Leitura do painel:</strong>
+					algumas turmas ainda estão em preparação. Vale revisar se já existe matéria vinculada e se o
+					fluxo de avaliação já começou.
 				</div>
 			{/if}
 		</section>
-	</div>
+	{/if}
 </div>
-
-{#if criteriaModal}
-	<div class="fixed inset-0 z-60 flex items-center justify-center p-4">
-		<button
-			type="button"
-			class="absolute inset-0 bg-slate-950/45"
-			aria-label="Fechar explicação"
-			onclick={closeCriteriaModal}
-		></button>
-
-		<div
-			class="relative z-10 w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
-		>
-			<div class="flex items-start justify-between gap-4">
-				<div class="min-w-0">
-					<p class="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
-						Entender indicadores
-					</p>
-
-					<h3 class="mt-2 text-[1.9rem] font-black tracking-tight text-slate-950">
-						{criteriaModal === 'action-now'
-							? 'Como a visão de ação imediata funciona'
-							: 'Como a visão de desempenho funciona'}
-					</h3>
-				</div>
-
-				<button
-					type="button"
-					class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-					aria-label="Fechar"
-					onclick={closeCriteriaModal}
-				>
-					<svg
-						class="h-5 w-5"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6l-12 12" />
-					</svg>
-				</button>
-			</div>
-
-			{#if criteriaModal === 'action-now'}
-				<div class="mt-5 space-y-4 text-sm leading-7 text-slate-700">
-					<p>
-						Esta área prioriza o que costuma bloquear o próximo passo do professor:
-						<strong class="text-slate-950"> Rascunhos de provas abertos sem fechar</strong>,
-						<strong class="text-slate-950"> matérias abaixo da média da instituição</strong>,
-						<strong class="text-slate-950">
-							alunos com notas que caíram de uma prova para outra</strong
-						>
-						e
-						<strong class="text-slate-950"> turmas sem matéria alguma</strong>.
-					</p>
-
-					<p>
-						O bloco “Próximo passo” tenta resumir o que mais precisa de atenção agora, e que vale a
-						pena conferir!
-					</p>
-				</div>
-			{:else}
-				<div class="mt-5 space-y-4 text-sm leading-7 text-slate-700">
-					<p>
-						Esta visão separa a leitura em três frentes:
-						<strong class="text-slate-950"> Matérias abaixo da média da instituição</strong>,
-						<strong class="text-slate-950"> alunos com notas que caíram</strong>
-						e
-						<strong class="text-slate-950"> alunos com notas abaixo da média da turma</strong>.
-					</p>
-
-					<p>
-						Os indicadores de risco e os números em destaque, ajudam a entender aonde precisa de
-						intervenção e atenção.
-					</p>
-				</div>
-			{/if}
-
-			<div class="mt-6 flex justify-end">
-				<button
-					type="button"
-					class="inline-flex h-11 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-black text-white transition hover:bg-slate-800"
-					onclick={closeCriteriaModal}
-				>
-					Entendi
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}

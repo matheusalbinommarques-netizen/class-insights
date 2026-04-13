@@ -1,6 +1,8 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
+
 import { getAuthenticatedUserId } from '$lib/server/auth';
+import { loadStudentLongitudinalProfile } from '$lib/server/student-longitudinal-profile';
 
 type ScopeClassRow = {
 	class_id: string;
@@ -10,55 +12,11 @@ type ScopeClassRow = {
 	access_code: string | null;
 };
 
-type StudentRow = {
-	id: string;
-	name: string;
-	class_id: string;
-	classes: { name: string } | { name: string }[] | null;
-};
+type CoordSubjectStatus = 'healthy' | 'attention' | 'critical' | 'pending';
+type CoordContextStatus = 'healthy' | 'attention' | 'critical' | 'pending';
+type Trend = 'improving' | 'declining' | 'stable' | 'insufficient_data';
 
-type SubjectRow = {
-	subject_id: string;
-	subjects: { name: string } | { name: string }[] | null;
-};
-
-type AssessmentRow = {
-	id: string;
-	title: string;
-	subject_id: string;
-	assessment_date: string;
-};
-
-type ResultRow = {
-	assessment_id: string;
-	student_id: string;
-	raw_score: number | null;
-	score_min: number;
-	score_max: number;
-	is_excused: boolean;
-};
-
-function average(values: number[]): number | null {
-	if (values.length === 0) return null;
-	return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function normalizePercent(
-	rawScore: number | null,
-	scoreMin: number,
-	scoreMax: number
-): number | null {
-	if (typeof rawScore !== 'number') return null;
-	const range = scoreMax - scoreMin;
-	if (range <= 0) return null;
-	return ((rawScore - scoreMin) / range) * 100;
-}
-
-function unique<T>(values: T[]): T[] {
-	return [...new Set(values)];
-}
-
-function formatLabel(value: number | null) {
+function formatTenScale(value: number | null): string {
 	if (typeof value !== 'number') return '--';
 
 	return new Intl.NumberFormat('pt-BR', {
@@ -67,240 +25,409 @@ function formatLabel(value: number | null) {
 	}).format(value / 10);
 }
 
-function classifySubjectStatus(studentAverage: number | null, classAverage: number | null) {
-	if (typeof studentAverage !== 'number') return 'pending' as const;
-	if (studentAverage < 50) return 'critical' as const;
-	if (studentAverage < 70) return 'attention' as const;
-	if (typeof classAverage === 'number' && studentAverage < classAverage - 10) {
-		return 'attention' as const;
+function formatPercentLabel(value: number | null): string {
+	if (typeof value !== 'number') return '--';
+
+	return new Intl.NumberFormat('pt-BR', {
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 0
+	}).format(value);
+}
+
+function formatGapTenScale(value: number | null): string {
+	if (typeof value !== 'number') return '--';
+
+	return new Intl.NumberFormat('pt-BR', {
+		minimumFractionDigits: 1,
+		maximumFractionDigits: 1,
+		signDisplay: 'always'
+	}).format(value / 10);
+}
+
+function formatGapPercent(value: number | null): string {
+	if (typeof value !== 'number') return '--';
+
+	return new Intl.NumberFormat('pt-BR', {
+		minimumFractionDigits: 1,
+		maximumFractionDigits: 1,
+		signDisplay: 'always'
+	}).format(value);
+}
+
+function trendLabel(trend: Trend): string {
+	if (trend === 'declining') return 'Em queda';
+	if (trend === 'improving') return 'Em melhora';
+	if (trend === 'stable') return 'Estável';
+	return 'Base insuficiente';
+}
+
+function contextStatusLabel(status: CoordContextStatus): string {
+	if (status === 'critical') return 'Crítico';
+	if (status === 'attention') return 'Atenção';
+	if (status === 'healthy') return 'Dentro do esperado';
+	return 'Sem base';
+}
+
+function mapSubjectStatus(input: {
+	progress: number | null;
+	status: 'good' | 'attention' | 'pending';
+	gapPercent: number | null;
+}): CoordSubjectStatus {
+	if (input.status === 'pending' || typeof input.progress !== 'number') {
+		return 'pending';
 	}
-	return 'healthy' as const;
+
+	if (input.progress < 50) {
+		return 'critical';
+	}
+
+	if (input.status === 'attention') {
+		return 'attention';
+	}
+
+	if (typeof input.gapPercent === 'number' && input.gapPercent <= -10) {
+		return 'attention';
+	}
+
+	return 'healthy';
+}
+
+function classifyContextStatus(input: {
+	studentAverage: number | null;
+	classAverage: number | null;
+	gapPercent: number | null;
+	publishedAssessments: number;
+	attentionSubjects: number;
+	pendingSubjects: number;
+}): CoordContextStatus {
+	if (input.publishedAssessments === 0 || typeof input.studentAverage !== 'number') {
+		return 'pending';
+	}
+
+	if (
+		input.studentAverage < 50 ||
+		(typeof input.gapPercent === 'number' && input.gapPercent <= -20)
+	) {
+		return 'critical';
+	}
+
+	if (
+		input.studentAverage < 70 ||
+		(typeof input.gapPercent === 'number' && input.gapPercent <= -10) ||
+		input.attentionSubjects > 0 ||
+		input.pendingSubjects > 0
+	) {
+		return 'attention';
+	}
+
+	return 'healthy';
+}
+
+function buildPrimaryReason(input: {
+	contextStatus: CoordContextStatus;
+	publishedAssessments: number;
+	gapPercent: number | null;
+	prioritySubjectName: string | null;
+	attentionSubjects: number;
+	pendingSubjects: number;
+}): string {
+	if (input.publishedAssessments === 0) {
+		return 'Ainda não há publicações suficientes para uma leitura institucional firme deste aluno.';
+	}
+
+	if (
+		input.contextStatus === 'critical' &&
+		typeof input.gapPercent === 'number' &&
+		input.gapPercent <= -20
+	) {
+		return 'O aluno está bem abaixo da média publicada da turma e pede acompanhamento prioritário.';
+	}
+
+	if (input.contextStatus === 'critical') {
+		return 'O aluno apresenta sinais críticos no recorte publicado da turma.';
+	}
+
+	if (input.prioritySubjectName) {
+		return `A principal matéria de atenção no momento é ${input.prioritySubjectName}.`;
+	}
+
+	if (input.attentionSubjects > 0) {
+		return `Há ${input.attentionSubjects} matéria(s) em atenção no recorte atual.`;
+	}
+
+	if (input.pendingSubjects > 0) {
+		return `Ainda faltam ${input.pendingSubjects} matéria(s) com base suficiente para leitura mais completa.`;
+	}
+
+	return 'O aluno está dentro do esperado no contexto institucional atual.';
+}
+
+function buildSubjectReason(input: {
+	subjectName: string;
+	status: CoordSubjectStatus;
+	gapPercent: number | null;
+	recentTrend: Trend;
+	latestAssessmentTitle: string | null;
+}): string {
+	if (input.status === 'pending') {
+		return `Ainda não há base publicada suficiente em ${input.subjectName}.`;
+	}
+
+	if (input.status === 'critical') {
+		return `Esta é a matéria mais crítica no momento para o aluno.`;
+	}
+
+	if (typeof input.gapPercent === 'number' && input.gapPercent <= -10) {
+		return `O aluno aparece abaixo da média da turma em ${input.subjectName}.`;
+	}
+
+	if (input.recentTrend === 'declining') {
+		return `A trajetória recente em ${input.subjectName} mostra queda.`;
+	}
+
+	if (input.latestAssessmentTitle) {
+		return `A leitura mais recente desta matéria vem de ${input.latestAssessmentTitle}.`;
+	}
+
+	return `A leitura atual de ${input.subjectName} está dentro do esperado.`;
+}
+
+function pickCriticalSubject<
+	T extends {
+		status: CoordSubjectStatus;
+		studentAverage: number | null;
+		gap: number | null;
+	}
+>(subjects: T[]): T | null {
+	const ranked = [...subjects].sort((left, right) => {
+		const severity = (status: CoordSubjectStatus) => {
+			if (status === 'critical') return 0;
+			if (status === 'attention') return 1;
+			if (status === 'pending') return 2;
+			return 3;
+		};
+
+		const severityDelta = severity(left.status) - severity(right.status);
+		if (severityDelta !== 0) return severityDelta;
+
+		const leftAverage =
+			typeof left.studentAverage === 'number' ? left.studentAverage : Number.POSITIVE_INFINITY;
+		const rightAverage =
+			typeof right.studentAverage === 'number' ? right.studentAverage : Number.POSITIVE_INFINITY;
+
+		if (leftAverage !== rightAverage) {
+			return leftAverage - rightAverage;
+		}
+
+		const leftGap = typeof left.gap === 'number' ? left.gap : Number.POSITIVE_INFINITY;
+		const rightGap = typeof right.gap === 'number' ? right.gap : Number.POSITIVE_INFINITY;
+
+		return leftGap - rightGap;
+	});
+
+	return ranked[0] ?? null;
 }
 
 export const load: PageServerLoad = async ({ locals, params }) => {
-	const coordUserId = getAuthenticatedUserId(locals);
+	const coordId = getAuthenticatedUserId(locals);
 
-	if (!coordUserId) {
-		throw error(401, 'Voce precisa estar autenticado.');
+	if (!coordId) {
+		throw error(401, 'Você precisa estar autenticado.');
+	}
+
+	const longitudinalResult = await loadStudentLongitudinalProfile(locals, {
+		kind: 'coord',
+		coordId,
+		studentId: params.studentId
+	});
+
+	if (!longitudinalResult.ok) {
+		if (longitudinalResult.state === 'error') {
+			throw error(500, longitudinalResult.message);
+		}
+
+		throw error(404, longitudinalResult.message);
 	}
 
 	const { data: scopeData, error: scopeError } = await locals.supabase.rpc('coord_scope_classes');
 
 	if (scopeError) {
-		throw error(500, 'Nao foi possivel carregar o escopo da coordenacao.');
+		throw error(500, 'Não foi possível carregar o escopo da coordenação.');
 	}
 
 	const scopeClasses = (scopeData ?? []) as ScopeClassRow[];
-
-	const { data: studentData, error: studentError } = await locals.supabase
-		.from('students')
-		.select('id, name, class_id, classes(name)')
-		.eq('id', params.studentId)
-		.maybeSingle();
-
-	if (studentError || !studentData) {
-		throw error(404, 'Aluno nao encontrado.');
-	}
-
-	const student = studentData as StudentRow;
-
-	const scopedClass = scopeClasses.find((item) => item.class_id === student.class_id);
+	const scopedClass = scopeClasses.find(
+		(item) => item.class_id === longitudinalResult.profile.student.classId
+	);
 
 	if (!scopedClass) {
-		throw error(404, 'Aluno fora do escopo da coordenacao.');
+		throw error(404, 'Aluno fora do escopo da coordenação.');
 	}
 
-	const className = Array.isArray(student.classes)
-		? (student.classes[0]?.name ?? 'Turma')
-		: (student.classes?.name ?? 'Turma');
+	const profile = longitudinalResult.profile;
 
-	const { data: subjectsData, error: subjectsError } = await locals.supabase
-		.from('class_subjects')
-		.select('subject_id, subjects(name)')
-		.eq('class_id', student.class_id);
+	const studentAverage = profile.summary.generalPercent;
+	const classAverage = profile.summary.classAveragePercent;
+	const gapPercent = profile.summary.gapPercent;
 
-	if (subjectsError) {
-		throw error(500, 'Nao foi possivel carregar as materias da turma.');
-	}
-
-	const subjects = (subjectsData ?? []) as SubjectRow[];
-
-	const { data: assessmentsData, error: assessmentsError } = await locals.supabase
-		.from('assessments')
-		.select('id, title, subject_id, assessment_date')
-		.eq('class_id', student.class_id)
-		.eq('status', 'published')
-		.order('assessment_date', { ascending: false });
-
-	if (assessmentsError) {
-		throw error(500, 'Nao foi possivel carregar as publicacoes da turma.');
-	}
-
-	const publishedAssessments = (assessmentsData ?? []) as AssessmentRow[];
-	const assessmentIds = publishedAssessments.map((item) => item.id);
-
-	let results: ResultRow[] = [];
-
-	if (assessmentIds.length > 0) {
-		const { data: resultsData, error: resultsError } = await locals.supabase
-			.from('assessment_results')
-			.select('assessment_id, student_id, raw_score, score_min, score_max, is_excused')
-			.in('assessment_id', assessmentIds);
-
-		if (resultsError) {
-			throw error(500, 'Nao foi possivel carregar os resultados publicados.');
-		}
-
-		results = (resultsData ?? []) as ResultRow[];
-	}
-
-	const studentResults = results.filter((item) => item.student_id === student.id);
-
-	const studentAverage = average(
-		studentResults
-			.filter((item) => !item.is_excused)
-			.map((item) => normalizePercent(item.raw_score, item.score_min, item.score_max))
-			.filter((value): value is number => typeof value === 'number')
-	);
-
-	const classAverage = average(
-		results
-			.filter((item) => !item.is_excused)
-			.map((item) => normalizePercent(item.raw_score, item.score_min, item.score_max))
-			.filter((value): value is number => typeof value === 'number')
-	);
-
-	const subjectCards = subjects.map((subject) => {
-		const subjectName = Array.isArray(subject.subjects)
-			? (subject.subjects[0]?.name ?? 'Materia')
-			: (subject.subjects?.name ?? 'Materia');
-
-		const relatedAssessments = publishedAssessments.filter(
-			(item) => item.subject_id === subject.subject_id
-		);
-		const relatedAssessmentIds = relatedAssessments.map((item) => item.id);
-
-		const subjectStudentResults = studentResults.filter((item) =>
-			relatedAssessmentIds.includes(item.assessment_id)
-		);
-
-		const subjectAllResults = results.filter((item) =>
-			relatedAssessmentIds.includes(item.assessment_id)
-		);
-
-		const studentSubjectAverage = average(
-			subjectStudentResults
-				.filter((item) => !item.is_excused)
-				.map((item) => normalizePercent(item.raw_score, item.score_min, item.score_max))
-				.filter((value): value is number => typeof value === 'number')
-		);
-
-		const classSubjectAverage = average(
-			subjectAllResults
-				.filter((item) => !item.is_excused)
-				.map((item) => normalizePercent(item.raw_score, item.score_min, item.score_max))
-				.filter((value): value is number => typeof value === 'number')
-		);
-
-		const latestAssessment = relatedAssessments
-			.slice()
-			.sort((left, right) => right.assessment_date.localeCompare(left.assessment_date))[0];
-
-		const gap =
-			typeof studentSubjectAverage === 'number' && typeof classSubjectAverage === 'number'
-				? studentSubjectAverage - classSubjectAverage
-				: null;
-
-		return {
-			subjectId: subject.subject_id,
-			subjectName,
-			studentAverage: studentSubjectAverage,
-			studentAverageLabel: formatLabel(studentSubjectAverage),
-			classAverage: classSubjectAverage,
-			classAverageLabel: formatLabel(classSubjectAverage),
-			gap,
-			gapLabel:
-				typeof gap === 'number'
-					? new Intl.NumberFormat('pt-BR', {
-							minimumFractionDigits: 1,
-							maximumFractionDigits: 1,
-							signDisplay: 'always'
-						}).format(gap / 10)
-					: '--',
-			assessmentsCount: relatedAssessments.length,
-			status: classifySubjectStatus(studentSubjectAverage, classSubjectAverage),
-			latestAssessmentTitle: latestAssessment?.title ?? null,
-			latestAssessmentDate: latestAssessment?.assessment_date ?? null
-		};
+	const contextStatus = classifyContextStatus({
+		studentAverage,
+		classAverage,
+		gapPercent,
+		publishedAssessments: profile.summary.publishedAssessments,
+		attentionSubjects: profile.summary.attentionSubjects,
+		pendingSubjects: profile.summary.pendingSubjects
 	});
 
-	const latestPublications = publishedAssessments.slice(0, 8).map((assessment) => {
-		const studentAssessmentResult = studentResults.find(
-			(item) => item.assessment_id === assessment.id
-		);
+	const subjects = profile.subjects
+		.map((subject) => {
+			const status = mapSubjectStatus({
+				progress: subject.progress,
+				status: subject.status,
+				gapPercent: subject.gapPercent
+			});
 
-		const classAssessmentResults = results.filter((item) => item.assessment_id === assessment.id);
+			return {
+				subjectId: subject.id,
+				subjectName: subject.name,
+				subjectCode: subject.code,
+				studentAverage: subject.progress,
+				studentAverageLabel: formatTenScale(subject.progress),
+				studentAveragePercentLabel: formatPercentLabel(subject.progress),
+				classAverage: subject.classAverage,
+				classAverageLabel: formatTenScale(subject.classAverage),
+				classAveragePercentLabel: formatPercentLabel(subject.classAverage),
+				gap: subject.gapPercent,
+				gapLabel: formatGapTenScale(subject.gapPercent),
+				gapPercentLabel: formatGapPercent(subject.gapPercent),
+				assessmentsCount: subject.assessmentsCount,
+				status,
+				recentTrend: subject.recentTrend,
+				recentTrendLabel: trendLabel(subject.recentTrend),
+				description: subject.description,
+				latestAssessmentTitle: subject.latestAssessmentTitle,
+				latestAssessmentDate: subject.latestAssessmentDate,
+				primaryReason: buildSubjectReason({
+					subjectName: subject.name,
+					status,
+					gapPercent: subject.gapPercent,
+					recentTrend: subject.recentTrend,
+					latestAssessmentTitle: subject.latestAssessmentTitle
+				}),
+				detailHref: `/coord/subjects/${subject.id}`
+			};
+		})
+		.sort((left, right) => {
+			const leftValue =
+				typeof left.studentAverage === 'number' ? left.studentAverage : Number.POSITIVE_INFINITY;
+			const rightValue =
+				typeof right.studentAverage === 'number' ? right.studentAverage : Number.POSITIVE_INFINITY;
 
-		const studentScore = studentAssessmentResult
-			? normalizePercent(
-					studentAssessmentResult.raw_score,
-					studentAssessmentResult.score_min,
-					studentAssessmentResult.score_max
-				)
-			: null;
+			return leftValue - rightValue;
+		});
 
-		const classScore = average(
-			classAssessmentResults
-				.filter((item) => !item.is_excused)
-				.map((item) => normalizePercent(item.raw_score, item.score_min, item.score_max))
-				.filter((value): value is number => typeof value === 'number')
-		);
+	const criticalSubject =
+		pickCriticalSubject(subjects) ??
+		(profile.prioritySubject
+			? (subjects.find((subject) => subject.subjectId === profile.prioritySubject?.id) ?? null)
+			: null);
 
-		return {
-			assessmentId: assessment.id,
-			title: assessment.title,
-			assessmentDate: assessment.assessment_date,
-			studentScore,
-			studentScoreLabel: formatLabel(studentScore),
-			classScore,
-			classScoreLabel: formatLabel(classScore)
-		};
+	const latestPublications = profile.timeline.map((point) => ({
+		assessmentId: point.assessmentId,
+		title: point.assessmentTitle,
+		assessmentDate: point.assessmentDate,
+		subjectId: point.subjectId,
+		subjectName: point.subjectName,
+		studentScore: point.studentPercent,
+		studentScoreLabel: formatTenScale(point.studentPercent),
+		studentPercentLabel: formatPercentLabel(point.studentPercent),
+		classScore: point.classAveragePercent,
+		classScoreLabel: formatTenScale(point.classAveragePercent),
+		classPercentLabel: formatPercentLabel(point.classAveragePercent),
+		gapPercent: point.gapPercent,
+		gapPercentLabel: formatGapPercent(point.gapPercent)
+	}));
+
+	const primaryReason = buildPrimaryReason({
+		contextStatus,
+		publishedAssessments: profile.summary.publishedAssessments,
+		gapPercent,
+		prioritySubjectName: criticalSubject?.subjectName ?? null,
+		attentionSubjects: profile.summary.attentionSubjects,
+		pendingSubjects: profile.summary.pendingSubjects
 	});
 
 	return {
 		student: {
-			id: student.id,
-			name: student.name,
-			classId: student.class_id,
-			className,
+			id: profile.student.id,
+			name: profile.student.displayName,
+			classId: profile.student.classId,
+			className: profile.student.className,
 			teacherName: scopedClass.teacher_name,
-			exportHref: `/coord/students/${student.id}/export`
+			accessCode: scopedClass.access_code,
+			exportHref: `/coord/students/${profile.student.id}/export`
 		},
 		summary: {
 			studentAverage,
-			studentAverageLabel: formatLabel(studentAverage),
+			studentAverageLabel: formatTenScale(studentAverage),
+			studentAveragePercentLabel: formatPercentLabel(studentAverage),
 			classAverage,
-			classAverageLabel: formatLabel(classAverage),
-			publishedAssessments: unique(studentResults.map((item) => item.assessment_id)).length,
-			subjectsCount: subjectCards.length,
-			gap:
-				typeof studentAverage === 'number' && typeof classAverage === 'number'
-					? studentAverage - classAverage
-					: null,
-			gapLabel:
-				typeof studentAverage === 'number' && typeof classAverage === 'number'
-					? new Intl.NumberFormat('pt-BR', {
-							minimumFractionDigits: 1,
-							maximumFractionDigits: 1,
-							signDisplay: 'always'
-						}).format((studentAverage - classAverage) / 10)
-					: '--'
+			classAverageLabel: formatTenScale(classAverage),
+			classAveragePercentLabel: formatPercentLabel(classAverage),
+			publishedAssessments: profile.summary.publishedAssessments,
+			subjectsCount: profile.summary.totalSubjects,
+			subjectsWithScore: profile.summary.subjectsWithScore,
+			attentionSubjects: profile.summary.attentionSubjects,
+			pendingSubjects: profile.summary.pendingSubjects,
+			gap: gapPercent,
+			gapLabel: formatGapTenScale(gapPercent),
+			gapPercentLabel: formatGapPercent(gapPercent),
+			recentTrend: profile.longitudinal?.recent_trend ?? 'insufficient_data',
+			recentTrendLabel: trendLabel(profile.longitudinal?.recent_trend ?? 'insufficient_data'),
+			contextStatus,
+			contextStatusLabel: contextStatusLabel(contextStatus),
+			primaryReason
 		},
-		subjects: subjectCards.sort((left, right) => {
-			const leftValue = typeof left.studentAverage === 'number' ? left.studentAverage : 999;
-			const rightValue = typeof right.studentAverage === 'number' ? right.studentAverage : 999;
-			return leftValue - rightValue;
-		}),
-		latestPublications
+		institutionalFocus: {
+			contextStatus,
+			contextStatusLabel: contextStatusLabel(contextStatus),
+			primaryReason,
+			criticalSubject: criticalSubject
+				? {
+						subjectId: criticalSubject.subjectId,
+						subjectName: criticalSubject.subjectName,
+						studentAverage: criticalSubject.studentAverage,
+						studentAverageLabel: criticalSubject.studentAverageLabel,
+						studentAveragePercentLabel: criticalSubject.studentAveragePercentLabel,
+						classAverage: criticalSubject.classAverage,
+						classAverageLabel: criticalSubject.classAverageLabel,
+						classAveragePercentLabel: criticalSubject.classAveragePercentLabel,
+						gap: criticalSubject.gap,
+						gapLabel: criticalSubject.gapLabel,
+						gapPercentLabel: criticalSubject.gapPercentLabel,
+						status: criticalSubject.status,
+						recentTrend: criticalSubject.recentTrend,
+						recentTrendLabel: criticalSubject.recentTrendLabel,
+						assessmentsCount: criticalSubject.assessmentsCount,
+						latestAssessmentTitle: criticalSubject.latestAssessmentTitle,
+						latestAssessmentDate: criticalSubject.latestAssessmentDate,
+						primaryReason: criticalSubject.primaryReason,
+						detailHref: criticalSubject.detailHref
+					}
+				: null,
+			historicalContext: {
+				recentTrend: profile.longitudinal?.recent_trend ?? 'insufficient_data',
+				recentTrendLabel: trendLabel(profile.longitudinal?.recent_trend ?? 'insufficient_data'),
+				bestSubject: profile.longitudinal?.best_subject ?? null,
+				worstSubject: profile.longitudinal?.worst_subject ?? null,
+				academicSummaryTitle: profile.academicSummary.title,
+				academicSummaryDescription: profile.academicSummary.description
+			}
+		},
+		academicSummary: profile.academicSummary,
+		longitudinal: profile.longitudinal,
+		subjects,
+		latestPublications,
+		timeline: latestPublications
 	};
 };

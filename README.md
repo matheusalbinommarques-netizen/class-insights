@@ -1,55 +1,93 @@
 ﻿# Class Insights
 
-Plataforma educacional focada em transformar notas em leitura pedagogica acionavel para tres personas:
+Plataforma educacional focada em transformar publicações de desempenho em leitura pedagógica acionável para três personas:
 
-- **Professor**: operacao da turma, avaliacoes, publicacao e acompanhamento pedagogico.
-- **Coordenacao**: leitura institucional de turmas, materias, tendencias e pendencias.
-- **Aluno**: progresso claro, historico recente e ponto de atencao quando houver.
+- **Professor**: opera turmas, matérias, avaliações, revisão e publicação.
+- **Coordenação**: acompanha prioridades institucionais e faz drill-down por turma, matéria, professor e aluno.
+- **Aluno**: entende sua situação atual, sua trajetória e onde vale revisar com base nas publicações disponíveis.
 
 ## Estado atual
 
-O projeto ja tem base funcional real, mas a prioridade atual e fechar confianca, consistencia e acabamento antes de abrir novas frentes visuais ou analiticas.
+O projeto já tem uma base funcional real e agora também possui uma direção de produto mais clara por persona.
 
-### Ja existe
+### O que já está consolidado
 
-- Autenticacao com Supabase
-- Separacao por persona (`teacher`, `student`, `coord`)
-- Dashboard do professor
-- Gestao de turmas
-- Gestao de materias, avaliacoes e resultados
+- Autenticação com Supabase
+- Separação por persona (`teacher`, `student`, `coord`)
+- Fluxo público com login, cadastros e recuperação de acesso com linguagem mais consistente
+- Dashboard do professor reposicionado como **cockpit operacional**
+- Gestão de turmas
+- Gestão de matérias, avaliações e resultados
 - Grid operacional de notas
-- Escala padrao por turma com override quando aplicavel
-- Importacao CSV com preview, staging, validacao e apply via RPC
-- Portal do aluno com vinculo posterior e suporte a multi-vinculo
-- Selecao explicita de turma ativa no portal do aluno
-- Export CSV de resultados publicados por avaliacao
+- Escala padrão por turma com override quando aplicável
+- Importação CSV com preview, staging, validação e apply via RPC
+- Portal do aluno com vínculo posterior, multi-vínculo e seleção clara de turma ativa
+- Portal do aluno orientado a **leitura de progresso**, não apenas consulta de nota
+- Coordenação reposicionada como **leitura institucional**, com prioridade macro e drill-down
+- Export CSV de resultados publicados por avaliação
 - Export CSV de resumo longitudinal institucional
-
-### Em foco agora
-
-- sanidade textual e encoding
-- semantica numerica e confianca no dado exibido
-- remocao de duplicacoes estruturais
-- mini design system compartilhado
-- diferenciacao mais clara entre professor, aluno e coordenacao
+- Smoke tests E2E por persona
+- Cobertura automatizada de helpers críticos do aluno, professor e coordenação
 
 ## Objetivo do produto
 
-Instituicoes de ensino costumam trabalhar com dados frios: a nota mostra o resultado, mas nem sempre explica o caminho. O Class Insights foi desenhado para fechar o ciclo:
+Instituições de ensino costumam trabalhar com dados frios: a nota mostra o resultado, mas nem sempre explica o caminho. O Class Insights foi desenhado para fechar o ciclo:
 
-**Dado -> Insight -> Intervencao -> Resultado**
+**Dado -> Insight -> Intervenção -> Resultado**
 
-O foco do MVP e reduzir friccao operacional para o professor e aumentar a clareza do progresso para o aluno, sem perder leitura macro para a coordenacao.
+O foco do MVP é reduzir fricção operacional para o professor, aumentar a clareza do progresso para o aluno e dar leitura macro coerente para a coordenação, sem misturar as responsabilidades de cada área.
+
+## Experiência por persona
+
+### Professor
+
+A experiência do professor gira em torno do fluxo oficial da V1:
+
+**matéria -> avaliação -> lançamento -> revisão -> publicação**
+
+A dashboard principal funciona como cockpit e responde três perguntas:
+
+- o que exige ação agora
+- onde isso está acontecendo
+- qual é o próximo clique
+
+O objetivo é reduzir ruído e manter o professor orientado ao fluxo principal, sem confundir o import legado com caminho central do produto.
+
+### Aluno
+
+O portal do aluno foi ajustado para interpretar progresso com semântica mais confiável.
+
+A experiência atual enfatiza:
+
+- média atual sem misturar nota e percentual
+- tendência recente
+- matéria que realmente merece revisão
+- trajetória longitudinal
+- leitura clara por matéria
+- tratamento explícito de vínculo pendente, multi-vínculo e turma ativa
+
+### Coordenação
+
+A coordenação não replica a operação do professor. Ela atua como leitura institucional.
+
+A experiência atual enfatiza:
+
+- fila institucional de prioridades
+- turma mais sensível
+- matéria crítica
+- professor que pede cuidado
+- alunos prioritários
+- drill-down por turma, matéria, professor e aluno dentro do escopo do coordenador
 
 ## Modelo oficial da V1
 
-O caminho oficial de dominio na V1 e:
+O caminho oficial de domínio na V1 é:
 
 - `subject`
 - `assessment`
 - `assessment_result`
 
-Esse e o modelo principal de leitura e evolucao para professor, coordenacao e aluno.
+Esse é o modelo principal de leitura e evolução para professor, coordenação e aluno.
 
 ## Papel do import legado
 
@@ -61,17 +99,30 @@ O fluxo de `/teacher/import` continua existindo para reduzir atrito operacional 
 
 Nenhuma tela central nova deve depender diretamente de `student_skill_scores`.
 
-## Prioridade atual de execucao
+## Direções de UX já assumidas
 
-O backlog vivo do projeto esta em `docs/backlog-tecnico-v1-priorizado.md` e segue esta ordem:
+As seguintes decisões já orientam o produto atual:
 
-1. confianca do produto
-2. base visual minima compartilhada
-3. fluxo publico com cara de produto
-4. teacher como cockpit limpo
-5. portal do aluno coerente
-6. coordenacao com leitura institucional
-7. home final
+- **Teacher** como experiência mais densa e operacional
+- **Student** como experiência mais simples, clara e mobile-first
+- **Coord** como leitura macro institucional, não como “teacher em outra cor”
+- uso de componentes e padrões visuais compartilhados para reduzir divergência entre personas
+- títulos de aba, microcopy e estados vazios/erro alinhados ao mesmo tom de produto
+
+## Prioridade atual de execução
+
+O backlog vivo do projeto está em `docs/backlog-tecnico-v1-priorizado.md`.
+
+Neste momento, o produto já passou pelas frentes de:
+
+1. confiança do produto
+2. base visual mínima compartilhada
+3. cockpit do professor
+4. portal do aluno coerente
+5. coordenação como leitura institucional
+6. testes e acabamento global
+
+As próximas evoluções devem priorizar profundidade de fluxo e robustez, evitando reabrir sem necessidade a semântica já estabilizada.
 
 ## Stack
 
@@ -88,11 +139,13 @@ O backlog vivo do projeto esta em `docs/backlog-tecnico-v1-priorizado.md` e segu
 ```txt
 src/
   lib/
+    components/
     config/
     server/
     services/
     styles/
     types/
+    utils/
   routes/
     +layout.svelte
     +page.svelte
@@ -101,33 +154,20 @@ src/
       student/
       teacher/
       coord/
+    forgot-password/
+    reset-password/
     (app)/
       teacher/
-        [classId]/
+        classes/
         assessments/
-        import/
         subjects/
+        import/
       student/
         journey/
         skills/
       coord/
+        classes/
+        subjects/
+        teachers/
+        students/
 ```
-
-## Documentos de referencia
-
-- `docs/adr/0002-modelo-academico-v1.md`: contrato do dominio alvo da V1
-- `docs/adr/0003-vinculos-e-onboarding-v1.md`: separacao entre identidade, entidade academica e vinculos
-- `docs/adr/0004-import-legado-v1.md`: papel do import legado como fluxo auxiliar na V1
-- `docs/definition-of-done.md`: regua de pronto tecnica e de produto
-- `docs/checklist-qualidade-por-tela.md`: checklist minimo por pagina
-- `docs/backlog-tecnico-v1-priorizado.md`: backlog prioritario de execucao
-
-## Validacao local
-
-- `npm run check`
-- `npm run lint`
-- `npm test`
-- `npm run build`
-- `npm run test:e2e`
-
-Os smoke E2E usam Playwright com bypass de autenticacao habilitado apenas quando o servidor local sobe com `CI_E2E_AUTH_ENABLED=true`.
